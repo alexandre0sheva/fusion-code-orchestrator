@@ -1,0 +1,14 @@
+---
+description: Python coding standards for fusion-code-orchestrator
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Coding Standards
+
+- Python 3.12+, typed with Pydantic v2 models
+- Async for all provider calls
+- Small functions, dependency injection for testability
+- Docstrings on public classes and MCP tool handlers
+- Use `ruff` for linting, `pytest` for tests
+- No OpenRouter — call providers directly via adapter classes

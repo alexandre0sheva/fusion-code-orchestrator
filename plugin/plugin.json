@@ -1,0 +1,15 @@
+{
+  "id": "fusion-code-orchestrator",
+  "name": "Fusion Code Orchestrator",
+  "version": "0.1.0",
+  "description": "Multi-model orchestration and evaluation engine for coding workflows",
+  "author": "Fusion Code Orchestrator Contributors",
+  "license": "MIT",
+  "mcpServers": {
+    "fusion": {
+      "command": "uv",
+      "args": ["run", "fusion", "mcp"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}/.."
+    }
+  }
+}

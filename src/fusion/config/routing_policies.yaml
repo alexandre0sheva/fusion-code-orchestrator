@@ -1,0 +1,187 @@
+policies:
+  code_review:
+    task_type: code_review
+    panel_models:
+      - claude-sonnet
+      - gpt-5.4-mini-security
+      - gemini-flash
+    judge_model: gemini-flash
+    synthesizer_model: claude-sonnet
+    max_panel_size: 3
+    min_context_score: 0.3
+    high_risk_panel_models:
+      - claude-sonnet
+      - gpt-5.4-mini-security
+      - gemini-flash
+    high_risk_max_panel_size: 3
+    budgets:
+      low:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      medium:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini
+        max_panel_size: 2
+      high:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini-security
+          - gemini-flash
+        max_panel_size: 3
+      local_only:
+        panel_models:
+          - ollama-llama
+          - lmstudio-local
+        max_panel_size: 2
+
+  debugging:
+    task_type: debugging
+    panel_models:
+      - claude-sonnet
+      - gpt-5.4-mini
+    judge_model: gemini-flash
+    synthesizer_model: claude-sonnet
+    max_panel_size: 3
+    min_context_score: 0.3
+    budgets:
+      low:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      medium:
+        panel_models:
+          - claude-sonnet
+          - gemini-flash
+        max_panel_size: 2
+      high:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini
+          - gemini-flash
+        max_panel_size: 3
+      local_only:
+        panel_models:
+          - ollama-llama
+        max_panel_size: 1
+
+  architecture_decision:
+    task_type: architecture_decision
+    panel_models:
+      - claude-sonnet
+      - gpt-5.4-mini
+    judge_model: gemini-flash
+    synthesizer_model: claude-sonnet
+    max_panel_size: 3
+    min_context_score: 0.4
+    budgets:
+      low:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      medium:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini
+        max_panel_size: 2
+      high:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini
+          - gemini-flash
+        max_panel_size: 3
+      local_only:
+        panel_models:
+          - ollama-llama
+        max_panel_size: 1
+
+  implementation_plan:
+    task_type: implementation_plan
+    panel_models:
+      - claude-sonnet
+      - gpt-5.4-mini
+    judge_model: gemini-flash
+    synthesizer_model: claude-sonnet
+    max_panel_size: 3
+    min_context_score: 0.3
+    budgets:
+      low:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      medium:
+        panel_models:
+          - claude-sonnet
+          - gemini-flash
+        max_panel_size: 2
+      high:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini
+        max_panel_size: 3
+      local_only:
+        panel_models:
+          - lmstudio-local
+        max_panel_size: 1
+
+  answer_eval:
+    task_type: answer_eval
+    panel_models:
+      - gemini-flash
+    judge_model: gemini-flash
+    synthesizer_model: gemini-flash
+    max_panel_size: 2
+    min_context_score: 0.2
+    budgets:
+      low:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      medium:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      high:
+        panel_models:
+          - claude-sonnet
+          - gemini-flash
+        max_panel_size: 2
+      local_only:
+        panel_models:
+          - ollama-llama
+        max_panel_size: 1
+
+  default:
+    task_type: default
+    panel_models:
+      - claude-sonnet
+      - gemini-flash
+    judge_model: gemini-flash
+    synthesizer_model: claude-sonnet
+    max_panel_size: 2
+    min_context_score: 0.2
+    budgets:
+      low:
+        panel_models:
+          - gemini-flash
+        max_panel_size: 1
+      medium:
+        panel_models:
+          - claude-sonnet
+          - gemini-flash
+        max_panel_size: 2
+      high:
+        panel_models:
+          - claude-sonnet
+          - gpt-5.4-mini
+        max_panel_size: 2
+      local_only:
+        panel_models:
+          - ollama-llama
+        max_panel_size: 1
+
+budgets:
+  default_max_cost_usd: 1.0
+  default_max_latency_ms: 120000
+  warn_cost_usd: 0.5

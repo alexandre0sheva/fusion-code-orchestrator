@@ -1,0 +1,12 @@
+---
+description: Testing conventions
+globs: "tests/**"
+alwaysApply: false
+---
+
+# Testing
+
+- All tests must pass without real API keys (use MockProvider)
+- Use `pytest-asyncio` with `asyncio_mode = auto`
+- Use `tmp_path` fixture for SQLite test databases
+- Test redaction, routing, deterministic evals, pipelines, and storage separately

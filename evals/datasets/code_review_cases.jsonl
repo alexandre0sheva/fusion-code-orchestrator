@@ -1,0 +1,2 @@
+{"id": "review-001", "diff": "+ def process(data):\n+     return data['value']", "context": "Python dict access", "expected_topics": ["error handling", "KeyError"]}
+{"id": "review-002", "diff": "+ password = 'hardcoded123'", "context": "Auth module", "expected_topics": ["security", "credentials"]}

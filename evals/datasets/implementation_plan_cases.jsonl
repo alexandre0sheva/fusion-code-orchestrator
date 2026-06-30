@@ -1,0 +1,2 @@
+{"id": "plan-001", "feature": "Add OAuth2 authentication", "context": "Flask app with SQLAlchemy", "expected_topics": ["phases", "test plan"]}
+{"id": "plan-002", "feature": "Implement caching layer", "context": "FastAPI read-heavy API", "expected_topics": ["redis", "invalidation"]}

@@ -1,0 +1,2 @@
+{"id": "arch-001", "question": "Monolith vs microservices?", "options": ["monolith", "microservices"], "constraints": "Team of 5, early stage", "expected_topics": ["trade-offs"]}
+{"id": "arch-002", "question": "SQL vs NoSQL for event store?", "options": ["postgres", "mongodb"], "constraints": "High write volume", "expected_topics": ["scalability"]}

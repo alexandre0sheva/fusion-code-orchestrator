@@ -1,0 +1,2 @@
+{"id": "debug-001", "error": "ConnectionPoolExhausted", "stack_trace": "at pool.acquire()", "context": "async postgres", "expected_topics": ["connection pool"]}
+{"id": "debug-002", "error": "NullPointerException", "stack_trace": "at Service.run:42", "context": "Java service", "expected_topics": ["null check"]}

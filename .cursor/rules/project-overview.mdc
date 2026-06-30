@@ -1,0 +1,25 @@
+---
+description: Project overview and architecture for fusion-code-orchestrator
+globs:
+alwaysApply: true
+---
+
+# Fusion Code Orchestrator
+
+Multi-model orchestration engine exposed as a Python MCP server for Claude Code.
+
+## Architecture
+
+- **MCP layer** (`src/fusion/mcp_server/`): Tool handlers, Pydantic schemas
+- **Orchestration** (`src/fusion/orchestration/`): Pipelines, fan-out, synthesis
+- **Providers** (`src/fusion/providers/`): Direct API adapters (no OpenRouter)
+- **Routing** (`src/fusion/routing/`): Task classification, model registry, policies
+- **Evals** (`src/fusion/evals/`): LLM judge + deterministic checks
+- **Security** (`src/fusion/security/`): Secret redaction before external calls
+- **Storage** (`src/fusion/storage/`): SQLite run logging
+
+## Constraints
+
+- Read-only/advisory: no file edits, no shell execution from MCP server
+- All external content must pass through redaction
+- Tests use MockProvider only
