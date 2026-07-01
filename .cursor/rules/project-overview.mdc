@@ -12,7 +12,7 @@ Multi-model orchestration engine exposed as a Python MCP server for Claude Code.
 
 - **MCP layer** (`src/fusion/mcp_server/`): Tool handlers, Pydantic schemas
 - **Orchestration** (`src/fusion/orchestration/`): Pipelines, fan-out, synthesis
-- **Providers** (`src/fusion/providers/`): Direct API adapters (no OpenRouter)
+- **Providers** (`src/fusion/providers/`): Direct API adapters
 - **Routing** (`src/fusion/routing/`): Task classification, model registry, policies
 - **Evals** (`src/fusion/evals/`): LLM judge + deterministic checks
 - **Security** (`src/fusion/security/`): Secret redaction before external calls

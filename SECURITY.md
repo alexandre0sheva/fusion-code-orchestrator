@@ -13,7 +13,6 @@ https://github.com/alexandre0sheva/fusion-code-orchestrator
 ## Security model
 
 - Fusion calls model providers directly through provider adapters.
-- OpenRouter is intentionally not used.
 - Common secrets are redacted before provider calls.
 - Raw prompt logging is disabled by default.
 - MCP orchestration tools do not perform hidden repository edits or shell commands.

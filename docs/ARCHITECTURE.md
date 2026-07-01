@@ -1,8 +1,7 @@
 # Architecture
 
 Fusion Code Orchestrator is a Python MCP server that gives Claude Code model-like
-multi-model workflows for coding tasks. It calls providers directly through adapters and
-does not use OpenRouter.
+multi-model workflows for coding tasks. It calls providers directly through adapters.
 
 ## Components
 

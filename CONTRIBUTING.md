@@ -29,7 +29,6 @@ uv run fusion run-mock --task code_review --content "diff --git a/app.py b/app.p
 
 ## Pull request expectations
 
-- Keep provider integrations direct; do not add OpenRouter.
 - Keep MCP orchestration tools side-effect free inside MCP.
 - Claude Code should remain the executor for file edits, shell commands, and tests.
 - Add or update tests for routing, fanout, costs, evals, MCP output, or storage changes.

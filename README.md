@@ -1,6 +1,6 @@
 # Fusion Code Orchestrator
 
-Multi-model orchestration and evaluation engine for coding workflows. Exposed as a **Python MCP server** for Claude Code and Cursor, with direct provider adapters (no OpenRouter).
+Multi-model orchestration and evaluation engine for coding workflows. Exposed as a **Python MCP server** for Claude Code and Cursor, with direct provider adapters.
 
 Claude Code remains the main coding agent. Fusion gives it external tools for architecture decisions, code review, debugging hypotheses, implementation planning, and model answer evaluation — using **real multi-model panels** (Anthropic, OpenAI, Google) by default.
 
@@ -24,7 +24,7 @@ architecture trade-offs, debugging hypotheses, implementation planning, or answe
 Fusion returns an answer, structured data, usage telemetry, and trace IDs; Claude Code can then
 edit files and run commands normally.
 
-Fusion does **not** use OpenRouter. Provider adapters call Anthropic, OpenAI, Google, Ollama,
+Provider adapters call Anthropic, OpenAI, Google, Ollama,
 or LM Studio directly. This keeps routing, pricing, redaction, and provider failure behavior
 visible in the codebase and avoids sending prompts through a model aggregator.
 
@@ -596,7 +596,6 @@ Fusion is **side-effect free inside MCP** — it analyzes text you pass in and r
 | Sanitized logging | Raw prompts are off by default (`FUSION_LOG_RAW_PROMPTS=false`) |
 | Deterministic safety checks | Flags secret leakage, dangerous shell commands, unsupported file references |
 | Judge skepticism | LLM judge outputs are self-evaluated; deterministic evals run even if judge fails |
-| No OpenRouter | Direct provider adapters only — your keys stay in your environment |
 | MCP boundary | MCP server handlers call pipelines only; no repo writes or shell execution |
 
 Always verify Fusion recommendations against your codebase before applying changes.
