@@ -14,6 +14,7 @@ from fusion.evals.schemas import (
 )
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.policy import RoutingDecision
+from fusion.telemetry.cost import CostComparison, UsageSummary
 
 
 class StepUsage(BaseModel):
@@ -24,14 +25,17 @@ class StepUsage(BaseModel):
     provider: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
-    cost_usd: float = 0.0
+    cost_usd: float | None = 0.0
+    cost_known: bool = True
+    cost_is_estimate: bool = True
     latency_ms: float = 0.0
 
 
 class CostLatencyInfo(BaseModel):
     """Cost and latency summary for a pipeline run."""
 
-    total_cost_usd: float = 0.0
+    total_cost_usd: float | None = 0.0
+    total_cost_known: bool = True
     total_latency_ms: float = 0.0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
@@ -65,6 +69,40 @@ class CodeReviewInput(BaseModel):
     include_raw_outputs: bool = False
 
 
+class FusionAskInput(BaseModel):
+    """Input for general model-like Fusion answers."""
+
+    prompt: str
+    context: str = ""
+    file_snippets: list[str] = Field(default_factory=list)
+    changed_files: list[str] = Field(default_factory=list)
+    budget: BudgetLevel = BudgetLevel.MEDIUM
+    max_models: int | None = None
+    include_raw_outputs: bool = False
+
+
+class FusionAskOutput(BaseModel):
+    """Structured output from general Fusion answer pipeline."""
+
+    answer: str
+    summary: str = ""
+    suggested_actions: list[str] = Field(default_factory=list)
+    tests_to_run: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    evals: PipelineEvals
+    routing: RoutingDecision
+    cost_latency: CostLatencyInfo
+    display_markdown: str = ""
+    result: dict[str, Any] = Field(default_factory=dict)
+    usage: UsageSummary | None = None
+    cost_comparison: CostComparison | None = None
+    warnings: list[str] = Field(default_factory=list)
+    run_id: str
+    raw_outputs: list[dict[str, Any]] | None = None
+
+
 class CodeReviewOutput(BaseModel):
     """Structured output from code review pipeline."""
 
@@ -80,6 +118,11 @@ class CodeReviewOutput(BaseModel):
     evals: PipelineEvals
     routing: RoutingDecision
     cost_latency: CostLatencyInfo
+    display_markdown: str = ""
+    result: dict[str, Any] = Field(default_factory=dict)
+    usage: UsageSummary | None = None
+    cost_comparison: CostComparison | None = None
+    warnings: list[str] = Field(default_factory=list)
     run_id: str
     raw_outputs: list[dict[str, Any]] | None = None
 
@@ -106,7 +149,12 @@ class DebugOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
+    display_markdown: str = ""
+    result: dict[str, Any] = Field(default_factory=dict)
+    usage: UsageSummary | None = None
+    cost_comparison: CostComparison | None = None
     routing: RoutingDecision
+    warnings: list[str] = Field(default_factory=list)
     run_id: str
 
 
@@ -133,7 +181,12 @@ class ArchitectureDecisionOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
+    display_markdown: str = ""
+    result: dict[str, Any] = Field(default_factory=dict)
+    usage: UsageSummary | None = None
+    cost_comparison: CostComparison | None = None
     routing: RoutingDecision
+    warnings: list[str] = Field(default_factory=list)
     run_id: str
 
 
@@ -161,7 +214,12 @@ class ImplementationPlanOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
+    display_markdown: str = ""
+    result: dict[str, Any] = Field(default_factory=dict)
+    usage: UsageSummary | None = None
+    cost_comparison: CostComparison | None = None
     routing: RoutingDecision
+    warnings: list[str] = Field(default_factory=list)
     run_id: str
 
 
@@ -186,5 +244,10 @@ class AnswerEvalOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
+    display_markdown: str = ""
+    result: dict[str, Any] = Field(default_factory=dict)
+    usage: UsageSummary | None = None
+    cost_comparison: CostComparison | None = None
     routing: RoutingDecision
+    warnings: list[str] = Field(default_factory=list)
     run_id: str

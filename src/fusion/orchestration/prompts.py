@@ -57,7 +57,10 @@ _TASK_SYSTEM_PROMPTS: dict[str, str] = {
     "architecture_decision": _ROLE_PROMPTS["architecture_advisor"],
     "implementation_plan": _ROLE_PROMPTS["implementation_planner"],
     "answer_eval": _ROLE_PROMPTS["judge"],
-    "default": "You are a senior software engineer assistant. Provide clear, actionable advice.",
+    "default": (
+        "You are a senior software engineer answering as a practical coding model. "
+        "Give Claude Code an answer it can directly use to inspect, edit, test, or decide."
+    ),
 }
 
 _SYNTHESIS_SCHEMAS: dict[str, dict[str, str]] = {
@@ -108,6 +111,15 @@ _SYNTHESIS_SCHEMAS: dict[str, dict[str, str]] = {
         "unsupported_claims": "list[string]",
         "missing_points": "list[string]",
         "safer_answer": "string",
+        "confidence": "float 0-1",
+    },
+    "default": {
+        "answer": "string — direct answer for Claude Code to use",
+        "summary": "string — one sentence summary",
+        "suggested_actions": "list[string]",
+        "tests_to_run": "list[string]",
+        "risks": "list[string]",
+        "assumptions": "list[string]",
         "confidence": "float 0-1",
     },
 }

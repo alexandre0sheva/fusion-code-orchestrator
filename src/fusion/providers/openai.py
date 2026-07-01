@@ -58,6 +58,8 @@ class OpenAIProvider(ModelProvider):
         choice = data["choices"][0]
         text = choice["message"]["content"] or ""
         usage = data.get("usage", {})
+        prompt_details = usage.get("prompt_tokens_details", {})
+        completion_details = usage.get("completion_tokens_details", {})
         parsed = try_parse_json(text) if request.json_mode else None
         return ModelResponse(
             provider=self.name,
@@ -66,6 +68,8 @@ class OpenAIProvider(ModelProvider):
             parsed_json=parsed,
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
+            cached_input_tokens=prompt_details.get("cached_tokens"),
+            reasoning_tokens=completion_details.get("reasoning_tokens"),
             latency_ms=latency_ms,
             finish_reason=choice.get("finish_reason"),
             raw_response=data,

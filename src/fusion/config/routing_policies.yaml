@@ -185,3 +185,11 @@ budgets:
   default_max_cost_usd: 1.0
   default_max_latency_ms: 120000
   warn_cost_usd: 0.5
+
+fanout:
+  max_concurrency: 6
+  per_model_timeout_seconds: 45
+  global_timeout_seconds: 60
+  min_successful_responses: 2
+  cancel_on_global_timeout: true
+  allow_partial_results: true

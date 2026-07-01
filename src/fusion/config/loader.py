@@ -76,11 +76,63 @@ class BudgetConfig(BaseModel):
     warn_cost_usd: float = 0.5
 
 
+class FanoutConfig(BaseModel):
+    """Async panel fan-out controls."""
+
+    max_concurrency: int = Field(default=6, ge=1)
+    per_model_timeout_seconds: float = Field(default=45.0, gt=0)
+    global_timeout_seconds: float = Field(default=60.0, gt=0)
+    min_successful_responses: int = Field(default=2, ge=1)
+    cancel_on_global_timeout: bool = True
+    allow_partial_results: bool = True
+
+
 class RoutingPoliciesConfig(BaseModel):
     """Full routing policies loaded from YAML."""
 
     policies: dict[str, RoutingPolicyEntry]
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
+    fanout: FanoutConfig = Field(default_factory=FanoutConfig)
+
+
+class PricingEntry(BaseModel):
+    """Published or estimated model pricing in USD per one million tokens."""
+
+    provider: str
+    model_id: str
+    alias: str
+    input_price_per_1m_tokens: float | None = Field(default=None, ge=0)
+    output_price_per_1m_tokens: float | None = Field(default=None, ge=0)
+    cached_input_price_per_1m_tokens: float | None = Field(default=None, ge=0)
+    reasoning_price_per_1m_tokens: float | None = Field(default=None, ge=0)
+    currency: str = "USD"
+    source_notes: str = ""
+    updated_at: str = ""
+    is_estimate: bool = True
+
+
+class PricingConfig(BaseModel):
+    """Pricing registry keyed by provider/model alias."""
+
+    pricing: dict[str, PricingEntry] = Field(default_factory=dict)
+
+
+class BaselineEntry(BaseModel):
+    """Single frontier model baseline used for cost comparison."""
+
+    name: str = "Opus 4.8"
+    provider: str = "anthropic"
+    model_id: str | None = "claude-opus-4-8"
+    pricing_alias: str = "anthropic.claude-opus-4-8"
+    description: str = "Single frontier model baseline for comparison"
+    enabled: bool = True
+    estimate_strategy: str = "same_input_and_output_tokens"
+
+
+class BaselineConfig(BaseModel):
+    """Baseline config wrapper."""
+
+    baseline: BaselineEntry = Field(default_factory=BaselineEntry)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -110,3 +162,15 @@ def load_routing_policies(path: Path | None = None) -> RoutingPoliciesConfig:
     """Load routing policies from YAML."""
     config_path = path or (_CONFIG_DIR / "routing_policies.yaml")
     return RoutingPoliciesConfig.model_validate(_load_yaml(config_path))
+
+
+def load_pricing(path: Path | None = None) -> PricingConfig:
+    """Load model pricing registry from YAML."""
+    config_path = path or (_CONFIG_DIR / "pricing.yaml")
+    return PricingConfig.model_validate(_load_yaml(config_path))
+
+
+def load_baseline(path: Path | None = None) -> BaselineConfig:
+    """Load baseline model comparison config from YAML."""
+    config_path = path or (_CONFIG_DIR / "baseline.yaml")
+    return BaselineConfig.model_validate(_load_yaml(config_path))

@@ -24,6 +24,18 @@ class ReviewDiffInput(BaseModel):
     include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
 
 
+class FusionAskInput(BaseModel):
+    """Input for model-like fusion_ask tool."""
+
+    prompt: str = Field(description="Coding question or task for Fusion to answer")
+    context: str = Field(default="", description="Repository or task context")
+    file_snippets: list[str] = Field(default_factory=list, description="Relevant file snippets")
+    changed_files: list[str] = Field(default_factory=list, description="Relevant file paths")
+    budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
+    max_models: int | None = Field(default=None, description="Maximum panel models to use")
+    include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
+
+
 class DebugErrorInput(BaseModel):
     """Input for fusion_debug_error tool."""
 
@@ -93,6 +105,37 @@ class CompareImplementInput(BaseModel):
         default="claude-sonnet",
         description="Model alias for Fusion executor agent",
     )
+
+
+class CompareClaudeRunsInput(BaseModel):
+    """Input for comparing Claude Code + Opus vs Claude Code + Fusion outputs."""
+
+    task_prompt: str = Field(description="Original user prompt/task given to both arms")
+    opus_output: str = Field(description="Result from Claude Code using Opus/native model")
+    fusion_output: str = Field(description="Result from Claude Code using Fusion MCP")
+    context: str = Field(
+        default="",
+        description="Shared repo/task context and verification results",
+    )
+    rubric: str = Field(
+        default="",
+        description=(
+            "Optional comparison rubric; defaults to correctness, usefulness, safety, "
+            "and testability"
+        ),
+    )
+    opus_label: str = Field(default="Claude Code + Opus")
+    fusion_label: str = Field(default="Claude Code + Fusion")
+    opus_cost_usd: float | None = Field(default=None, description="Optional measured Opus cost")
+    fusion_cost_usd: float | None = Field(default=None, description="Optional measured Fusion cost")
+    opus_latency_ms: int | None = Field(default=None, description="Optional measured Opus latency")
+    fusion_latency_ms: int | None = Field(
+        default=None,
+        description="Optional measured Fusion latency",
+    )
+    opus_run_id: str | None = Field(default=None, description="Optional trace/run id for Opus arm")
+    fusion_run_id: str | None = Field(default=None, description="Optional Fusion run id")
+    include_raw_evals: bool = Field(default=False, description="Include raw per-arm eval details")
 
 
 class PanelResultOutput(BaseModel):

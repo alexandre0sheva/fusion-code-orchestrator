@@ -79,6 +79,7 @@ class GoogleProvider(ModelProvider):
             parsed_json=parsed,
             input_tokens=usage.get("promptTokenCount"),
             output_tokens=usage.get("candidatesTokenCount"),
+            cached_input_tokens=usage.get("cachedContentTokenCount"),
             latency_ms=latency_ms,
             finish_reason=finish_reason,
             raw_response=data,

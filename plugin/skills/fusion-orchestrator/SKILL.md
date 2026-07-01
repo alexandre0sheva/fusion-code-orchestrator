@@ -1,16 +1,18 @@
 ---
 name: fusion-orchestrator
-description: Multi-model orchestration advisor for complex coding workflows. Use for architecture decisions, code review, debugging, implementation planning, and answer evaluation. Do not use for trivial edits.
+description: Multi-model coding model for Claude Code. Use as a cheaper model-like reasoning panel for implementation guidance, architecture decisions, code review, debugging, planning, and answer evaluation.
 ---
 
 # Fusion Code Orchestrator
 
-Fusion is an **advisory** multi-model orchestration engine. It analyzes context you provide and returns structured recommendations — it does not edit files or run shell commands.
+Fusion is a **model-like multi-model orchestration engine**. Use it when Claude Code should get a cheaper, diverse model-panel answer before editing, testing, reviewing, or deciding. Fusion itself does not secretly edit files or run shell commands; Claude Code remains free to apply the answer and run normal tools.
 
 ## When to Use Fusion
 
 Use Fusion MCP tools for:
 
+- **General coding answers** — call `fusion_ask` when you want Fusion to act like a coding model
+- **A/B evaluation** — call `fusion_compare_claude_runs` after Claude Code has produced both an Opus result and a Fusion-backed result
 - **Complex code review** — security-sensitive diffs, large changes, disagreement-prone areas
 - **Debugging** — unclear root causes, production errors, multi-system failures
 - **Architecture decisions** — trade-off analysis with multiple viable options
@@ -23,29 +25,32 @@ Do **not** call Fusion for:
 
 - Trivial one-line edits or formatting fixes
 - Simple file reads or searches you can do directly
-- Executing changes (Fusion is read-only/advisory)
+- Direct filesystem or shell side effects inside the MCP server; Claude Code should execute those itself after using Fusion's answer
 
 ## How to Call Fusion
 
 1. Gather **focused context** — diffs, error messages, logs, relevant snippets
 2. Call the appropriate MCP tool with concise inputs
 3. Review structured output (findings, confidence, eval scores, disagreements)
-4. Apply recommendations yourself in Claude Code
+4. Apply the answer in Claude Code when it is useful
 
 ## MCP Tools
 
 | Tool | Use when |
 |------|----------|
+| `fusion_ask` | Asking Fusion to answer a general coding task like a model |
 | `fusion_review_diff` | Reviewing a git diff or patch |
 | `fusion_debug_error` | Diagnosing errors with logs/stack traces |
 | `fusion_decide_architecture` | Choosing between architecture options |
 | `fusion_plan_feature` | Planning implementation of a feature |
 | `fusion_eval_answer` | Evaluating quality of an LLM answer |
+| `fusion_compare_claude_runs` | Comparing Claude Code + Opus vs Claude Code + Fusion outputs |
 
 ## Best Practices
 
 - Include the **diff** when reviewing code changes
 - Include **error message + stack trace + logs** when debugging
 - Pass **changed file paths** when available (helps catch unsupported references)
-- Treat Fusion output as **advisory** — verify before applying
+- Treat Fusion output like another model answer — useful, but verify before applying
 - Check `confidence` and `evals.warnings` before high-risk actions
+- For A/B tests, make Claude Code run both arms with the same prompt and context, then compare outputs with `fusion_compare_claude_runs`

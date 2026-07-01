@@ -5,4 +5,5 @@ Pass:
 - Relevant logs and code context
 - Environment details
 
-Summarize ranked hypotheses and verification steps. Fusion advises — you implement fixes.
+Summarize ranked hypotheses and verification steps. Claude Code should use the Fusion output
+to implement fixes and run verification normally.

@@ -6,11 +6,13 @@ This plugin adds multi-model orchestration tools to Claude Code via a local Pyth
 
 | Tool | Purpose |
 |------|---------|
+| `fusion_ask` | General model-like coding answer from the Fusion panel |
 | `fusion_review_diff` | Multi-model code review with synthesis |
 | `fusion_debug_error` | Debug analysis with fix recommendations |
 | `fusion_decide_architecture` | Architecture decision support |
 | `fusion_plan_feature` | Implementation planning |
 | `fusion_eval_answer` | Answer quality evaluation |
+| `fusion_compare_claude_runs` | Compare Claude Code + Opus output against Claude Code + Fusion output |
 
 ## Installation
 
@@ -21,8 +23,8 @@ This plugin adds multi-model orchestration tools to Claude Code via a local Pyth
 ## Skills & Commands
 
 - **Skills**: `fusion-plan`, `fusion-review`, `fusion-debug`, `fusion-decide`, `fusion-eval`
-- **Commands**: `/fusion-plan`, `/fusion-review`, `/fusion-debug`, `/fusion-decide`, `/fusion-eval`
+- **Commands**: `/fusion-plan`, `/fusion-review`, `/fusion-debug`, `/fusion-decide`, `/fusion-eval`, `/fusion-ab`
 
 ## Security
 
-The orchestrator is **read-only/advisory**. It does not edit files or run shell commands. All content is redacted before sending to external providers.
+Fusion is side-effect free inside MCP: it does not secretly edit files or run shell commands itself. Claude Code should use Fusion like a cheaper model response, then apply edits and run commands normally. All content is redacted before sending to external providers.

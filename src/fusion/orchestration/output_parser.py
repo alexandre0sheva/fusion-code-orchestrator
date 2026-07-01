@@ -164,7 +164,16 @@ def _parse_answer_eval_json(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_generic_json(data: dict[str, Any]) -> dict[str, Any]:
-    return {"summary": str(data.get("summary", json.dumps(data)[:500])), "confidence": 0.5}
+    answer = str(data.get("answer") or data.get("summary") or json.dumps(data)[:500])
+    return {
+        "answer": answer,
+        "summary": str(data.get("summary", answer[:500])),
+        "suggested_actions": _as_str_list(data.get("suggested_actions")),
+        "tests_to_run": _as_str_list(data.get("tests_to_run")),
+        "risks": _as_str_list(data.get("risks")),
+        "assumptions": _as_str_list(data.get("assumptions")),
+        "confidence": float(data.get("confidence", 0.5)),
+    }
 
 
 def _from_markdown(
@@ -230,4 +239,12 @@ def _from_markdown(
             "safer_answer": summary,
             "confidence": confidence,
         }
-    return {"summary": summary, "confidence": confidence}
+    return {
+        "answer": content,
+        "summary": summary,
+        "suggested_actions": items,
+        "tests_to_run": [i for i in items if "test" in i.lower()],
+        "risks": [i for i in items if "risk" in i.lower()],
+        "assumptions": [],
+        "confidence": confidence,
+    }

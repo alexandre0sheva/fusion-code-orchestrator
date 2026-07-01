@@ -6,7 +6,7 @@ Claude Code remains the main coding agent. Fusion gives it external tools for ar
 
 ## Features
 
-- **5 MCP tools**: code review, debug, architecture, planning, answer evaluation
+- **8 MCP tools**: general Fusion answer, code review, debug, architecture, planning, answer evaluation, Claude-run comparison, optional isolated implementation benchmark
 - **Multi-model fan-out**: concurrent panel calls with disagreement analysis
 - **Hybrid evaluation**: LLM-as-judge + deterministic safety/completeness checks
 - **Direct provider adapters**: Anthropic, OpenAI, Google (Ollama/LM Studio optional)
@@ -14,7 +14,28 @@ Claude Code remains the main coding agent. Fusion gives it external tools for ar
 - **Budget-aware routing**: low / medium / high / local_only
 - **Secret redaction**: API keys, tokens, passwords redacted before external calls
 - **SQLite logging**: full run traces with costs and latency
-- **Read-only/advisory**: no file edits or shell execution from the orchestrator
+- **Model-like MCP boundary**: Fusion answers like a cheaper model panel; Claude Code applies edits and runs commands
+
+## What Fusion is and is not
+
+Fusion is a Claude Code companion model, not a hidden side-effect runner. Claude Code calls
+Fusion through MCP when a task benefits from a cheaper multi-model answer, external review,
+architecture trade-offs, debugging hypotheses, implementation planning, or answer evaluation.
+Fusion returns an answer, structured data, usage telemetry, and trace IDs; Claude Code can then
+edit files and run commands normally.
+
+Fusion does **not** use OpenRouter. Provider adapters call Anthropic, OpenAI, Google, Ollama,
+or LM Studio directly. This keeps routing, pricing, redaction, and provider failure behavior
+visible in the codebase and avoids sending prompts through a model aggregator.
+
+## Documentation
+
+- [Claude Code A/B runbook](docs/CLAUDE_CODE_AB.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Costs and baseline comparison](docs/COSTS.md)
+- [Publication checklist](docs/PUBLICATION_CHECKLIST.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
 ## Quick Start
 
@@ -27,7 +48,7 @@ Claude Code remains the main coding agent. Fusion gives it external tools for ar
 ### Install
 
 ```bash
-git clone https://github.com/your-org/fusion-code-orchestrator.git
+git clone https://github.com/alexandre0sheva/fusion-code-orchestrator.git
 cd fusion-code-orchestrator
 uv sync --all-groups
 cp .env.example .env
@@ -48,6 +69,8 @@ uv run fusion review-diff --file path/to/diff.patch
 # Inspect run history
 uv run fusion runs list
 uv run fusion runs show RUN_ID
+uv run fusion runs compare-baseline RUN_ID
+uv run fusion runs export --format jsonl
 ```
 
 ### Run tests (offline, no API keys)
@@ -55,6 +78,7 @@ uv run fusion runs show RUN_ID
 ```bash
 uv run pytest
 uv run ruff check src tests
+uv run mypy
 ```
 
 Tests automatically use `MockProvider` via `FUSION_DEFAULT_PROVIDER=mock` in `tests/conftest.py`. Production defaults never use mocks.
@@ -70,9 +94,26 @@ uv run fusion run-mock --task code_review --content "diff: + def foo(): pass"
 uv run python evals/runners/run_offline_eval.py --dataset code_review --mock
 ```
 
-## Agent mode and Opus vs Fusion benchmarks
+## Claude Code A/B comparisons
 
-Fusion can run as a **coding agent** (read/write files, run shell) when enabled:
+Primary workflow:
+
+1. Run the same prompt in Claude Code with Opus/native model.
+2. Run the same prompt in Claude Code while using `fusion_ask` or a specialized Fusion tool for reasoning.
+3. Let Claude Code apply edits and run tests in both cases.
+4. Call `fusion_compare_claude_runs` with the original prompt, both outputs, optional costs, optional latencies, and verification evidence.
+
+This keeps all repository reads, edits, tool calls, and shell commands in regular Claude Code.
+Fusion only replaces the expensive reasoning model with a cheaper panel and provides eval
+instrumentation.
+
+### Optional isolated agent harness
+
+There is also an older lab harness that runs direct-provider agents in temporary workspace
+copies. It is useful for API-level experiments, but it is **not** the main Claude Code
+replacement workflow.
+
+Enable it explicitly:
 
 ```bash
 # .env
@@ -82,14 +123,14 @@ FUSION_WORKSPACE_ROOT=/absolute/path/to/your/project
 
 Agent operations are restricted to `FUSION_WORKSPACE_ROOT`. Secrets in commands are blocked.
 
-### One-shot A/B: implement with Opus vs Fusion
+### One-shot isolated A/B: implement with Opus API agent vs Fusion API agent
 
-From **Claude Code** (single MCP call returns everything):
+From **Claude Code** (single MCP call returns everything, using the isolated harness):
 
 ```text
 Call fusion_compare_implement with:
 - task: "Add a FUSION_AGENT_MODE section to README"
-- workspace_root: "/Users/alexander/apps/app-coder/fusion-code-orchestrator"
+- workspace_root: "/path/to/fusion-code-orchestrator"
 - verify_command: "uv run pytest tests/test_agent.py -q"
 ```
 
@@ -188,7 +229,91 @@ Example prompts inside Claude Code:
 - “Call `fusion_debug_error` with this stack trace and logs.”
 - “Run `fusion_decide_architecture` for Redis vs Postgres caching.”
 
-Fusion returns structured JSON with findings, confidence, hybrid evals, routing metadata, and cost/latency. **You** apply changes — Fusion is advisory only.
+Fusion returns structured JSON with answers/findings, confidence, hybrid evals, routing metadata, and cost/latency. Claude Code should use that output like another model response and then apply changes or run tests itself.
+
+## Cost and usage comparison
+
+Every provider response is normalized into usage telemetry:
+
+- provider name, model alias, and provider model ID;
+- input, output, cached input, reasoning, and total token counts when available;
+- actual provider cost when returned, otherwise configured estimated cost;
+- latency, success/failure, and structured error details.
+
+Pricing lives in `src/fusion/config/pricing.yaml`. Each entry is in USD per one million
+tokens and has an `is_estimate` flag. If token usage or pricing is unavailable, Fusion marks
+cost as unknown rather than inventing a precise value.
+
+The default baseline lives in `src/fusion/config/baseline.yaml`:
+
+```yaml
+baseline:
+  name: "Opus 4.8"
+  provider: "anthropic"
+  model_id: "claude-opus-4-8"
+  pricing_alias: "anthropic.claude-opus-4-8"
+  enabled: true
+  estimate_strategy: "same_input_and_output_tokens"
+```
+
+The baseline estimate asks: “What would the same input/output token volume cost on this
+single frontier model?” It does not claim the baseline would produce the same number of
+tokens or latency in a live run. Baseline latency is reported as unknown unless the baseline
+is actually called by an explicit benchmark.
+
+Claude Code-facing output includes a compact section:
+
+```text
+Cost & usage:
+- Fusion cost: $0.0180 estimated
+- Opus 4.8 baseline estimate: $0.0710 estimated
+- Estimated savings: $0.0530 / 74.6%
+- Fusion wall time: 8.4s
+- Panel: 4 models, 3 succeeded, 1 failed
+```
+
+The same response includes machine-readable `usage` and `cost_comparison` objects.
+
+## Parallel panel fanout
+
+Panel calls run concurrently inside a normal blocking MCP request. Claude Code receives one
+response, but Fusion internally starts selected panel model calls together with async fanout.
+
+Fanout config lives in `src/fusion/config/routing_policies.yaml`:
+
+```yaml
+fanout:
+  max_concurrency: 6
+  per_model_timeout_seconds: 45
+  global_timeout_seconds: 60
+  min_successful_responses: 2
+  cancel_on_global_timeout: true
+  allow_partial_results: true
+```
+
+Fusion preserves partial panel results. A failed or timed-out model produces warnings and
+usage records, but the run continues when quorum is met. If quorum is not met, Fusion returns
+a structured diagnostic instead of pretending synthesis succeeded.
+
+## Configuration and validation
+
+Core config files:
+
+- `src/fusion/config/default_models.yaml` — model registry and provider aliases.
+- `src/fusion/config/routing_policies.yaml` — task routing, budgets, and fanout.
+- `src/fusion/config/pricing.yaml` — pricing registry with estimate flags.
+- `src/fusion/config/baseline.yaml` — single frontier baseline comparison model.
+- `.env` — provider keys and local runtime toggles.
+
+Validate config without calling providers:
+
+```bash
+uv run fusion config validate
+uv run fusion config validate --strict
+```
+
+Strict mode fails when enabled cloud providers are missing API-key environment variables.
+Non-strict mode reports those as warnings so mock/local development remains easy.
 
 ### Connect to Cursor
 
@@ -216,13 +341,28 @@ uv run python evals/runners/compare_pipelines.py
 
 | Tool | Description |
 |------|-------------|
+| `fusion_ask` | General model-like coding answer using the Fusion panel |
 | `fusion_review_diff` | Multi-model code review with synthesis |
 | `fusion_debug_error` | Debug analysis with fix recommendations |
 | `fusion_decide_architecture` | Architecture decision support |
 | `fusion_plan_feature` | Implementation planning |
 | `fusion_eval_answer` | Answer quality evaluation |
+| `fusion_compare_claude_runs` | Compare Claude Code + Opus vs Claude Code + Fusion outputs |
 
 Each tool accepts an optional `budget` field: `low`, `medium`, `high`, or `local_only`.
+
+Each tool returns both top-level task-specific fields and a consistent MCP envelope:
+
+| Field | Meaning |
+|-------|---------|
+| `display_markdown` | Compact Claude Code-facing summary with recommendation, confidence, cost, usage, and caveats |
+| `result` | Structured task-specific result object |
+| `evals` | Context, per-answer, disagreement, judge, and final eval data |
+| `usage` | Per-model token, cost, latency, and failure telemetry |
+| `cost_comparison` | Fusion vs configured baseline estimate |
+| `routing` | Selected panel, judge, synthesizer, risk, complexity, and routing reasons |
+| `warnings` | Timeouts, provider failures, config caveats, and budget warnings |
+| `run_id` | SQLite trace ID for `fusion runs show RUN_ID` |
 
 ## How orchestration works
 
@@ -238,6 +378,25 @@ Claude Code → MCP Tools → Orchestration Pipeline
                               ├── Final Eval
                               └── SQLite Logging
 ```
+
+## Security model and limitations
+
+Fusion redacts common secrets before provider calls and persists sanitized input separately
+from original input. The MCP orchestration tools do not perform hidden repository mutations:
+they do not run shell commands in user repositories or edit user files themselves. This does
+not block Claude Code from doing normal coding-agent work after receiving Fusion's answer.
+The separate benchmark/agent mode is gated by `FUSION_AGENT_MODE=true` and workspace restrictions.
+
+Known limitations:
+
+- Cost comparison is only as accurate as provider token reporting and `pricing.yaml`.
+- Baseline cost is an estimate unless an explicit benchmark calls the baseline model.
+- LLM-as-judge evals can fail or disagree; deterministic checks and warnings remain visible.
+- Local model quality and latency depend on the user’s Ollama/LM Studio setup.
+
+See also [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/COSTS.md](docs/COSTS.md).
+For the exact Claude Code A/B workflow, see
+[docs/CLAUDE_CODE_AB.md](docs/CLAUDE_CODE_AB.md).
 
 ### Default model panel (medium budget)
 
@@ -357,7 +516,7 @@ Available datasets: `code_review`, `debugging`, `architecture`, `planning`.
 
 ## Comparing Fusion vs Opus / Claude Code team agents
 
-Fusion and Claude Code agents solve different problems. Fusion is a **multi-model advisory panel**; Claude Code agents are **single-agent executors**. Compare them on tasks where panel diversity matters.
+Fusion and Claude Code agents work together. Fusion is a **multi-model reasoning panel** that can act like a cheaper coding model; Claude Code is the executor that reads, edits, and tests the repository. Compare “Claude Code + Opus” against “Claude Code + Fusion MCP + cheaper models” on the same tasks.
 
 ### Recommended comparison protocol
 
@@ -366,8 +525,8 @@ Fusion and Claude Code agents solve different problems. Fusion is a **multi-mode
    Run the task with Claude Code only. Save the answer and note time, cost, and whether you had to iterate.
 3. **Baseline — Claude Code team / subagents**  
    Run the same task with Claude Code’s team agents if available. Save outputs.
-4. **Treatment — Fusion advisory**  
-   Call the matching Fusion MCP tool with the same context. Apply recommendations yourself in Claude Code.
+4. **Treatment — Claude Code + Fusion**  
+   Call `fusion_ask` or the matching specialized Fusion MCP tool with the same context. Let Claude Code apply the answer and run tests.
 5. **Score with Fusion eval**  
 
    ```bash
@@ -399,23 +558,37 @@ Fusion and Claude Code agents solve different problems. Fusion is a **multi-mode
 
 8. **When single Opus/agent may win**
    - Small localized edits
-   - Tasks requiring deep repo exploration and file edits (Fusion is read-only)
+   - Tasks where the panel context is too thin or repeated file exploration matters more than model diversity
    - Latency-sensitive loops where panel fan-out is too slow
 
 ### A/B workflow in Claude Code
 
 ```text
-1. Paste diff → ask Claude Code (Opus) for review → save as answer-a.md
-2. Call fusion_review_diff with same diff → save synthesis as answer-b.md
-3. Run fusion_eval_answer on both against the same rubric
-4. Compare scores + your own judgment on missed findings
+1. Run the task in Claude Code with Opus/native model and save the result
+2. Run the same task in Claude Code, but call fusion_ask or a specialized Fusion tool for reasoning
+3. Call fusion_compare_claude_runs with the original prompt and both outputs
+4. Compare quality winner, cost winner, latency winner, and missed findings
 ```
 
 Use `uv run fusion runs list` to compare cost and latency across runs.
 
+CLI equivalent for saved outputs:
+
+```bash
+uv run fusion compare-claude-runs \
+  --task-file task.md \
+  --opus-file claude-opus-output.md \
+  --fusion-file claude-fusion-output.md \
+  --context-file verification.md \
+  --opus-cost 0.42 \
+  --fusion-cost 0.07 \
+  --opus-latency-ms 90000 \
+  --fusion-latency-ms 45000
+```
+
 ## Security
 
-Fusion is **read-only/advisory** — it analyzes text you pass in; it never edits files or executes shell commands.
+Fusion is **side-effect free inside MCP** — it analyzes text you pass in and returns model-like answers. Claude Code remains the component that edits files and executes shell commands.
 
 | Control | Behavior |
 |---------|----------|

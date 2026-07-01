@@ -146,7 +146,9 @@ async def compare_implementations(
         fusion_latency = (time.perf_counter() - fusion_start) * 1000 + orch_latency
 
         opus_total_cost = opus_result.usage.cost_usd
-        fusion_total_cost = fusion_result.usage.cost_usd + plan_output.cost_latency.total_cost_usd
+        fusion_total_cost = (
+            fusion_result.usage.cost_usd + (plan_output.cost_latency.total_cost_usd or 0.0)
+        )
         opus_total_latency = opus_latency
         fusion_total_latency = fusion_latency
 

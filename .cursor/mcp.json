@@ -3,7 +3,7 @@
     "fusion": {
       "command": "uv",
       "args": ["run", "fusion", "mcp"],
-      "cwd": "/Users/alexander/apps/app-coder/fusion-code-orchestrator"
+      "cwd": "${workspaceFolder}"
     }
   }
 }

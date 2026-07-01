@@ -7,9 +7,11 @@ import pytest
 from fusion.evals.deterministic import check_no_dangerous_shell_commands, run_deterministic_checks
 from fusion.evals.engine import EvalEngine
 from fusion.mcp_server.schemas import (
+    CompareClaudeRunsInput,
     DebugErrorInput,
     DecideArchitectureInput,
     EvalAnswerInput,
+    FusionAskInput,
     PlanFeatureInput,
     ReviewDiffInput,
 )
@@ -189,6 +191,9 @@ async def test_run_logging_with_routing(db_path: str) -> None:
 async def test_mcp_handlers_return_expected_schemas(db_path: str) -> None:
     tools = FusionTools(db_path=db_path, use_mock=True)
 
+    ask = await tools.fusion_ask(FusionAskInput(prompt="How should I add retries?"))
+    assert "answer" in ask and "usage" in ask and "cost_comparison" in ask
+
     review = await tools.fusion_review_diff(ReviewDiffInput(diff="+ pass"))
     assert "summary" in review and "routing" in review
 
@@ -209,6 +214,21 @@ async def test_mcp_handlers_return_expected_schemas(db_path: str) -> None:
         EvalAnswerInput(question="Q?", answer="A.")
     )
     assert "score" in eval_out
+
+    comparison = await tools.fusion_compare_claude_runs(
+        CompareClaudeRunsInput(
+            task_prompt="Add retry handling",
+            opus_output="Use retries.",
+            fusion_output="Use bounded exponential retries, tests, and logging.",
+            opus_cost_usd=0.10,
+            fusion_cost_usd=0.03,
+            opus_latency_ms=10_000,
+            fusion_latency_ms=4_000,
+        )
+    )
+    assert comparison["result"]["cheaper_arm"] == "Claude Code + Fusion"
+    assert comparison["result"]["faster_arm"] == "Claude Code + Fusion"
+    assert "Better result" in comparison["display_markdown"]
 
 
 @pytest.mark.asyncio

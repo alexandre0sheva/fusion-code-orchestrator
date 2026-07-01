@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -201,8 +201,8 @@ class Router:
 
         return RoutingDecision(
             task_type=task_type,
-            complexity=resolved_complexity,
-            risk=resolved_risk,
+            complexity=cast(Complexity, resolved_complexity),
+            risk=cast(Risk, resolved_risk),
             selected_panel=selected_panel,
             judge_model=judge_model,
             synthesizer_model=synthesizer_model,

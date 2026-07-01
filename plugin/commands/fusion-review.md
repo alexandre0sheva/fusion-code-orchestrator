@@ -5,4 +5,5 @@ Pass:
 - Changed file paths
 - Review goals (security, tests, etc.)
 
-Review the structured output and summarize critical findings for the user. Do not apply changes automatically — Fusion is advisory.
+Review the structured output and summarize critical findings for the user. If the user wants
+the fixes applied, Claude Code should edit and test normally using the Fusion findings.

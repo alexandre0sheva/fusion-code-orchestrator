@@ -20,6 +20,7 @@ Multi-model orchestration engine exposed as a Python MCP server for Claude Code.
 
 ## Constraints
 
-- Read-only/advisory: no file edits, no shell execution from MCP server
+- Claude Code remains the executor for repo reads, edits, shell commands, and tests
+- Fusion MCP provides model-like panel reasoning and evaluation, not hidden side effects
 - All external content must pass through redaction
 - Tests use MockProvider only

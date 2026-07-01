@@ -26,6 +26,12 @@ dependencies = [
     "typer>=0.12.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/alexandre0sheva/fusion-code-orchestrator"
+Repository = "https://github.com/alexandre0sheva/fusion-code-orchestrator"
+Issues = "https://github.com/alexandre0sheva/fusion-code-orchestrator/issues"
+Documentation = "https://github.com/alexandre0sheva/fusion-code-orchestrator/tree/main/docs"
+
 [project.optional-dependencies]
 dev = [
     "mypy>=1.11.0",
@@ -62,6 +68,10 @@ python_version = "3.12"
 strict = true
 packages = ["fusion"]
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

@@ -1,0 +1,8 @@
+baseline:
+  name: "Opus 4.8"
+  provider: "anthropic"
+  model_id: "claude-opus-4-8"
+  pricing_alias: "anthropic.claude-opus-4-8"
+  description: "Single frontier model baseline for comparison"
+  enabled: true
+  estimate_strategy: "same_input_and_output_tokens"

@@ -90,6 +90,7 @@ class AnthropicProvider(ModelProvider):
             parsed_json=parsed,
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
+            cached_input_tokens=usage.get("cache_read_input_tokens"),
             latency_ms=latency_ms,
             finish_reason=data.get("stop_reason"),
             raw_response=data,

@@ -54,15 +54,20 @@ class ModelResponse(BaseModel):
 
     provider: str
     model: str
+    model_alias: str | None = None
     text: str = ""
     parsed_json: dict[str, Any] | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
     cost_estimate_usd: float | None = None
+    actual_cost_usd: float | None = None
     latency_ms: float = 0.0
     finish_reason: str | None = None
     raw_response: dict[str, Any] | None = None
     error: str | None = None
+    error_type: str | None = None
 
     @property
     def content(self) -> str:
@@ -82,6 +87,12 @@ class ModelResponse(BaseModel):
     @property
     def ok(self) -> bool:
         return self.error is None
+
+    @property
+    def total_tokens(self) -> int | None:
+        if self.input_tokens is None and self.output_tokens is None:
+            return None
+        return (self.input_tokens or 0) + (self.output_tokens or 0)
 
 
 # Backward-compatible aliases used across orchestration code.
@@ -115,10 +126,12 @@ class ModelProvider(ABC):
                 provider=self.name,
                 model=request.model_id,
                 error=str(exc),
+                error_type=exc.__class__.__name__,
             )
         except Exception as exc:  # noqa: BLE001 — provider boundary
             return ModelResponse(
                 provider=self.name,
                 model=request.model_id,
                 error=f"Unexpected provider error: {exc}",
+                error_type=exc.__class__.__name__,
             )

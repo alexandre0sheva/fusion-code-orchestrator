@@ -6,6 +6,7 @@ from enum import StrEnum
 
 # Maps MCP tool names and legacy aliases to canonical task types.
 _TOOL_NAME_MAP: dict[str, str] = {
+    "fusion_ask": "default",
     "fusion_review_diff": "code_review",
     "fusion_debug_error": "debugging",
     "fusion_decide_architecture": "architecture_decision",

@@ -1,0 +1,88 @@
+pricing:
+  anthropic.claude-opus-4-8:
+    provider: anthropic
+    model_id: claude-opus-4-8
+    alias: anthropic.claude-opus-4-8
+    input_price_per_1m_tokens: 15.0
+    output_price_per_1m_tokens: 75.0
+    currency: USD
+    source_notes: Configured list-price placeholder; verify against current provider pricing.
+    updated_at: "2026-07-01"
+    is_estimate: true
+
+  anthropic.claude-sonnet-4-6:
+    provider: anthropic
+    model_id: claude-sonnet-4-6
+    alias: anthropic.claude-sonnet-4-6
+    input_price_per_1m_tokens: 3.0
+    output_price_per_1m_tokens: 15.0
+    currency: USD
+    source_notes: Configured list-price placeholder; verify against current provider pricing.
+    updated_at: "2026-07-01"
+    is_estimate: true
+
+  openai.gpt-5.4-mini:
+    provider: openai
+    model_id: gpt-5.4-mini
+    alias: openai.gpt-5.4-mini
+    input_price_per_1m_tokens: 2.5
+    output_price_per_1m_tokens: 10.0
+    currency: USD
+    source_notes: Configured project estimate; replace with provider billing export when available.
+    updated_at: "2026-07-01"
+    is_estimate: true
+
+  google.gemini-3.5-flash:
+    provider: google
+    model_id: gemini-3.5-flash
+    alias: google.gemini-3.5-flash
+    input_price_per_1m_tokens: 0.1
+    output_price_per_1m_tokens: 0.4
+    currency: USD
+    source_notes: Configured project estimate; replace with provider billing export when available.
+    updated_at: "2026-07-01"
+    is_estimate: true
+
+  mock.mock-fast:
+    provider: mock
+    model_id: mock-fast
+    alias: mock.mock-fast
+    input_price_per_1m_tokens: 0.0
+    output_price_per_1m_tokens: 0.0
+    currency: USD
+    source_notes: Offline mock provider has no external cost.
+    updated_at: "2026-07-01"
+    is_estimate: false
+
+  mock.mock-security:
+    provider: mock
+    model_id: mock-security
+    alias: mock.mock-security
+    input_price_per_1m_tokens: 0.0
+    output_price_per_1m_tokens: 0.0
+    currency: USD
+    source_notes: Offline mock provider has no external cost.
+    updated_at: "2026-07-01"
+    is_estimate: false
+
+  mock.mock-weak:
+    provider: mock
+    model_id: mock-weak
+    alias: mock.mock-weak
+    input_price_per_1m_tokens: 0.0
+    output_price_per_1m_tokens: 0.0
+    currency: USD
+    source_notes: Offline mock provider has no external cost.
+    updated_at: "2026-07-01"
+    is_estimate: false
+
+  mock.mock-judge:
+    provider: mock
+    model_id: mock-judge
+    alias: mock.mock-judge
+    input_price_per_1m_tokens: 0.0
+    output_price_per_1m_tokens: 0.0
+    currency: USD
+    source_notes: Offline mock provider has no external cost.
+    updated_at: "2026-07-01"
+    is_estimate: false

@@ -76,7 +76,8 @@ class EvalEngine:
                     task_type=task_type,
                     context=context,
                 )
-                if judge_scores.get("notes", "").startswith("Failed"):
+                notes = judge_scores.get("notes", "")
+                if isinstance(notes, str) and notes.startswith("Failed"):
                     judge_failed = True
             else:
                 judge_failed = True
@@ -202,8 +203,46 @@ class EvalEngine:
         if judge_quality:
             dimension_scores["judge_quality"] = judge_quality.aggregate_score
 
-        scores = list(dimension_scores.values())
-        aggregate = sum(scores) / len(scores) if scores else 0.0
+        warning_list = warnings or []
+        answer_quality = (
+            sum(ev.overall_score for ev in per_answer) / len(per_answer) if per_answer else 0.0
+        )
+        context_score = context.score if context else 0.0
+        final_score = final.overall_score if final else 0.0
+        consensus_strength = 1.0 - float(disagreement.get("disagreement_score", 0.0) or 0.0)
+        provider_failures = len(
+            [w for w in warning_list if "Panel model" in w or "quorum" in w.lower()]
+        )
+        provider_success_rate = (
+            len(per_answer) / (len(per_answer) + provider_failures)
+            if per_answer or provider_failures
+            else 1.0
+        )
+        unsupported_claim_penalty = (
+            sum(ev.unsupported_claims for ev in per_answer) / len(per_answer) * 0.15
+            if per_answer
+            else 0.0
+        )
+        high_risk_penalty = (final.residual_risk * 0.10) if final else 0.0
+        aggregate = (
+            context_score * 0.20
+            + consensus_strength * 0.20
+            + answer_quality * 0.25
+            + final_score * 0.25
+            + provider_success_rate * 0.10
+        )
+        aggregate = max(0.0, min(1.0, aggregate - unsupported_claim_penalty - high_risk_penalty))
+        dimension_scores.update(
+            {
+                "aggregate_context_sufficiency": context_score,
+                "aggregate_consensus_strength": consensus_strength,
+                "aggregate_answer_quality": answer_quality,
+                "aggregate_final_quality": final_score,
+                "aggregate_provider_success_rate": provider_success_rate,
+                "aggregate_unsupported_claim_penalty": unsupported_claim_penalty,
+                "aggregate_high_risk_penalty": high_risk_penalty,
+            }
+        )
 
         return {
             "context": context.model_dump() if context else None,

@@ -8,6 +8,7 @@ alwaysApply: true
 
 - Redact secrets before any external provider call
 - Never log raw prompts by default (`FUSION_LOG_RAW_PROMPTS=false`)
-- MCP server must not execute shell commands or modify repo files
+- MCP orchestration tools must not execute hidden shell commands or modify repo files
+- Claude Code may still edit files and run commands normally after using Fusion output
 - Do not commit `.env` files or API keys
 - Deterministic checks must flag secret leakage in responses

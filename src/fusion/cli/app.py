@@ -13,7 +13,14 @@ from rich.console import Console
 from rich.table import Table
 
 from fusion.config.env import load_env
+from fusion.config.loader import (
+    load_baseline,
+    load_model_registry,
+    load_pricing,
+    load_routing_policies,
+)
 from fusion.mcp_server.schemas import (
+    CompareClaudeRunsInput,
     DebugErrorInput,
     DecideArchitectureInput,
     EvalAnswerInput,
@@ -24,6 +31,7 @@ from fusion.mcp_server.tools import FusionTools
 from fusion.orchestration.pipelines import PipelineContext, create_pipeline
 from fusion.routing.classifier import TaskType
 from fusion.storage.run_store import RunStore
+from fusion.telemetry.cost import PricingRegistry, UsageSummary, compare_to_baseline
 
 app = typer.Typer(
     name="fusion",
@@ -31,7 +39,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 runs_app = typer.Typer(help="Inspect orchestration run history")
+config_app = typer.Typer(help="Validate Fusion configuration")
 app.add_typer(runs_app, name="runs")
+app.add_typer(config_app, name="config")
 console = Console()
 
 load_env()
@@ -76,7 +86,7 @@ def debug(
         Path | None, typer.Option("--error-file", help="Path to error message file")
     ] = None,
     error: Annotated[str, typer.Option(help="Error message text")] = "",
-    logs_file: Annotated[Path | None, typer.Option("--logs-file", help="Path to logs file")] = "",
+    logs_file: Annotated[Path | None, typer.Option("--logs-file", help="Path to logs file")] = None,
     mock: Annotated[bool, typer.Option(help="Use mock provider")] = False,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
@@ -147,6 +157,47 @@ def eval_answer(
     _print_json(result)
 
 
+@app.command("compare-claude-runs")
+def compare_claude_runs(
+    task_file: Annotated[Path, typer.Option("--task-file", help="Original prompt/task file")],
+    opus_file: Annotated[Path, typer.Option("--opus-file", help="Claude Code + Opus output")],
+    fusion_file: Annotated[
+        Path,
+        typer.Option("--fusion-file", help="Claude Code + Fusion output"),
+    ],
+    context_file: Annotated[
+        Path | None,
+        typer.Option("--context-file", help="Shared verification/context file"),
+    ] = None,
+    opus_cost: Annotated[float | None, typer.Option(help="Measured Opus cost USD")] = None,
+    fusion_cost: Annotated[float | None, typer.Option(help="Measured Fusion cost USD")] = None,
+    opus_latency_ms: Annotated[int | None, typer.Option(help="Measured Opus latency ms")] = None,
+    fusion_latency_ms: Annotated[
+        int | None,
+        typer.Option(help="Measured Fusion latency ms"),
+    ] = None,
+    mock: Annotated[bool, typer.Option(help="Use mock provider")] = False,
+    db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
+) -> None:
+    """Compare Claude Code + Opus output against Claude Code + Fusion output."""
+    tools = _tools(db_path, mock)
+    result = asyncio.run(
+        tools.fusion_compare_claude_runs(
+            CompareClaudeRunsInput(
+                task_prompt=task_file.read_text(encoding="utf-8"),
+                opus_output=opus_file.read_text(encoding="utf-8"),
+                fusion_output=fusion_file.read_text(encoding="utf-8"),
+                context=context_file.read_text(encoding="utf-8") if context_file else "",
+                opus_cost_usd=opus_cost,
+                fusion_cost_usd=fusion_cost,
+                opus_latency_ms=opus_latency_ms,
+                fusion_latency_ms=fusion_latency_ms,
+            )
+        )
+    )
+    _print_json(result)
+
+
 @runs_app.command("list")
 def runs_list(
     limit: Annotated[int, typer.Option(help="Max runs to show")] = 10,
@@ -209,6 +260,139 @@ def runs_show(
             ],
         }
     )
+
+
+@runs_app.command("costs")
+def runs_costs(
+    limit: Annotated[int, typer.Option(help="Max runs to include")] = 50,
+    db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
+) -> None:
+    """Summarize recent run costs and latency."""
+    store = RunStore(db_path=db_path)
+    runs = store.list_runs(limit=limit)
+    total_cost = sum(run.total_cost_usd for run in runs)
+    total_latency = sum(run.total_latency_ms for run in runs)
+    table = Table(title="Fusion Run Costs")
+    table.add_column("Runs", justify="right")
+    table.add_column("Total cost", justify="right")
+    table.add_column("Avg cost", justify="right")
+    table.add_column("Avg latency", justify="right")
+    count = len(runs)
+    table.add_row(
+        str(count),
+        f"${total_cost:.4f}",
+        f"${(total_cost / count):.4f}" if count else "$0.0000",
+        f"{(total_latency / count):.0f}ms" if count else "0ms",
+    )
+    console.print(table)
+
+
+@runs_app.command("compare-baseline")
+def runs_compare_baseline(
+    run_id: Annotated[str, typer.Argument(help="Run ID to compare")],
+    db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
+) -> None:
+    """Compare a stored Fusion run against the configured baseline model."""
+    store = RunStore(db_path=db_path)
+    record = store.get_run(run_id)
+    if record is None:
+        console.print(f"[red]Run not found: {run_id}[/red]")
+        raise typer.Exit(1)
+    output = record.output_data or {}
+    comparison = output.get("cost_comparison")
+    if comparison:
+        _print_json(comparison)
+        return
+    usage = UsageSummary(
+        total_input_tokens=sum(s.input_tokens for s in record.steps),
+        total_output_tokens=sum(s.output_tokens for s in record.steps),
+        total_tokens=sum(s.input_tokens + s.output_tokens for s in record.steps),
+        fusion_wall_latency_ms=round(record.total_latency_ms),
+    )
+    _print_json(
+        compare_to_baseline(
+            usage=usage,
+            fusion_total_cost_usd=record.total_cost_usd,
+            fusion_cost_known=True,
+            pricing=PricingRegistry(),
+        ).model_dump()
+    )
+
+
+@runs_app.command("export")
+def runs_export(
+    format: Annotated[str, typer.Option("--format", help="Output format: jsonl")] = "jsonl",
+    limit: Annotated[int, typer.Option(help="Max runs to export")] = 100,
+    db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
+) -> None:
+    """Export recent runs as JSONL."""
+    if format != "jsonl":
+        console.print("[red]Only --format jsonl is currently supported[/red]")
+        raise typer.Exit(1)
+    store = RunStore(db_path=db_path)
+    for record in store.list_runs(limit=limit):
+        console.print(
+            json.dumps(
+                {
+                    "run_id": record.run_id,
+                    "task_type": record.task_type,
+                    "status": record.status,
+                    "sanitized_input": record.sanitized_input,
+                    "routing": record.routing,
+                    "output": record.output_data,
+                    "warnings": record.warnings,
+                    "total_cost_usd": record.total_cost_usd,
+                    "total_latency_ms": record.total_latency_ms,
+                },
+                default=str,
+            )
+        )
+
+
+@config_app.command("validate")
+def config_validate(
+    strict: Annotated[bool, typer.Option(help="Fail on missing provider env vars")] = False,
+) -> None:
+    """Validate YAML config, pricing, baseline, fanout, and provider env vars."""
+    issues: list[str] = []
+    warnings: list[str] = []
+    models = load_model_registry()
+    routing = load_routing_policies()
+    pricing = load_pricing()
+    baseline = load_baseline().baseline
+
+    for alias, model in models.models.items():
+        if not model.provider:
+            issues.append(f"Model {alias} has no provider")
+        price_key = f"{model.provider}.{model.model_id}"
+        if model.enabled and price_key not in pricing.pricing:
+            warnings.append(f"No pricing entry for enabled model {alias} ({price_key})")
+
+    if baseline.enabled and baseline.pricing_alias not in pricing.pricing:
+        warnings.append(f"No pricing entry for baseline alias {baseline.pricing_alias}")
+
+    fanout = routing.fanout
+    if fanout.global_timeout_seconds < fanout.per_model_timeout_seconds:
+        warnings.append("fanout.global_timeout_seconds is below per-model timeout")
+
+    provider_env = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "google": "GOOGLE_API_KEY",
+    }
+    for provider, env_name in provider_env.items():
+        enabled = any(m.enabled and m.provider == provider for m in models.models.values())
+        if enabled and not os.environ.get(env_name):
+            message = f"{env_name} missing for enabled {provider} models"
+            (issues if strict else warnings).append(message)
+
+    if issues:
+        for issue in issues:
+            console.print(f"[red]ERROR[/red] {issue}")
+        raise typer.Exit(1)
+    for warning in warnings:
+        console.print(f"[yellow]WARN[/yellow] {warning}")
+    console.print("[green]Configuration valid[/green]")
 
 
 @app.command("compare-cost")

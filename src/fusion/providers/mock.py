@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 
@@ -86,7 +87,7 @@ class MockProvider(ModelProvider):
             "evaluation": "judge",
             "answer_eval": "judge",
         }
-        return str(task_map.get(task, "coding_reviewer"))
+        return task_map.get(task, "coding_reviewer")
 
     def _seed(self, request: ModelRequest) -> str:
         prompt = request.user_prompt or " ".join(m.content for m in request.messages)
@@ -96,7 +97,7 @@ class MockProvider(ModelProvider):
         seed = self._seed(request)
         if personality == "synthesizer":
             return self._synthesizer(seed, request)
-        generators: dict[str, Any] = {
+        generators: dict[str, Callable[[str], str]] = {
             "coding_reviewer": self._coding_reviewer,
             "coding_agent": self._coding_agent,
             "security_reviewer": self._security_reviewer,
@@ -112,7 +113,7 @@ class MockProvider(ModelProvider):
         if personality not in {"judge", "synthesizer"}:
             return None
         try:
-            return json.loads(text)
+            return cast(dict[str, Any], json.loads(text))
         except json.JSONDecodeError:
             return None
 
