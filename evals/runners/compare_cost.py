@@ -57,7 +57,7 @@ def main() -> None:
     parser.add_argument("--opus-output-tokens", type=int, required=True)
     parser.add_argument(
         "--opus-model",
-        default="claude-opus-4-20250514",
+        default="claude-opus-4-8",
         choices=sorted(MODEL_PRICING.keys()),
         help="Model used for the Opus baseline answer",
     )

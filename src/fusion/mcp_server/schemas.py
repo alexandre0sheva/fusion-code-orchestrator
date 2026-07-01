@@ -83,7 +83,7 @@ class CompareImplementInput(BaseModel):
         default="",
         description="Optional shell command to verify both implementations (e.g. uv run pytest -q)",
     )
-    max_agent_steps: int = Field(default=25, description="Max agent turns per arm")
+    max_agent_steps: int = Field(default=40, description="Max agent turns per arm")
     budget: str = Field(
         default="medium",
         description="Fusion orchestration budget: low/medium/high",

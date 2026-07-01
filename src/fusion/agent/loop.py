@@ -43,7 +43,7 @@ async def run_coding_agent(
     providers: dict[str, ModelProvider],
     security: SecurityPolicy | None = None,
     extra_system: str = "",
-    max_steps: int = 25,
+    max_steps: int = 40,
 ) -> AgentRunResult:
     """Run a tool-using coding agent until done or step limit."""
     policy = security or SecurityPolicy.from_env()
@@ -72,7 +72,8 @@ async def run_coding_agent(
         allow_shell=policy.allow_shell_execution,
     )
     system = AGENT_SYSTEM_PROMPT + extra_system
-    conversation = f"Task:\n{task}\n\nRespond with your first JSON action."
+    task_prompt = f"Task:\n{task}"
+    conversation = f"{task_prompt}\n\nRespond with your first JSON action."
 
     usage = AgentUsage(
         model_alias=model_alias,
@@ -88,7 +89,6 @@ async def run_coding_agent(
             system_prompt=system,
             user_prompt=conversation,
             max_tokens=entry.max_tokens,
-            temperature=0.2,
             metadata={"role": "agent"},
         )
         start = time.perf_counter()
@@ -127,8 +127,14 @@ async def run_coding_agent(
             break
 
         observation = executor.execute(action)
+        step_note = f"Step {step + 1}/{max_steps}."
+        if executor.files_changed:
+            step_note += f" Files written so far: {', '.join(sorted(executor.files_changed))}."
         conversation = (
-            f"Observation:\n{observation}\n\nContinue the task. Respond with the next JSON action."
+            f"{task_prompt}\n\n"
+            f"{step_note}\n"
+            f"Latest observation:\n{observation}\n\n"
+            "Continue the task. Respond with the next JSON action."
         )
     else:
         summary = summary or "Agent stopped at max steps without calling done."

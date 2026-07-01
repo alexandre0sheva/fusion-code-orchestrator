@@ -39,7 +39,7 @@ async def compare_implementations(
     workspace_root: Path,
     constraints: str = "",
     verify_command: str = "",
-    max_agent_steps: int = 25,
+    max_agent_steps: int = 40,
     budget: BudgetLevel = BudgetLevel.MEDIUM,
     opus_model: str = "claude-opus",
     fusion_executor_model: str = "claude-sonnet",
@@ -115,12 +115,22 @@ async def compare_implementations(
                 "",
                 "Tests to add:",
                 *[f"- {t}" for t in plan_output.tests_to_add],
+                *(
+                    ["", "Risks:", *[f"- {r}" for r in plan_output.risks]]
+                    if plan_output.risks
+                    else []
+                ),
             ]
+        )
+        fusion_task = (
+            f"{opus_task}\n\n"
+            "Fusion orchestration plan (use this content when writing deliverables):\n"
+            f"{plan_text}"
         )
         fusion_extra = FUSION_AGENT_APPENDIX.format(plan_text=plan_text)
         fusion_start = time.perf_counter()
         fusion_result = await run_coding_agent(
-            task=opus_task,
+            task=fusion_task,
             workspace=fusion_guard,
             model_alias=fusion_executor_model,
             registry=registry,

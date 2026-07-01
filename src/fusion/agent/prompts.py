@@ -23,6 +23,8 @@ FUSION_AGENT_APPENDIX = """
 
 You also received a multi-model implementation plan from Fusion orchestration.
 Follow the plan's sequence, affected modules, and tests unless you discover a blocker.
+Write required deliverable files early — at most one list_dir and two read_file calls before
+your first write_file when the task names specific output paths.
 Plan:
 {plan_text}
 """

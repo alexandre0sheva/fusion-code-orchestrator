@@ -22,7 +22,7 @@ class ModelRequest(BaseModel):
     messages: list[Message] = Field(default_factory=list)
     system_prompt: str = ""
     user_prompt: str = ""
-    temperature: float = 0.2
+    temperature: float | None = None
     max_tokens: int = 4096
     json_mode: bool = False
     timeout: float | None = None

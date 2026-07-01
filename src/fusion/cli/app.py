@@ -217,7 +217,7 @@ def compare_cost(
     opus_input_tokens: Annotated[int, typer.Option(help="Opus input tokens from Claude Code")],
     opus_output_tokens: Annotated[int, typer.Option(help="Opus output tokens from Claude Code")],
     opus_model: Annotated[str, typer.Option(help="Opus model id for pricing")] = (
-        "claude-opus-4-20250514"
+        "claude-opus-4-8"
     ),
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
@@ -282,7 +282,7 @@ def compare_implement_cmd(
     workspace: Annotated[str, typer.Option(help="Workspace root path")] = "",
     constraints: Annotated[str, typer.Option(help="Constraints")] = "",
     verify_command: Annotated[str, typer.Option(help="Verification command")] = "",
-    max_steps: Annotated[int, typer.Option(help="Max agent steps per arm")] = 25,
+    max_steps: Annotated[int, typer.Option(help="Max agent steps per arm")] = 40,
     mock: Annotated[bool, typer.Option(help="Use mock providers")] = False,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:

@@ -38,11 +38,14 @@ class OllamaProvider(ModelProvider):
             if m.role in {"system", "user", "assistant"}
         ]
 
+        options: dict[str, Any] = {"num_predict": request.max_tokens}
+        if request.temperature is not None:
+            options["temperature"] = request.temperature
         payload: dict[str, Any] = {
             "model": request.model_id,
             "messages": messages,
             "stream": False,
-            "options": {"num_predict": request.max_tokens, "temperature": request.temperature},
+            "options": options,
         }
         if request.json_mode:
             payload["format"] = "json"

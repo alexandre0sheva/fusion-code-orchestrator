@@ -41,8 +41,9 @@ class GoogleProvider(ModelProvider):
 
         generation_config: dict[str, Any] = {
             "maxOutputTokens": request.max_tokens,
-            "temperature": request.temperature,
         }
+        if request.temperature is not None:
+            generation_config["temperature"] = request.temperature
         if request.json_mode:
             generation_config["responseMimeType"] = "application/json"
 

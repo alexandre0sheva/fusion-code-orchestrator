@@ -34,8 +34,9 @@ class OpenAIProvider(ModelProvider):
             "model": request.model_id,
             "messages": messages,
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
         }
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
         if request.json_mode:
             payload["response_format"] = {"type": "json_object"}
 

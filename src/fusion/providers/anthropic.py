@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any
 
@@ -10,6 +11,16 @@ import httpx
 
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse, ProviderError
 from fusion.providers.http_utils import post_json_with_retries, try_parse_json
+
+_OPUS_MINOR_NO_SAMPLING = re.compile(r"^claude-opus-4-(\d+)(?:-|$)")
+
+
+def supports_sampling_params(model_id: str) -> bool:
+    """Return False for Opus 4.7+ models that reject temperature/top_p/top_k."""
+    match = _OPUS_MINOR_NO_SAMPLING.match(model_id)
+    if match is None:
+        return True
+    return int(match.group(1)) < 7
 
 
 class AnthropicProvider(ModelProvider):
@@ -40,9 +51,10 @@ class AnthropicProvider(ModelProvider):
         payload: dict[str, Any] = {
             "model": request.model_id,
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
             "messages": messages,
         }
+        if request.temperature is not None and supports_sampling_params(request.model_id):
+            payload["temperature"] = request.temperature
         if request.system_prompt:
             payload["system"] = request.system_prompt
         elif request.resolved_messages() and request.resolved_messages()[0].role == "system":

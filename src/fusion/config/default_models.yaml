@@ -199,7 +199,7 @@ models:
   claude-opus:
     alias: claude-opus
     provider: anthropic
-    model_id: claude-opus-4-20250514
+    model_id: claude-opus-4-8
     enabled: true
     display_name: Claude Opus
     max_tokens: 8192
@@ -219,7 +219,7 @@ models:
   claude-opus-disabled:
     alias: claude-opus-disabled
     provider: anthropic
-    model_id: claude-opus-4-20250514
+    model_id: claude-opus-4-8
     enabled: false
     display_name: Claude Opus (disabled example)
     max_tokens: 8192
