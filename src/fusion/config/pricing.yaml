@@ -3,12 +3,23 @@ pricing:
     provider: anthropic
     model_id: claude-opus-4-8
     alias: anthropic.claude-opus-4-8
-    input_price_per_1m_tokens: 15.0
-    output_price_per_1m_tokens: 75.0
+    input_price_per_1m_tokens: 5.0
+    output_price_per_1m_tokens: 25.0
     currency: USD
-    source_notes: Configured list-price placeholder; verify against current provider pricing.
-    updated_at: "2026-07-01"
-    is_estimate: true
+    source_notes: Anthropic list price ($5/$25 per 1M tokens).
+    updated_at: "2026-07-08"
+    is_estimate: false
+
+  anthropic.claude-haiku-4-5:
+    provider: anthropic
+    model_id: claude-haiku-4-5
+    alias: anthropic.claude-haiku-4-5
+    input_price_per_1m_tokens: 1.0
+    output_price_per_1m_tokens: 5.0
+    currency: USD
+    source_notes: Anthropic list price ($1/$5 per 1M tokens).
+    updated_at: "2026-07-08"
+    is_estimate: false
 
   anthropic.claude-sonnet-4-6:
     provider: anthropic

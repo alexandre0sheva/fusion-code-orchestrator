@@ -6,6 +6,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, TypedDict
 
+from fusion.benchmark.shadow import (
+    ShadowComparison,
+    run_shadow_comparison,
+    should_run_shadow,
+)
+from fusion.config.env import is_test_mode
+from fusion.config.loader import BaselineEntry
 from fusion.evals.engine import EvalEngine
 from fusion.evals.schemas import (
     ContextEvalResult,
@@ -18,6 +25,8 @@ from fusion.orchestration.disagreement import analyze_disagreement
 from fusion.orchestration.fanout import FanoutResult, fanout_to_panel
 from fusion.orchestration.judge import judge_panel_responses
 from fusion.orchestration.output_parser import parse_structured_output
+from fusion.orchestration.prompts import build_user_prompt, get_system_prompt
+from fusion.orchestration.refine import RefinementResult, refine_panel_responses
 from fusion.orchestration.schemas import (
     AnswerEvalInput,
     AnswerEvalOutput,
@@ -43,7 +52,7 @@ from fusion.routing.model_registry import ModelRegistry
 from fusion.routing.policy import RoutingDecision, RoutingPolicy
 from fusion.security.policy import SecurityPolicy
 from fusion.security.redaction import redact_secrets
-from fusion.storage.run_store import RunStepRecord, RunStore
+from fusion.storage.run_store import RunStepRecord, RunStore, ShadowComparisonRecord
 from fusion.telemetry.cost import (
     CostComparison,
     ModelUsage,
@@ -73,6 +82,7 @@ class PipelineContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     max_models: int | None = None
+    shadow_baseline: bool | None = None
 
 
 @dataclass
@@ -113,6 +123,8 @@ class PipelineResult:
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
     fanout: FanoutResult | None = None
+    refinement: RefinementResult | None = None
+    shadow: ShadowComparison | None = None
     warnings: list[str] = field(default_factory=list)
     evals: PipelineEvals | None = None
 
@@ -415,6 +427,70 @@ class BasePipeline:
             self._persist_run(result, trace, self._build_step_records(result), routing_decision)
             return result
 
+        refinement_result: RefinementResult | None = None
+        refine_config = self._routing.budgets.refinement
+        if refine_config.enabled_for(ctx.budget.value):
+            successful, refinement_result = await refine_panel_responses(
+                responses=successful,
+                registry_models=self._registry.models,
+                providers=self._providers,
+                task_type=task_type,
+                original_task=sanitized_primary.text,
+                config=refine_config,
+            )
+            warnings.extend(refinement_result.warnings)
+            for refine_call in refinement_result.calls:
+                response = refine_call.response
+                if response is None:
+                    usage_models.append(
+                        ModelUsage(
+                            provider=refine_call.provider,
+                            model_alias=refine_call.model_name,
+                            provider_model_id=refine_call.provider_model_id,
+                            latency_ms=refine_call.latency_ms,
+                            success=False,
+                            error_type=refine_call.error_type,
+                            error=refine_call.error,
+                        )
+                    )
+                    trace.add_step(
+                        StepTrace(
+                            step_name=f"refine:{refine_call.model_name}",
+                            model_name=refine_call.model_name,
+                            provider=refine_call.provider,
+                            latency_ms=refine_call.latency_ms,
+                            eval_summary={"refined": False, "error": refine_call.error},
+                        )
+                    )
+                    continue
+                entry = self._registry.get(refine_call.model_name)
+                cost = self._pricing.estimate_response_cost(response, entry)
+                fusion_cost_known = fusion_cost_known and cost.known
+                if cost.amount_usd is not None:
+                    fusion_total_cost += cost.amount_usd
+                    budget.record(cost_usd=cost.amount_usd, latency_ms=response.latency_ms)
+                usage_models.append(
+                    model_usage_from_response(
+                        response, model_alias=refine_call.model_name, cost=cost
+                    )
+                )
+                trace.add_step(
+                    StepTrace(
+                        step_name=f"refine:{refine_call.model_name}",
+                        model_name=refine_call.model_name,
+                        provider=response.provider,
+                        input_tokens=response.input_tokens or 0,
+                        output_tokens=response.output_tokens or 0,
+                        latency_ms=response.latency_ms,
+                        cost_usd=cost.amount_usd or 0.0,
+                        eval_summary={
+                            "refined": refine_call.refined,
+                            "cost_known": cost.known,
+                            "cost_is_estimate": cost.is_estimate,
+                        },
+                    )
+                )
+
         evaluations = await judge_panel_responses(
             eval_engine=self._eval_engine,
             responses=successful,
@@ -552,6 +628,88 @@ class BasePipeline:
             pricing=self._pricing,
         )
 
+        shadow_result: ShadowComparison | None = None
+        if should_run_shadow(ctx.shadow_baseline):
+            shadow_baseline_entry: BaselineEntry | None = None
+            if is_test_mode(None) and "mock" in self._providers:
+                shadow_baseline_entry = BaselineEntry(
+                    name="Mock Baseline",
+                    provider="mock",
+                    model_id="mock-fast",
+                    pricing_alias="mock.mock-fast",
+                )
+            shadow_result = await run_shadow_comparison(
+                task_prompt=build_user_prompt(
+                    task_type=task_type,
+                    primary_content=sanitized_primary.text,
+                    context=sanitized_context.text,
+                    file_snippets=sanitized_snippets,
+                    changed_files=ctx.changed_files,
+                ),
+                system_prompt=get_system_prompt(task_type),
+                fusion_answer=synth_response.content,
+                fusion_cost_usd=fusion_total_cost if fusion_cost_known else None,
+                fusion_latency_ms=total_latency,
+                registry_models=self._registry.models,
+                providers=self._providers,
+                judge_model_alias=judge_model,
+                pricing=self._pricing,
+                baseline=shadow_baseline_entry,
+            )
+            warnings.extend(shadow_result.warnings)
+            if (
+                shadow_result.ran
+                and shadow_result.baseline_cost_known
+                and shadow_result.baseline_cost_usd is not None
+            ):
+                actual_savings = (
+                    shadow_result.baseline_cost_usd - fusion_total_cost
+                    if fusion_cost_known
+                    else None
+                )
+                cost_comparison = cost_comparison.model_copy(
+                    update={
+                        "baseline_estimated_cost_usd": shadow_result.baseline_cost_usd,
+                        "baseline_cost_known": True,
+                        "savings_usd": actual_savings,
+                        "savings_percent": (
+                            actual_savings / shadow_result.baseline_cost_usd * 100
+                            if actual_savings is not None
+                            and shadow_result.baseline_cost_usd > 0
+                            else None
+                        ),
+                        "fusion_is_cheaper": (
+                            actual_savings > 0 if actual_savings is not None else None
+                        ),
+                        "comparison_notes": [
+                            *cost_comparison.comparison_notes,
+                            "Baseline cost and latency are actual values from a "
+                            "shadow run, not estimates.",
+                        ],
+                    }
+                )
+            if shadow_result.ran:
+                self._run_store.record_shadow_comparison(
+                    ShadowComparisonRecord(
+                        run_id=run_id,
+                        task_type=task_type.value,
+                        baseline_model=shadow_result.baseline_model,
+                        judge_model=shadow_result.judge_model,
+                        winner=shadow_result.winner,
+                        fusion_score=shadow_result.fusion_score,
+                        baseline_score=shadow_result.baseline_score,
+                        fusion_cost_usd=shadow_result.fusion_cost_usd,
+                        baseline_cost_usd=shadow_result.baseline_cost_usd,
+                        fusion_latency_ms=shadow_result.fusion_latency_ms,
+                        baseline_latency_ms=shadow_result.baseline_latency_ms,
+                        raw={
+                            "baseline_name": shadow_result.baseline_name,
+                            "judge_reason": shadow_result.judge_reason,
+                            "warnings": shadow_result.warnings,
+                        },
+                    )
+                )
+
         result = PipelineResult(
             run_id=run_id,
             task_type=task_type.value,
@@ -568,6 +726,8 @@ class BasePipeline:
             usage=usage,
             cost_comparison=cost_comparison,
             fanout=fanout_results,
+            refinement=refinement_result,
+            shadow=shadow_result,
             warnings=warnings,
             evals=evals,
         )
@@ -802,12 +962,62 @@ class BasePipeline:
         failed = result.fanout.failed_count if result.fanout else 0
         lines.append(f"- Fusion wall time: {usage.fusion_wall_latency_ms / 1000:.1f}s")
         lines.append(f"- Panel: {panel_count} models, {succeeded} succeeded, {failed} failed")
+        if result.refinement and result.refinement.ran:
+            lines.append(
+                f"- Refinement: {result.refinement.refined_count}/"
+                f"{len(result.refinement.calls)} answers refined"
+            )
+        shadow = result.shadow
+        if shadow and shadow.ran:
+            if shadow.winner in {"fusion", "baseline", "tie"}:
+                verdict = {
+                    "fusion": "Fusion won",
+                    "baseline": f"{shadow.baseline_name} won",
+                    "tie": "tie",
+                }[shadow.winner]
+                scores = ""
+                if shadow.fusion_score is not None and shadow.baseline_score is not None:
+                    scores = (
+                        f" (blind judge: fusion {shadow.fusion_score:.2f} vs "
+                        f"baseline {shadow.baseline_score:.2f})"
+                    )
+                lines.append(f"- Shadow A/B vs {shadow.baseline_name}: {verdict}{scores}")
+            if shadow.baseline_latency_ms is not None:
+                lines.append(
+                    f"- Shadow baseline latency: {shadow.baseline_latency_ms / 1000:.1f}s actual"
+                )
         if cost_comparison.comparison_notes:
             lines.append(f"- Note: {cost_comparison.comparison_notes[0]}")
+        footer = self._lifetime_footer()
+        if footer:
+            lines.append(footer)
         if result.warnings:
             lines.extend(["", "### Caveats"])
             lines.extend(f"- {warning}" for warning in result.warnings[:5])
         return "\n".join(lines)
+
+    def _lifetime_footer(self) -> str | None:
+        """One-line cumulative summary appended to every run's display output."""
+        try:
+            stats = self._run_store.get_stats()
+        except Exception:  # noqa: BLE001 — stats must never break a run
+            return None
+        if stats.total_runs < 2:
+            return None
+        parts = [
+            f"Lifetime: {stats.total_runs} runs",
+            f"${stats.total_fusion_cost_usd:.2f} spent",
+        ]
+        if stats.baseline_estimate_runs:
+            savings_pct = stats.estimated_savings_percent
+            pct_text = f" ({savings_pct:.1f}% saved)" if savings_pct is not None else ""
+            parts.append(
+                f"vs ${stats.total_baseline_estimated_cost_usd:.2f} baseline est.{pct_text}"
+            )
+        win_rate = stats.shadow_win_rate_percent
+        if win_rate is not None:
+            parts.append(f"shadow win-rate {win_rate:.0f}% (n={stats.shadow_total})")
+        return "- " + " · ".join(parts)
 
     def _persist_run(
         self,
@@ -833,6 +1043,12 @@ class BasePipeline:
                 result.cost_comparison.model_dump() if result.cost_comparison else {}
             ),
             "fanout": result.fanout.model_dump() if result.fanout else {},
+            "refinement": result.refinement.model_dump() if result.refinement else {},
+            "shadow": (
+                result.shadow.model_dump(exclude={"baseline_answer"})
+                if result.shadow
+                else {}
+            ),
             "display_markdown": self._build_display_markdown(
                 title="Fusion Result",
                 result=result,
@@ -890,6 +1106,7 @@ class CodeReviewPipeline(BasePipeline):
             changed_files=input.changed_files,
             budget=input.budget,
             max_models=input.max_models,
+            shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
         structured = result.structured_output
@@ -933,6 +1150,7 @@ class FusionAskPipeline(BasePipeline):
             changed_files=input.changed_files,
             budget=input.budget,
             max_models=input.max_models,
+            shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
         s = result.structured_output
@@ -982,6 +1200,7 @@ class DebugPipeline(BasePipeline):
             primary_content=primary,
             context="\n\n".join(context_parts),
             budget=input.budget,
+            shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
         s = result.structured_output
@@ -1017,6 +1236,7 @@ class ArchitectureDecisionPipeline(BasePipeline):
             primary_content=primary,
             context=input.repo_context,
             budget=input.budget,
+            shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
         s = result.structured_output
@@ -1054,6 +1274,7 @@ class ImplementationPlanPipeline(BasePipeline):
             primary_content=primary,
             context=input.repo_context,
             budget=input.budget,
+            shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
         s = result.structured_output

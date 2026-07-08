@@ -61,6 +61,26 @@ def _print_json(data: dict[str, object]) -> None:
     console.print_json(json.dumps(data, indent=2, default=str))
 
 
+@app.command("stats")
+def stats(
+    db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print raw JSON")] = False,
+    recent_shadow: Annotated[
+        int, typer.Option(help="Recent shadow comparisons to show")
+    ] = 10,
+) -> None:
+    """Show cumulative Fusion stats: spend vs baseline, savings, shadow win-rate."""
+    from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
+
+    store = RunStore(db_path=db_path)
+    fusion_stats = store.get_stats()
+    recent = store.list_shadow_comparisons(limit=recent_shadow)
+    if as_json:
+        _print_json(stats_to_dict(fusion_stats, recent))
+        return
+    console.print(format_stats_markdown(fusion_stats, recent))
+
+
 @app.command("review-diff")
 def review_diff(
     file: Annotated[Path, typer.Option("--file", help="Path to diff file")],

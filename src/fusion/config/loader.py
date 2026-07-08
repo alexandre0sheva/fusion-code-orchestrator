@@ -87,12 +87,26 @@ class FanoutConfig(BaseModel):
     allow_partial_results: bool = True
 
 
+class RefinementConfig(BaseModel):
+    """Mixture-of-agents refinement round controls."""
+
+    enabled_budgets: list[BudgetLevelName] = Field(default_factory=list)
+    per_model_timeout_seconds: float = Field(default=45.0, gt=0)
+    global_timeout_seconds: float = Field(default=60.0, gt=0)
+    min_panel_size: int = Field(default=2, ge=1)
+    max_rounds: int = Field(default=1, ge=0)
+
+    def enabled_for(self, budget: str) -> bool:
+        return self.max_rounds > 0 and budget in self.enabled_budgets
+
+
 class RoutingPoliciesConfig(BaseModel):
     """Full routing policies loaded from YAML."""
 
     policies: dict[str, RoutingPolicyEntry]
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
     fanout: FanoutConfig = Field(default_factory=FanoutConfig)
+    refinement: RefinementConfig = Field(default_factory=RefinementConfig)
 
 
 class PricingEntry(BaseModel):

@@ -191,6 +191,40 @@ def build_synthesis_prompt(
     return "\n".join(parts)
 
 
+def build_refinement_prompt(
+    *,
+    task_type: TaskType,
+    original_task: str,
+    own_answer: str,
+    peer_answers: list[tuple[str, str]],
+) -> str:
+    """Build the mixture-of-agents refinement prompt for one panel model.
+
+    Peer answers are anonymized as "Response A", "Response B", ... so the model
+    judges content, not reputation.
+    """
+    key = canonical_task_key(task_type)
+    parts = [
+        f"You previously answered a {key} task. Below are anonymized answers from "
+        "other expert models to the same task, together with your own answer.",
+        "Critique all answers, adopt correct points you missed, and discard mistakes. "
+        "Then produce a single improved final answer.",
+        f"\n## Original Task\n{original_task[:6000]}",
+        f"\n## Your Answer\n{own_answer[:4000]}",
+    ]
+    for label, content in peer_answers:
+        parts.append(f"\n## Response {label}\n{content[:4000]}")
+    parts.append(
+        "\n## Refinement Instructions\n"
+        "- Keep everything correct from your answer; integrate insights you missed.\n"
+        "- Drop claims a peer convincingly contradicts unless you have strong evidence.\n"
+        "- Do not mention the other responses or this refinement process.\n"
+        "- Return the complete improved answer in the same structured format as before."
+    )
+    parts.append(_STRUCTURED_OUTPUT_RULES)
+    return "\n".join(parts)
+
+
 def build_judge_prompt(
     *,
     response_content: str,

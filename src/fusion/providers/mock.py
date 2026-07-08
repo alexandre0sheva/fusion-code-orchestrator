@@ -19,6 +19,7 @@ MOCK_PERSONALITIES = frozenset(
         "architecture_advisor",
         "weak_model",
         "judge",
+        "shadow_judge",
         "synthesizer",
     }
 )
@@ -105,12 +106,13 @@ class MockProvider(ModelProvider):
             "architecture_advisor": self._architecture_advisor,
             "weak_model": self._weak_model,
             "judge": self._judge,
+            "shadow_judge": self._shadow_judge,
         }
         generator = generators.get(personality, self._coding_reviewer)
         return generator(seed)
 
     def _maybe_parse_json(self, text: str, personality: str) -> dict[str, Any] | None:
-        if personality not in {"judge", "synthesizer"}:
+        if personality not in {"judge", "shadow_judge", "synthesizer"}:
             return None
         try:
             return cast(dict[str, Any], json.loads(text))
@@ -183,6 +185,19 @@ class MockProvider(ModelProvider):
                 "novelty": 0.5,
                 "overall_score": 0.76,
                 "notes": f"mock judge {seed}",
+            }
+        )
+
+    def _shadow_judge(self, seed: str) -> str:
+        # Deterministic blind-pairwise verdict keyed on the prompt seed.
+        pick = int(seed, 16) % 3
+        winner = {0: "1", 1: "2", 2: "tie"}[pick]
+        return json.dumps(
+            {
+                "winner": winner,
+                "answer_1_score": 0.82 if winner == "1" else 0.7,
+                "answer_2_score": 0.82 if winner == "2" else 0.7,
+                "reason": f"mock blind verdict {seed}",
             }
         )
 

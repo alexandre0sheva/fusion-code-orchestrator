@@ -16,6 +16,7 @@ multi-model workflows for coding tasks. It calls providers directly through adap
 - `fusion_plan_feature`
 - `fusion_eval_answer`
 - `fusion_compare_claude_runs`
+- `fusion_stats`
 - `fusion_compare_implement`
 
 `src/fusion/mcp_server/tools.py` converts MCP input schemas into orchestration pipeline
@@ -64,6 +65,36 @@ It tracks:
 
 Synthesis runs after fanout and disagreement analysis. The MCP request is still a normal
 blocking request from Claude Code's perspective.
+
+### Refinement (mixture-of-agents)
+
+`src/fusion/orchestration/refine.py` runs an optional second round after fanout when
+the routing config enables it for the effective budget (`refinement.enabled_budgets`,
+default `[high]`). Each successful panel model receives the peer answers anonymized as
+"Response A/B/C" plus its own answer and returns a revised answer. Failures keep the
+round-1 answer. Refined answers feed the judge, disagreement analysis, and synthesis;
+each call is traced as `refine:{model}` with full usage and cost.
+
+### Shadow baseline A/B
+
+`src/fusion/benchmark/shadow.py` optionally calls the configured baseline model
+(Opus 4.8) on the same sanitized task after synthesis, then asks the judge model for a
+blind pairwise verdict (answers presented in randomized order, unlabeled). Trigger via
+`FUSION_SHADOW_MODE` (`off` | `sampled` | `always`, with `FUSION_SHADOW_SAMPLE_RATE`)
+or a per-call `shadow_baseline` flag which overrides the env in both directions.
+
+Results are stored in the `shadow_comparisons` table (winner, blind scores, actual
+baseline cost and latency). When a shadow ran, the run's `cost_comparison` reports the
+actual baseline cost instead of the token-volume estimate. Shadow costs are measurement
+overhead and are never counted as Fusion cost. All shadow failures degrade to warnings.
+
+### Stats
+
+`RunStore.get_stats()` aggregates cumulative totals: run counts, Fusion spend, baseline
+estimates, per-task-type breakdown, and shadow win/tie/loss counts. Rendering lives in
+`src/fusion/telemetry/stats_format.py`, surfaced through the `fusion stats` CLI command,
+the `fusion_stats` MCP tool, and a one-line lifetime footer on every run's
+`display_markdown`.
 
 ### Evals
 

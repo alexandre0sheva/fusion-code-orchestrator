@@ -6,7 +6,10 @@ Claude Code remains the main coding agent. Fusion gives it external tools for ar
 
 ## Features
 
-- **8 MCP tools**: general Fusion answer, code review, debug, architecture, planning, answer evaluation, Claude-run comparison, optional isolated implementation benchmark
+- **9 MCP tools**: general Fusion answer, code review, debug, architecture, planning, answer evaluation, Claude-run comparison, cumulative stats, optional isolated implementation benchmark
+- **Cheap-panel orchestration**: Claude Haiku 4.5 + GPT mini + Gemini Flash panel with a Claude Sonnet synthesizer
+- **Mixture-of-agents refinement**: at `high` budget, panel models see anonymized peer answers and revise before synthesis
+- **Shadow baseline A/B**: opt-in real head-to-head vs Opus 4.8 with a blind pairwise judge and cumulative win-rate
 - **Multi-model fan-out**: concurrent panel calls with disagreement analysis
 - **Hybrid evaluation**: LLM-as-judge + deterministic safety/completeness checks
 - **Direct provider adapters**: Anthropic, OpenAI, Google (Ollama/LM Studio optional)
@@ -348,8 +351,11 @@ uv run python evals/runners/compare_pipelines.py
 | `fusion_plan_feature` | Implementation planning |
 | `fusion_eval_answer` | Answer quality evaluation |
 | `fusion_compare_claude_runs` | Compare Claude Code + Opus vs Claude Code + Fusion outputs |
+| `fusion_stats` | Cumulative spend vs baseline, savings, and shadow A/B win-rate |
 
 Each tool accepts an optional `budget` field: `low`, `medium`, `high`, or `local_only`.
+Orchestration tools also accept `shadow_baseline: true|false` to force or suppress a
+shadow A/B run against the real baseline model for that call.
 
 Each tool returns both top-level task-specific fields and a consistent MCP envelope:
 
@@ -371,12 +377,14 @@ Claude Code → MCP Tools → Orchestration Pipeline
                               ├── Secret Redaction
                               ├── Task Classification & Routing
                               ├── Context Eval
-                              ├── Panel Fan-out (concurrent, real models)
+                              ├── Panel Fan-out (concurrent, cheap models)
+                              ├── Refinement Round (high budget: anonymized peer review)
                               ├── Response Eval (LLM judge + deterministic)
                               ├── Disagreement Analysis
-                              ├── Synthesis
+                              ├── Synthesis (Claude Sonnet)
                               ├── Final Eval
-                              └── SQLite Logging
+                              ├── Shadow Baseline A/B (opt-in: real Opus + blind judge)
+                              └── SQLite Logging + Cumulative Stats
 ```
 
 ## Security model and limitations
@@ -402,10 +410,63 @@ For the exact Claude Code A/B workflow, see
 
 | Role | Models |
 |------|--------|
-| Code review panel | Claude Sonnet, GPT-5.4-mini (security role), Gemini Flash |
-| Debug panel | Claude Sonnet, Gemini Flash |
+| Code review panel | Claude Haiku 4.5, GPT-5.4-mini (security role), Gemini Flash |
+| Debug panel | Claude Haiku 4.5, GPT-5.4-mini, Gemini Flash |
 | Judge | Gemini Flash (JSON scoring) |
 | Synthesizer | Claude Sonnet |
+
+The panel is intentionally cheap ($0.10–$1.00 per 1M input tokens); the synthesizer is
+the strongest model in the loop because mixture-of-agents quality depends most on the
+final aggregation step. High-risk code reviews automatically pull Claude Sonnet into
+the panel as well.
+
+### Refinement round (mixture-of-agents)
+
+At `high` budget, after the first fan-out each surviving panel model receives the other
+models' answers anonymized as "Response A/B/C" plus its own, critiques them, and returns
+a revised answer; synthesis then merges the refined set. A model whose refinement call
+fails keeps its round-1 answer, so refinement never loses information. Configure in
+`routing_policies.yaml`:
+
+```yaml
+refinement:
+  enabled_budgets: [high]
+  per_model_timeout_seconds: 45
+  global_timeout_seconds: 60
+  min_panel_size: 2
+  max_rounds: 1
+```
+
+### Shadow baseline A/B (real proof, opt-in)
+
+To measure quality against the real frontier baseline instead of an estimate, enable
+shadow mode. Fusion then also sends the same sanitized task to Opus 4.8, a blind
+pairwise judge scores both answers in randomized order, and the verdict plus actual
+baseline cost/latency are stored in SQLite.
+
+```bash
+# .env — off (default) | sampled | always
+FUSION_SHADOW_MODE=sampled
+FUSION_SHADOW_SAMPLE_RATE=0.2
+```
+
+Per-call override on any orchestration tool: `shadow_baseline: true` (or `false`).
+Shadow calls cost real API money and are never counted as Fusion cost. Any shadow
+failure degrades to a warning; the main run always succeeds.
+
+### Cumulative stats
+
+```bash
+uv run fusion stats            # dashboard: spend, savings, shadow win-rate
+uv run fusion stats --json     # machine-readable
+```
+
+Inside Claude Code, call the `fusion_stats` MCP tool. Every run's `display_markdown`
+also carries a lifetime footer, e.g.:
+
+```text
+- Lifetime: 42 runs · $0.85 spent vs $6.40 baseline est. (86.7% saved) · shadow win-rate 62% (n=8)
+```
 
 Panel members receive **real role prompts** (coding reviewer, security reviewer, debugger, architect, etc.) defined in `src/fusion/orchestration/prompts.py` — not mock personalities.
 
@@ -449,6 +510,8 @@ ollama pull llama3.2
 | `LMSTUDIO_ENABLED` | Enable LM Studio provider | `false` |
 | `LMSTUDIO_BASE_URL` | LM Studio endpoint | `http://localhost:1234/v1` |
 | `FUSION_DB_PATH` | SQLite database path | `./fusion_runs.db` |
+| `FUSION_SHADOW_MODE` | Shadow A/B vs baseline: `off`, `sampled`, `always` | `off` |
+| `FUSION_SHADOW_SAMPLE_RATE` | Fraction of runs shadowed in `sampled` mode | `0.2` |
 | `FUSION_LOG_RAW_PROMPTS` | Log unsanitized prompts (dangerous) | `false` |
 | `FUSION_DEFAULT_PROVIDER` | Set to `mock` for offline mode | unset (live) |
 
@@ -461,6 +524,7 @@ uv run fusion debug --error "TimeoutError: ..."      # Debug an error
 uv run fusion decide --question "Redis or memcache?" # Architecture decision
 uv run fusion plan --feature-file feature.md         # Implementation plan
 uv run fusion eval-answer --question-file q.md --answer-file a.md
+uv run fusion stats                                  # Cumulative stats dashboard
 uv run fusion runs list                              # List recent runs
 uv run fusion runs show RUN_ID                       # Show run details
 uv run fusion version                                # Show version

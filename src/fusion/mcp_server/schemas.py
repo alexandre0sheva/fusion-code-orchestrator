@@ -22,6 +22,13 @@ class ReviewDiffInput(BaseModel):
     budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
     include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
+    shadow_baseline: bool | None = Field(
+        default=None,
+        description=(
+            "Force (true) or suppress (false) a shadow A/B run against the real "
+            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
+        ),
+    )
 
 
 class FusionAskInput(BaseModel):
@@ -34,6 +41,13 @@ class FusionAskInput(BaseModel):
     budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
     include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
+    shadow_baseline: bool | None = Field(
+        default=None,
+        description=(
+            "Force (true) or suppress (false) a shadow A/B run against the real "
+            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
+        ),
+    )
 
 
 class DebugErrorInput(BaseModel):
@@ -48,6 +62,13 @@ class DebugErrorInput(BaseModel):
     recent_changes: str = Field(default="", description="Recent changes that may relate")
     environment: str = Field(default="", description="Runtime environment details")
     budget: str = Field(default="medium", description="Budget level")
+    shadow_baseline: bool | None = Field(
+        default=None,
+        description=(
+            "Force (true) or suppress (false) a shadow A/B run against the real "
+            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
+        ),
+    )
 
 
 class DecideArchitectureInput(BaseModel):
@@ -59,6 +80,13 @@ class DecideArchitectureInput(BaseModel):
     context: str = Field(default="", description="System context")
     file_snippets: list[str] = Field(default_factory=list)
     budget: str = Field(default="medium", description="Budget level")
+    shadow_baseline: bool | None = Field(
+        default=None,
+        description=(
+            "Force (true) or suppress (false) a shadow A/B run against the real "
+            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
+        ),
+    )
 
 
 class PlanFeatureInput(BaseModel):
@@ -70,6 +98,13 @@ class PlanFeatureInput(BaseModel):
     file_snippets: list[str] = Field(default_factory=list)
     existing_patterns: str = Field(default="", description="Existing patterns to follow")
     budget: str = Field(default="medium", description="Budget level")
+    shadow_baseline: bool | None = Field(
+        default=None,
+        description=(
+            "Force (true) or suppress (false) a shadow A/B run against the real "
+            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
+        ),
+    )
 
 
 class EvalAnswerInput(BaseModel):
@@ -80,6 +115,15 @@ class EvalAnswerInput(BaseModel):
     context: str = Field(default="", description="Context used to generate the answer")
     expected_criteria: list[str] = Field(default_factory=list)
     rubric: str = Field(default="", description="Evaluation rubric")
+
+
+class FusionStatsInput(BaseModel):
+    """Input for fusion_stats tool."""
+
+    recent_shadow_limit: int = Field(
+        default=10,
+        description="How many recent shadow A/B comparisons to include",
+    )
 
 
 class CompareImplementInput(BaseModel):

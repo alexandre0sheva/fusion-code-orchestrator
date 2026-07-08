@@ -2,7 +2,7 @@ policies:
   code_review:
     task_type: code_review
     panel_models:
-      - claude-sonnet
+      - claude-haiku
       - gpt-5.4-mini-security
       - gemini-flash
     judge_model: gemini-flash
@@ -12,8 +12,9 @@ policies:
     high_risk_panel_models:
       - claude-sonnet
       - gpt-5.4-mini-security
+      - claude-haiku
       - gemini-flash
-    high_risk_max_panel_size: 3
+    high_risk_max_panel_size: 4
     budgets:
       low:
         panel_models:
@@ -21,12 +22,13 @@ policies:
         max_panel_size: 1
       medium:
         panel_models:
-          - claude-sonnet
-          - gpt-5.4-mini
-        max_panel_size: 2
+          - claude-haiku
+          - gpt-5.4-mini-security
+          - gemini-flash
+        max_panel_size: 3
       high:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gpt-5.4-mini-security
           - gemini-flash
         max_panel_size: 3
@@ -39,8 +41,9 @@ policies:
   debugging:
     task_type: debugging
     panel_models:
-      - claude-sonnet
+      - claude-haiku
       - gpt-5.4-mini
+      - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
     max_panel_size: 3
@@ -52,12 +55,13 @@ policies:
         max_panel_size: 1
       medium:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
+          - gpt-5.4-mini
           - gemini-flash
-        max_panel_size: 2
+        max_panel_size: 3
       high:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gpt-5.4-mini
           - gemini-flash
         max_panel_size: 3
@@ -69,8 +73,9 @@ policies:
   architecture_decision:
     task_type: architecture_decision
     panel_models:
-      - claude-sonnet
+      - claude-haiku
       - gpt-5.4-mini
+      - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
     max_panel_size: 3
@@ -82,12 +87,13 @@ policies:
         max_panel_size: 1
       medium:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gpt-5.4-mini
-        max_panel_size: 2
+          - gemini-flash
+        max_panel_size: 3
       high:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gpt-5.4-mini
           - gemini-flash
         max_panel_size: 3
@@ -99,8 +105,9 @@ policies:
   implementation_plan:
     task_type: implementation_plan
     panel_models:
-      - claude-sonnet
+      - claude-haiku
       - gpt-5.4-mini
+      - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
     max_panel_size: 3
@@ -112,13 +119,15 @@ policies:
         max_panel_size: 1
       medium:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
+          - gpt-5.4-mini
           - gemini-flash
-        max_panel_size: 2
+        max_panel_size: 3
       high:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gpt-5.4-mini
+          - gemini-flash
         max_panel_size: 3
       local_only:
         panel_models:
@@ -144,7 +153,7 @@ policies:
         max_panel_size: 1
       high:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gemini-flash
         max_panel_size: 2
       local_only:
@@ -155,7 +164,7 @@ policies:
   default:
     task_type: default
     panel_models:
-      - claude-sonnet
+      - claude-haiku
       - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
@@ -168,14 +177,15 @@ policies:
         max_panel_size: 1
       medium:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gemini-flash
         max_panel_size: 2
       high:
         panel_models:
-          - claude-sonnet
+          - claude-haiku
           - gpt-5.4-mini
-        max_panel_size: 2
+          - gemini-flash
+        max_panel_size: 3
       local_only:
         panel_models:
           - ollama-llama
@@ -193,3 +203,11 @@ fanout:
   min_successful_responses: 2
   cancel_on_global_timeout: true
   allow_partial_results: true
+
+refinement:
+  enabled_budgets:
+    - high
+  per_model_timeout_seconds: 45
+  global_timeout_seconds: 60
+  min_panel_size: 2
+  max_rounds: 1

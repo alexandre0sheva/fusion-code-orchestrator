@@ -11,6 +11,7 @@ from fusion.mcp_server.schemas import (
     DecideArchitectureInput,
     EvalAnswerInput,
     FusionAskInput,
+    FusionStatsInput,
     PlanFeatureInput,
     ReviewDiffInput,
 )
@@ -61,6 +62,11 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     async def fusion_eval_answer(input: EvalAnswerInput) -> dict[str, Any]:
         """Evaluate answer quality with multi-model scoring."""
         return await tools.fusion_eval_answer(input)
+
+    @mcp.tool()
+    async def fusion_stats(input: FusionStatsInput) -> dict[str, Any]:
+        """Show cumulative Fusion stats: spend vs baseline, savings, shadow A/B win-rate."""
+        return await tools.fusion_stats(input)
 
     @mcp.tool()
     async def fusion_compare_claude_runs(input: CompareClaudeRunsInput) -> dict[str, Any]:

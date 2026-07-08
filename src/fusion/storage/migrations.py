@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -45,6 +45,26 @@ _MIGRATIONS: dict[int, str] = {
     2: """
     ALTER TABLE runs ADD COLUMN routing_json TEXT;
     ALTER TABLE runs ADD COLUMN warnings_json TEXT;
+    """,
+    3: """
+    CREATE TABLE IF NOT EXISTS shadow_comparisons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(run_id),
+        task_type TEXT,
+        baseline_model TEXT NOT NULL,
+        judge_model TEXT,
+        winner TEXT NOT NULL,
+        fusion_score REAL,
+        baseline_score REAL,
+        fusion_cost_usd REAL,
+        baseline_cost_usd REAL,
+        fusion_latency_ms REAL,
+        baseline_latency_ms REAL,
+        raw_json TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shadow_run_id ON shadow_comparisons(run_id);
     """,
 }
 

@@ -67,6 +67,7 @@ class CodeReviewInput(BaseModel):
     budget: BudgetLevel = BudgetLevel.MEDIUM
     max_models: int | None = None
     include_raw_outputs: bool = False
+    shadow_baseline: bool | None = None
 
 
 class FusionAskInput(BaseModel):
@@ -79,6 +80,7 @@ class FusionAskInput(BaseModel):
     budget: BudgetLevel = BudgetLevel.MEDIUM
     max_models: int | None = None
     include_raw_outputs: bool = False
+    shadow_baseline: bool | None = None
 
 
 class FusionAskOutput(BaseModel):
@@ -136,6 +138,7 @@ class DebugInput(BaseModel):
     recent_changes: str = ""
     environment: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    shadow_baseline: bool | None = None
 
 
 class DebugOutput(BaseModel):
@@ -166,6 +169,7 @@ class ArchitectureDecisionInput(BaseModel):
     options: list[str] = Field(default_factory=list)
     repo_context: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    shadow_baseline: bool | None = None
 
 
 class ArchitectureDecisionOutput(BaseModel):
@@ -198,6 +202,7 @@ class ImplementationPlanInput(BaseModel):
     repo_context: str = ""
     existing_patterns: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    shadow_baseline: bool | None = None
 
 
 class ImplementationPlanOutput(BaseModel):

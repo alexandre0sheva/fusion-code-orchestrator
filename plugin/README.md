@@ -13,6 +13,7 @@ This plugin adds multi-model orchestration tools to Claude Code via a local Pyth
 | `fusion_plan_feature` | Implementation planning |
 | `fusion_eval_answer` | Answer quality evaluation |
 | `fusion_compare_claude_runs` | Compare Claude Code + Opus output against Claude Code + Fusion output |
+| `fusion_stats` | Cumulative spend vs baseline, savings, and shadow A/B win-rate |
 
 ## Installation
 

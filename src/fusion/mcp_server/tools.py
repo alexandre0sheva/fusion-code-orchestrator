@@ -14,6 +14,7 @@ from fusion.mcp_server.schemas import (
     DecideArchitectureInput,
     EvalAnswerInput,
     FusionAskInput,
+    FusionStatsInput,
     PlanFeatureInput,
     ReviewDiffInput,
 )
@@ -46,6 +47,8 @@ from fusion.orchestration.schemas import (
     ImplementationPlanInput as PipelinePlanInput,
 )
 from fusion.routing.budget import BudgetLevel
+from fusion.storage.run_store import RunStore
+from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
 
 
 def _winner_from_delta(
@@ -143,6 +146,7 @@ class FusionTools:
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
+                shadow_baseline=input.shadow_baseline,
             )
         )
         return result.model_dump()
@@ -158,6 +162,7 @@ class FusionTools:
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
+                shadow_baseline=input.shadow_baseline,
             )
         )
         return result.model_dump()
@@ -172,6 +177,7 @@ class FusionTools:
                 recent_changes=input.recent_changes,
                 environment=input.environment,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                shadow_baseline=input.shadow_baseline,
             )
         )
         return result.model_dump()
@@ -185,6 +191,7 @@ class FusionTools:
                 options=input.options,
                 repo_context=input.context,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                shadow_baseline=input.shadow_baseline,
             )
         )
         return result.model_dump()
@@ -198,6 +205,7 @@ class FusionTools:
                 repo_context=input.context,
                 existing_patterns=input.existing_patterns,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                shadow_baseline=input.shadow_baseline,
             )
         )
         return result.model_dump()
@@ -216,6 +224,17 @@ class FusionTools:
             )
         )
         return result.model_dump()
+
+    async def fusion_stats(self, input: FusionStatsInput) -> dict[str, Any]:
+        """Return cumulative Fusion cost, latency, and shadow win-rate statistics."""
+        store = RunStore(db_path=self._db_path)
+        stats = store.get_stats()
+        recent = store.list_shadow_comparisons(limit=input.recent_shadow_limit)
+        return {
+            "display_markdown": format_stats_markdown(stats, recent),
+            "result": stats_to_dict(stats, recent),
+            "warnings": [],
+        }
 
     async def fusion_compare_claude_runs(
         self,

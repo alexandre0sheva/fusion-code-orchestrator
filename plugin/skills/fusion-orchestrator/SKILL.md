@@ -45,6 +45,17 @@ Do **not** call Fusion for:
 | `fusion_plan_feature` | Planning implementation of a feature |
 | `fusion_eval_answer` | Evaluating quality of an LLM answer |
 | `fusion_compare_claude_runs` | Comparing Claude Code + Opus vs Claude Code + Fusion outputs |
+| `fusion_stats` | Showing cumulative savings and shadow A/B win-rate vs the frontier baseline |
+
+## Budgets, Refinement, and Shadow A/B
+
+- `budget: "high"` adds a mixture-of-agents refinement round (panel models revise
+  after seeing anonymized peer answers) — use it for hard or high-stakes tasks.
+- `shadow_baseline: true` on any orchestration tool also runs the real baseline model
+  (Opus 4.8) on the same task and records a blind pairwise verdict. Use it when the
+  user wants proof that Fusion matches big-model quality; it costs extra API money.
+- When the user asks "how is Fusion doing" or wants savings/quality numbers, call
+  `fusion_stats`.
 
 ## Best Practices
 
