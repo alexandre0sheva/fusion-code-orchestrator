@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import FanoutConfig, ModelEntry
+from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.prompts import build_user_prompt, get_role_prompt, get_system_prompt
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.classifier import TaskType
@@ -73,9 +74,14 @@ async def fanout_to_panel(
     file_snippets: list[str] | None = None,
     changed_files: list[str] | None = None,
     config: FanoutConfig | None = None,
+    gateway: CallGateway | None = None,
 ) -> FanoutResult:
-    """Call all panel models concurrently and return structured outcomes."""
+    """Call all panel models concurrently and return structured outcomes.
+
+    Every call is recorded by ``gateway`` (a throwaway one when the caller has no run ledger).
+    """
     fanout_config = config or FanoutConfig()
+    gateway = gateway or standalone_gateway(registry_models, providers)
     started = time.perf_counter()
     semaphore = asyncio.Semaphore(fanout_config.max_concurrency)
     min_success = min(fanout_config.min_successful_responses, max(len(panel_models), 1))
@@ -87,131 +93,111 @@ async def fanout_to_panel(
         file_snippets=file_snippets,
         changed_files=changed_files,
     )
-    system_prompt = get_system_prompt(task_type)
+    task_prompt = get_system_prompt(task_type)
 
     async def _call(model_name: str) -> PanelCallResult:
         entry = registry_models[model_name]
-        provider = providers.get(entry.provider)
-        if provider is None:
-            return PanelCallResult(
-                model_name=model_name,
-                provider=entry.provider,
-                provider_model_id=entry.model_id,
-                status="missing_provider",
-                error=f"No provider configured for {entry.provider}",
-                error_type="MissingProvider",
-            )
-
-        personality = _panel_personality(entry)
-        role_prompt = get_role_prompt(personality) if personality else system_prompt
+        persona = entry.persona
         request = ModelRequest(
             model_id=entry.model_id,
-            system_prompt=role_prompt,
+            system_prompt=get_role_prompt(persona) if persona else task_prompt,
             user_prompt=user_prompt,
             max_tokens=entry.max_tokens,
             timeout=fanout_config.per_model_timeout_seconds,
-            metadata={
-                "task_type": task_type.value,
-                "role": "panel",
-                "personality": personality,
-            },
+            metadata={"task_type": task_type.value, "role": "panel", "personality": persona},
         )
-        call_start = time.perf_counter()
-        async with semaphore:
-            try:
-                response = await asyncio.wait_for(
-                    provider.safe_complete(request),
-                    timeout=fanout_config.per_model_timeout_seconds,
-                )
-            except TimeoutError:
-                latency = round((time.perf_counter() - call_start) * 1000)
-                return PanelCallResult(
-                    model_name=model_name,
-                    provider=entry.provider,
-                    provider_model_id=entry.model_id,
-                    status="timeout",
-                    error=(
-                        f"Timed out after {fanout_config.per_model_timeout_seconds:.1f}s"
-                    ),
-                    error_type="TimeoutError",
-                    latency_ms=latency,
-                )
-            except asyncio.CancelledError:
-                latency = round((time.perf_counter() - call_start) * 1000)
-                return PanelCallResult(
-                    model_name=model_name,
-                    provider=entry.provider,
-                    provider_model_id=entry.model_id,
-                    status="cancelled",
-                    error="Cancelled by global panel timeout",
-                    error_type="CancelledError",
-                    latency_ms=latency,
-                )
-
-        response.model_alias = model_name
-        latency = round((time.perf_counter() - call_start) * 1000)
-        if response.latency_ms <= 0:
-            response.latency_ms = float(latency)
-        if response.error:
-            return PanelCallResult(
-                model_name=model_name,
-                provider=entry.provider,
-                provider_model_id=entry.model_id,
-                status="failed",
-                response=response,
-                error=response.error,
-                error_type=response.error_type or "ProviderError",
-                latency_ms=round(response.latency_ms),
+        async with semaphore:  # the per-model timeout starts once a slot is free
+            response = await gateway.call(
+                stage="panel",
+                alias=model_name,
+                request=request,
+                timeout=fanout_config.per_model_timeout_seconds,
             )
-        return PanelCallResult(
-            model_name=model_name,
-            provider=entry.provider,
-            provider_model_id=entry.model_id,
-            status="success",
-            response=response,
-            latency_ms=round(response.latency_ms),
-        )
+        return _panel_result(model_name, entry, response, fanout_config)
 
-    tasks = [asyncio.create_task(_call(model_name)) for model_name in panel_models]
+    tasks = {asyncio.create_task(_call(name)): name for name in panel_models}
     done, pending = await asyncio.wait(tasks, timeout=fanout_config.global_timeout_seconds)
-
     timed_out = bool(pending)
     if pending and fanout_config.cancel_on_global_timeout:
         for task in pending:
             task.cancel()
-        done_after_cancel, _ = await asyncio.wait(pending, timeout=1.0)
-        done |= done_after_cancel
+        await asyncio.wait(pending, timeout=1.0)
 
-    calls: list[PanelCallResult] = []
-    for task in tasks:
-        if task.done():
-            try:
-                calls.append(task.result())
-            except asyncio.CancelledError:
-                # Should be rare because _call catches cancellation, but keep diagnostics.
-                calls.append(
-                    PanelCallResult(
-                        model_name="<unknown>",
-                        provider="<unknown>",
-                        provider_model_id="<unknown>",
-                        status="cancelled",
-                        error="Cancelled by global panel timeout",
-                        error_type="CancelledError",
-                    )
-                )
-        else:
-            calls.append(_pending_call_result(task, registry_models, panel_models, calls))
+    calls = [_collect(task, name, registry_models) for task, name in tasks.items()]
+    return _summarize(calls, started, min_success, timed_out, fanout_config)
 
+
+def _panel_result(
+    model_name: str, entry: ModelEntry, response: ModelResponse, config: FanoutConfig
+) -> PanelCallResult:
+    status = call_status(response)
+    common = {
+        "model_name": model_name,
+        "provider": entry.provider,
+        "provider_model_id": entry.model_id,
+        "latency_ms": round(response.latency_ms),
+    }
+    if status == "success":
+        return PanelCallResult(status="success", response=response, **common)  # type: ignore[arg-type]
+    if status == "failed":
+        return PanelCallResult(
+            status="failed",
+            response=response,
+            error=response.error,
+            error_type=response.error_type or "ProviderError",
+            **common,  # type: ignore[arg-type]
+        )
+    messages = {
+        "missing_provider": response.error,
+        "timeout": f"Timed out after {config.per_model_timeout_seconds:.1f}s",
+        "cancelled": "Cancelled by global panel timeout",
+    }
+    common["latency_ms"] = 0 if status == "missing_provider" else common["latency_ms"]
+    return PanelCallResult(
+        status=status,
+        error=messages[status],
+        error_type=response.error_type,
+        **common,  # type: ignore[arg-type]
+    )
+
+
+def _collect(
+    task: asyncio.Task[PanelCallResult], model_name: str, registry_models: dict[str, ModelEntry]
+) -> PanelCallResult:
+    """Result of one panel task; a task that never finished is attributed to its own model."""
+    if task.done() and not task.cancelled():
+        return task.result()
+    entry = registry_models.get(model_name)
+    cancelled = task.cancelled()
+    return PanelCallResult(
+        model_name=model_name,
+        provider=entry.provider if entry else "<unknown>",
+        provider_model_id=entry.model_id if entry else "<unknown>",
+        status="cancelled" if cancelled else "timeout",
+        error=(
+            "Cancelled by global panel timeout"
+            if cancelled
+            else "Still pending after global panel timeout"
+        ),
+        error_type="CancelledError" if cancelled else "TimeoutError",
+    )
+
+
+def _summarize(
+    calls: list[PanelCallResult],
+    started: float,
+    min_success: int,
+    timed_out: bool,
+    config: FanoutConfig,
+) -> FanoutResult:
     panel_wall = round((time.perf_counter() - started) * 1000)
-    total_call_latency = sum(call.latency_ms for call in calls)
-    max_latency = max((call.latency_ms for call in calls), default=0)
     success_count = len([call for call in calls if call.success])
     quorum_met = success_count >= min_success
 
     warnings: list[str] = []
     if timed_out:
         warnings.append(
-            f"Panel global timeout after {fanout_config.global_timeout_seconds:.1f}s; "
+            f"Panel global timeout after {config.global_timeout_seconds:.1f}s; "
             "slow calls were cancelled."
         )
     for call in calls:
@@ -221,48 +207,13 @@ async def fanout_to_panel(
         warnings.append(
             f"Panel quorum not met: {success_count}/{min_success} successful responses."
         )
-
     return FanoutResult(
         calls=calls,
         panel_wall_latency_ms=panel_wall,
-        total_model_call_latency_ms=total_call_latency,
-        max_model_latency_ms=max_latency,
+        total_model_call_latency_ms=sum(call.latency_ms for call in calls),
+        max_model_latency_ms=max((call.latency_ms for call in calls), default=0),
         min_successful_responses=min_success,
         quorum_met=quorum_met,
         timed_out=timed_out,
         warnings=warnings,
     )
-
-
-def _pending_call_result(
-    task: asyncio.Task[PanelCallResult],
-    registry_models: dict[str, ModelEntry],
-    panel_models: list[str],
-    completed: list[PanelCallResult],
-) -> PanelCallResult:
-    completed_names = {call.model_name for call in completed}
-    pending_names = [name for name in panel_models if name not in completed_names]
-    model_name = pending_names[0] if pending_names else "<unknown>"
-    entry = registry_models.get(model_name)
-    return PanelCallResult(
-        model_name=model_name,
-        provider=entry.provider if entry else "<unknown>",
-        provider_model_id=entry.model_id if entry else "<unknown>",
-        status="timeout",
-        error="Still pending after global panel timeout",
-        error_type="TimeoutError",
-    )
-
-
-def _panel_personality(entry: ModelEntry) -> str | None:
-    if "security" in entry.alias:
-        return "security_reviewer"
-    if entry.quality_tier == "weak":
-        return "weak_model"
-    if "debug" in entry.strengths:
-        return "debugging_hypothesis"
-    if "architecture_decision" in entry.strengths:
-        return "architecture_advisor"
-    if "implementation_plan" in entry.strengths:
-        return "implementation_planner"
-    return "coding_reviewer"

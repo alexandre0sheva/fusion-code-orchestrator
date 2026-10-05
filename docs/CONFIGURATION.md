@@ -3,7 +3,32 @@
 Canonical reference for environment variables, YAML config files, routing, budgets, fan-out and
 refinement. Cost and pricing methodology lives in [COSTS.md](COSTS.md).
 
-## Files
+## Layers and locations
+
+Settings come from five layers; a later layer overrides an earlier one:
+
+1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml` and `baseline.yaml` inside the
+   package (`src/fusion/config/`). Do not edit these in an installed copy.
+2. **User config**: `config.yaml` in the platform config directory (`fusion config paths` prints it;
+   `fusion init` creates a commented starter).
+3. **Project config**: `.fusion/config.yaml` in the working directory (or `FUSION_PROJECT_DIR`).
+4. **Environment variables** named `FUSION__<SECTION>__<KEY>`, for example
+   `FUSION__FANOUT__MAX_CONCURRENCY=2`. Values are parsed as YAML (`4`, `false`, `[high]`).
+5. **`fusion --set section.key=value`** (repeatable, placed before the command).
+
+User and project files may set these top-level sections: `models`, `provider_limits`, `policies`,
+`budgets`, `fanout`, `refinement` and `baselines`. A misspelled section is an error with a
+suggestion. Mappings merge key by key, so `models: {gpt-luna: {max_tokens: 1234}}` changes one field
+and keeps the rest; lists (`baselines`, `panel_models`) and single values are replaced.
+
+```bash
+uv run fusion config show                    # which layers exist and what each one sets
+uv run fusion config show --resolved         # every effective value with the layer that set it
+uv run fusion config show --resolved --filter fanout --json
+uv run fusion config paths                   # config, database and legacy locations
+```
+
+Validation errors name the key, the offending value, the layer that set it and the rule that failed.
 
 | File | Purpose |
 |------|---------|
@@ -11,6 +36,16 @@ refinement. Cost and pricing methodology lives in [COSTS.md](COSTS.md).
 | `src/fusion/config/catalog.yaml` | Model catalog: aliases, provider model IDs, capabilities, tiers, enable flags and verified prices. |
 | `src/fusion/config/routing_policies.yaml` | Task routing, per-budget panels, fan-out and refinement settings. |
 | `src/fusion/config/baseline.yaml` | Frontier baseline(s), as catalog aliases, that Fusion's cost is compared against. |
+
+## Run database
+
+Runs are stored in `runs.db` in the platform data directory, not in the working directory of the
+process that started Fusion. Override the location with `FUSION_DB_PATH` or `--db-path`. The
+database uses WAL mode so the MCP server and the CLI can share it.
+
+Upgrading from v0.1.0, which wrote `./fusion_runs.db`: that file is never read or moved
+automatically. Copy its history over once with `fusion init --import-legacy` (the original stays
+in place; the import refuses to merge into a database that already has runs).
 
 Validate without calling any provider:
 
@@ -33,7 +68,11 @@ reports it as a warning so mock and local development stay easy.
 | `OLLAMA_BASE_URL` | Ollama endpoint | `http://localhost:11434` |
 | `LMSTUDIO_ENABLED` | Enable the LM Studio provider | `false` |
 | `LMSTUDIO_BASE_URL` | LM Studio endpoint | `http://localhost:1234/v1` |
-| `FUSION_DB_PATH` | SQLite database path | `./fusion_runs.db` |
+| `FUSION_DB_PATH` | SQLite database path | `runs.db` in the user data directory |
+| `FUSION_CONFIG_DIR` | Directory holding the user `config.yaml` | platform config dir |
+| `FUSION_DATA_DIR` | Directory holding `runs.db` | platform data dir |
+| `FUSION_PROJECT_DIR` | Directory whose `.fusion/config.yaml` is the project layer | working directory |
+| `FUSION__<SECTION>__<KEY>` | Override one config key (see [Layers and locations](#layers-and-locations)) | unset |
 | `FUSION_SHADOW_MODE` | Shadow A/B against the real baseline: `off`, `sampled`, `always` | `off` |
 | `FUSION_SHADOW_SAMPLE_RATE` | Fraction of runs shadowed in `sampled` mode | `0.2` |
 | `FUSION_LOG_RAW_PROMPTS` | Log unsanitized prompts (dangerous) | `false` |
@@ -62,6 +101,18 @@ ollama serve
 ollama pull llama3.2
 # then set `ollama-llama` to enabled: true in catalog.yaml
 ```
+
+### Rate limits and reasoning effort
+
+Three catalog settings tune provider calls (all in `src/fusion/config/catalog.yaml`):
+
+| Setting | Where | Effect |
+|---------|-------|--------|
+| `provider_limits.<provider>.max_concurrent` | top level | Most in-flight requests to that provider, shared by every call (panel, refinement, judge). |
+| `provider_limits.<provider>.rpm` | top level | Most request starts in any 60 s window. Omit either key for "unlimited". Set both to your account's real quota. |
+| `default_reasoning_effort` | per model | Effort sent when a request does not choose one (`none`..`max`; Gemini maps to `low`/`medium`/`high`). Panel models default to `low`; the baseline and synthesizer keep provider defaults so comparisons stay fair. |
+| `persona` | per model | Panel persona prompt (for example `security_reviewer`). Without one a model answers with the task's own system prompt. |
+| `max_tokens` | per model | Output cap Fusion requests. Thinking tokens count against it, so reasoning models use 16384. |
 
 ## Routing and budgets
 

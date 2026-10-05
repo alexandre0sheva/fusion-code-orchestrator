@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -66,18 +66,34 @@ _MIGRATIONS: dict[int, str] = {
 
     CREATE INDEX IF NOT EXISTS idx_shadow_run_id ON shadow_comparisons(run_id);
     """,
+    4: """
+    CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_shadow_run_id ON shadow_comparisons(run_id);
+    """,
 }
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """Apply pending migrations."""
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)"
-    )
-    row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
-    current = row[0] if row and row[0] is not None else 0
+def _statements(script: str) -> list[str]:
+    return [part.strip() for part in script.split(";") if part.strip()]
 
-    for version in sorted(v for v in _MIGRATIONS if v > current):
-        conn.executescript(_MIGRATIONS[version])
-        conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+
+def migrate(conn: sqlite3.Connection) -> None:
+    """Apply pending migrations atomically.
+
+    ``BEGIN IMMEDIATE`` serializes concurrent first-time opens: the loser waits, then sees the
+    new version and has nothing left to do.
+    """
     conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        current = row[0] if row and row[0] is not None else 0
+        for version in sorted(v for v in _MIGRATIONS if v > current):
+            for statement in _statements(_MIGRATIONS[version]):
+                conn.execute(statement)
+            conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise

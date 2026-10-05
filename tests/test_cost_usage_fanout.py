@@ -14,7 +14,7 @@ from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelRespon
 from fusion.mcp_server.schemas import ReviewDiffInput
 from fusion.mcp_server.tools import FusionTools
 from fusion.orchestration.fanout import fanout_to_panel
-from fusion.orchestration.pipelines import CodeReviewInput, create_pipelines
+from fusion.orchestration.pipelines import CodeReviewInput, Settings, build_pipelines
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.providers.mock import MockProvider
 from fusion.routing.classifier import TaskType
@@ -118,7 +118,7 @@ async def test_timeout_partial_results_preserved() -> None:
 @pytest.mark.asyncio
 async def test_below_quorum_returns_diagnostic_pipeline_result(tmp_path) -> None:
     provider = DelayedProvider({"mock-fast": 0.2, "mock-security": 0.2, "mock-weak": 0.2})
-    pipes = create_pipelines(providers={"mock": provider}, db_path=str(tmp_path / "runs.db"))
+    pipes = build_pipelines(Settings(db_path=str(tmp_path / "runs.db")), {"mock": provider})
     pipe = pipes["code_review"]
     pipe._routing.budgets.fanout = FanoutConfig(
         max_concurrency=3,
@@ -219,7 +219,7 @@ async def test_mcp_output_includes_markdown_usage_and_comparison(tmp_path) -> No
 @pytest.mark.asyncio
 async def test_redaction_before_provider_calls(tmp_path) -> None:
     provider = DelayedProvider({"mock-fast": 0.0, "mock-security": 0.0, "mock-weak": 0.0})
-    pipes = create_pipelines(providers={"mock": provider}, db_path=str(tmp_path / "runs.db"))
+    pipes = build_pipelines(Settings(db_path=str(tmp_path / "runs.db")), {"mock": provider})
     secret = "API_KEY=sk-testsecret12345678901234567890"
     await pipes["code_review"].review(
         CodeReviewInput(diff=f"diff --git a/a.py b/a.py\n+{secret}")

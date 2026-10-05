@@ -1,0 +1,14 @@
+{
+  "disagreement": {
+    "consensus": true,
+    "disagreement_score": 0.0,
+    "outlier_models": []
+  },
+  "final_answer": "Insufficient context for analysis.",
+  "panel": [],
+  "steps": [],
+  "structured_output": {
+    "summary": "Insufficient context for analysis."
+  },
+  "warnings": []
+}

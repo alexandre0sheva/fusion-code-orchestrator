@@ -179,12 +179,12 @@ def build_synthesis_prompt(
     schema = _SYNTHESIS_SCHEMAS.get(key, {"summary": "string", "confidence": "float 0-1"})
     parts = [
         f"Synthesize the following {key} panel responses into a single JSON object.\n",
-        f"Disagreement analysis: {json.dumps(disagreement_analysis, default=str)[:2000]}\n",
+        f"Disagreement analysis: {json.dumps(disagreement_analysis, default=str)}\n",
     ]
     if original_task:
-        parts.append(f"\n## Original Task\n{original_task[:3000]}\n")
+        parts.append(f"\n## Original Task\n{original_task}\n")
     for model_name, content in panel_responses:
-        parts.append(f"\n## Response from {model_name}\n{content[:4000]}")
+        parts.append(f"\n## Response from {model_name}\n{content}")
     parts.append(f"\n## Required JSON Schema\n{json.dumps(schema, indent=2)}")
     parts.append(_STRUCTURED_OUTPUT_RULES)
     parts.append("\nReturn ONLY valid JSON matching the schema above.")
@@ -209,11 +209,11 @@ def build_refinement_prompt(
         "other expert models to the same task, together with your own answer.",
         "Critique all answers, adopt correct points you missed, and discard mistakes. "
         "Then produce a single improved final answer.",
-        f"\n## Original Task\n{original_task[:6000]}",
-        f"\n## Your Answer\n{own_answer[:4000]}",
+        f"\n## Original Task\n{original_task}",
+        f"\n## Your Answer\n{own_answer}",
     ]
     for label, content in peer_answers:
-        parts.append(f"\n## Response {label}\n{content[:4000]}")
+        parts.append(f"\n## Response {label}\n{content}")
     parts.append(
         "\n## Refinement Instructions\n"
         "- Keep everything correct from your answer; integrate insights you missed.\n"
@@ -237,5 +237,5 @@ def build_judge_prompt(
         "Return JSON with keys: specificity, groundedness, actionability, "
         "correctness_likelihood, risk_awareness, unsupported_claims (lower=better), "
         "codebase_awareness, novelty, overall_score, notes.\n\n"
-        f"Context:\n{context[:2000]}\n\nResponse:\n{response_content[:4000]}"
+        f"Context:\n{context}\n\nResponse:\n{response_content}"
     )

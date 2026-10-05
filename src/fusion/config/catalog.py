@@ -9,10 +9,13 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
+if TYPE_CHECKING:
+    from fusion.config.layers import ResolvedConfig
 
 _CONFIG_DIR = Path(__file__).parent
 
@@ -57,6 +60,9 @@ class ModelEntry(BaseModel):
     display_name: str = ""
     notes: str = ""
     roles: list[str] = Field(default_factory=list)  # panel, judge, synthesizer, baseline
+    # Optional panel persona (a key of the role prompts, e.g. security_reviewer). Models without
+    # one answer with the task's own system prompt.
+    persona: str | None = None
     strengths: list[str] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
     cost_tier: CostTier = "medium"
@@ -106,10 +112,18 @@ class ModelEntry(BaseModel):
         return max(covering, key=lambda p: p.effective_from or date.min)
 
 
+class ProviderLimits(BaseModel):
+    """Client-side limits for one provider; ``None`` means unlimited."""
+
+    max_concurrent: int | None = Field(default=None, ge=1)
+    rpm: int | None = Field(default=None, ge=1)
+
+
 class Catalog(BaseModel):
-    """All configured models keyed by alias."""
+    """All configured models keyed by alias, plus per-provider rate limits."""
 
     models: dict[str, ModelEntry] = Field(default_factory=dict)
+    provider_limits: dict[str, ProviderLimits] = Field(default_factory=dict)
 
     def get(self, alias: str) -> ModelEntry:
         if alias not in self.models:
@@ -125,19 +139,55 @@ class Catalog(BaseModel):
         return None
 
 
-def load_catalog(path: Path | None = None) -> Catalog:
-    """Load the model catalog from YAML (packaged default unless a path is given)."""
-    config_path = path or (_CONFIG_DIR / "catalog.yaml")
-    with config_path.open(encoding="utf-8") as f:
-        raw: Any = yaml.safe_load(f)
-    if not isinstance(raw, dict) or not isinstance(raw.get("models"), dict):
-        msg = f"Expected a 'models' mapping in {config_path}"
+def catalog_from_raw(
+    raw: dict[str, Any], source: str = "catalog", resolved: ResolvedConfig | None = None
+) -> Catalog:
+    """Build a catalog from a mapping with ``models`` and optional ``provider_limits``.
+
+    When ``resolved`` is given, validation errors name the key and the layer that set it.
+    """
+    from fusion.config.layers import format_validation_error
+
+    if not isinstance(raw.get("models"), dict):
+        msg = f"Expected a 'models' mapping in {source}"
         raise ValueError(msg)
+
+    def build[T: BaseModel](kind: type[T], section: str, data: dict[str, Any]) -> T:
+        try:
+            return kind.model_validate(data)
+        except ValidationError as exc:
+            if resolved is None:
+                raise
+            raise format_validation_error(exc, section_prefix=section, resolved=resolved) from exc
+
     models: dict[str, ModelEntry] = {}
     for alias, data in raw["models"].items():
         if isinstance(data, dict):
-            models[alias] = ModelEntry.model_validate({**data, "alias": alias})
-    return Catalog(models=models)
+            models[alias] = build(ModelEntry, f"models.{alias}", {**data, "alias": alias})
+    limits = {
+        name: build(ProviderLimits, f"provider_limits.{name}", value or {})
+        for name, value in (raw.get("provider_limits") or {}).items()
+    }
+    return Catalog(models=models, provider_limits=limits)
+
+
+def load_catalog(path: Path | None = None) -> Catalog:
+    """Load the model catalog.
+
+    With no ``path`` the layered configuration is used (packaged defaults, then user and project
+    config, environment and ``--set`` overrides). An explicit path reads that one file only.
+    """
+    from fusion.config.layers import resolve_config
+
+    if path is not None:
+        with path.open(encoding="utf-8") as f:
+            raw: Any = yaml.safe_load(f)
+        if not isinstance(raw, dict):
+            msg = f"Expected a 'models' mapping in {path}"
+            raise ValueError(msg)
+        return catalog_from_raw(raw, str(path))
+    resolved = resolve_config()
+    return catalog_from_raw(resolved.data, "the resolved configuration", resolved)
 
 
 def catalog_warnings(

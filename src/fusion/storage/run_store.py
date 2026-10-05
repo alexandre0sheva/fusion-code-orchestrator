@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import sqlite3
+import threading
 from dataclasses import dataclass, field
+from types import TracebackType
 from typing import Any
 
 from fusion.storage.sqlite import get_connection
@@ -112,10 +116,75 @@ class RunRecord:
 
 
 class RunStore:
-    """SQLite-backed store for orchestration runs."""
+    """SQLite-backed store for orchestration runs.
+
+    One WAL-mode connection per store, opened lazily and guarded by a lock so threads (including
+    ``asyncio.to_thread`` workers) can share it. Call ``close()`` when done; it is idempotent and
+    the store reopens on next use.
+    """
 
     def __init__(self, db_path: str | None = None) -> None:
         self._db_path = db_path
+        self._conn: sqlite3.Connection | None = None
+        self._lock = threading.RLock()
+
+    # -- connection lifecycle --------------------------------------------------------------
+
+    def _acquire(self) -> sqlite3.Connection:
+        self._lock.acquire()
+        try:
+            if self._conn is None:
+                self._conn = get_connection(self._db_path)
+            return self._conn
+        except BaseException:
+            self._lock.release()
+            raise
+
+    def _release(self, conn: sqlite3.Connection) -> None:
+        try:
+            if conn.in_transaction:  # a failed write must not leak into the next call
+                conn.rollback()
+        finally:
+            self._lock.release()
+
+    def close(self) -> None:
+        with self._lock:
+            conn, self._conn = self._conn, None
+            if conn is not None:
+                conn.close()
+
+    def __enter__(self) -> RunStore:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:  # noqa: BLE001 — interpreter shutdown
+            return
+
+    # -- async wrappers: SQLite calls block, so async code runs them in a worker thread --------
+
+    async def acreate_run(self, **kwargs: Any) -> str:
+        return await asyncio.to_thread(self.create_run, **kwargs)
+
+    async def acomplete_run(self, run_id: str, **kwargs: Any) -> None:
+        await asyncio.to_thread(self.complete_run, run_id, **kwargs)
+
+    async def arecord_shadow_comparison(self, record: ShadowComparisonRecord) -> None:
+        await asyncio.to_thread(self.record_shadow_comparison, record)
+
+    async def aget_stats(self) -> FusionStats:
+        return await asyncio.to_thread(self.get_stats)
+
+    # -- runs ------------------------------------------------------------------------------
 
     def create_run(
         self,
@@ -126,7 +195,7 @@ class RunStore:
         run_id: str | None = None,
     ) -> str:
         rid = run_id or new_run_id()
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             conn.execute(
                 """
@@ -137,7 +206,7 @@ class RunStore:
             )
             conn.commit()
         finally:
-            conn.close()
+            self._release(conn)
         return rid
 
     def complete_run(
@@ -153,7 +222,7 @@ class RunStore:
         routing: dict[str, Any] | None = None,
         warnings: list[str] | None = None,
     ) -> None:
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             conn.execute(
                 """
@@ -195,10 +264,10 @@ class RunStore:
                 )
             conn.commit()
         finally:
-            conn.close()
+            self._release(conn)
 
     def get_run(self, run_id: str) -> RunRecord | None:
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             row = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if row is None:
@@ -239,11 +308,11 @@ class RunStore:
                 steps=steps,
             )
         finally:
-            conn.close()
+            self._release(conn)
 
     def record_shadow_comparison(self, record: ShadowComparisonRecord) -> None:
         """Persist one shadow A/B comparison row."""
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             conn.execute(
                 """
@@ -270,11 +339,11 @@ class RunStore:
             )
             conn.commit()
         finally:
-            conn.close()
+            self._release(conn)
 
     def list_shadow_comparisons(self, limit: int = 50) -> list[ShadowComparisonRecord]:
         """Return recent shadow comparisons, newest first."""
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             rows = conn.execute(
                 "SELECT * FROM shadow_comparisons ORDER BY id DESC LIMIT ?", (limit,)
@@ -298,12 +367,12 @@ class RunStore:
                 for row in rows
             ]
         finally:
-            conn.close()
+            self._release(conn)
 
     def get_stats(self) -> FusionStats:
         """Aggregate cumulative statistics across all stored runs."""
         stats = FusionStats()
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             row = conn.execute(
                 """
@@ -380,14 +449,14 @@ class RunStore:
             stats.shadow_avg_baseline_latency_ms = shadow_row["avg_baseline_latency"]
             return stats
         finally:
-            conn.close()
+            self._release(conn)
 
     def list_runs(self, limit: int = 20) -> list[RunRecord]:
-        conn = get_connection(self._db_path)
+        conn = self._acquire()
         try:
             rows = conn.execute(
                 "SELECT run_id FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
             return [r for rid in rows if (r := self.get_run(rid["run_id"])) is not None]
         finally:
-            conn.close()
+            self._release(conn)

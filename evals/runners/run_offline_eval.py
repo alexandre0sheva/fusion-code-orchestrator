@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 from fusion.config.env import load_env
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.routing.classifier import TaskType
 
 DATASETS = {
@@ -65,9 +65,11 @@ async def main() -> None:
     dataset_path = Path(__file__).parent.parent / "datasets" / filename
     cases = [json.loads(line) for line in dataset_path.read_text().strip().split("\n") if line]
 
-    pipeline = create_pipeline(
-        db_path=args.db_path if args.db_path != ":memory:" else None,
-        use_mock=args.mock,
+    pipeline = build_pipeline(
+        Settings(
+            use_mock=args.mock,
+            db_path=args.db_path if args.db_path != ":memory:" else None,
+        )
     )
     results = []
     for case in cases:

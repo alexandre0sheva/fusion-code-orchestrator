@@ -5,16 +5,26 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from fusion.cli.models_cmd import models_app
+from fusion.config import paths as fusion_paths
 from fusion.config.catalog import catalog_warnings, load_catalog
 from fusion.config.env import load_env
+from fusion.config.layers import (
+    ConfigError,
+    flatten,
+    parse_scalar,
+    resolve_config,
+    set_cli_overrides,
+)
 from fusion.config.loader import load_baseline, load_routing_policies
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
@@ -25,15 +35,28 @@ from fusion.mcp_server.schemas import (
     ReviewDiffInput,
 )
 from fusion.mcp_server.tools import FusionTools
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.routing.classifier import TaskType
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.cost import PricingRegistry, UsageSummary, compare_to_baseline
+
+
+class _FusionGroup(TyperGroup):
+    """Show configuration problems as a message and exit code 1, not a traceback."""
+
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except ConfigError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from None
+
 
 app = typer.Typer(
     name="fusion",
     help="Fusion Code Orchestrator — multi-model coding workflow engine",
     no_args_is_help=True,
+    cls=_FusionGroup,
 )
 runs_app = typer.Typer(help="Inspect orchestration run history")
 config_app = typer.Typer(help="Validate Fusion configuration")
@@ -45,6 +68,26 @@ console = Console()
 load_env()
 
 
+@app.callback()
+def _main(
+    overrides: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--set",
+            help="Override a config key for this run, e.g. --set fanout.max_concurrency=2",
+        ),
+    ] = None,
+) -> None:
+    parsed: dict[str, Any] = {}
+    for item in overrides or []:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip():
+            msg = f"--set expects KEY=VALUE (for example fanout.max_concurrency=2), got {item!r}"
+            raise typer.BadParameter(msg)
+        parsed[key.strip()] = parse_scalar(value)
+    set_cli_overrides(parsed)
+
+
 def _ensure_mock(mock: bool) -> None:
     if mock:
         os.environ["FUSION_DEFAULT_PROVIDER"] = "mock"
@@ -53,6 +96,18 @@ def _ensure_mock(mock: bool) -> None:
 def _tools(db_path: str | None, mock: bool) -> FusionTools:
     _ensure_mock(mock)
     return FusionTools(db_path=db_path, use_mock=mock)
+
+
+def _run[T](tools: FusionTools, coro: Coroutine[Any, Any, T]) -> T:
+    """Run one tool call, then close provider HTTP clients on the same event loop."""
+
+    async def _go() -> T:
+        try:
+            return await coro
+        finally:
+            await tools.aclose()
+
+    return asyncio.run(_go())
 
 
 def _print_json(data: dict[str, object]) -> None:
@@ -90,7 +145,8 @@ def review_diff(
     """Run code review pipeline from a diff file."""
     diff_text = file.read_text(encoding="utf-8")
     tools = _tools(db_path, mock)
-    result = asyncio.run(
+    result = _run(
+        tools,
         tools.fusion_review_diff(
             ReviewDiffInput(diff=diff_text, context=context, goals=goals)
         )
@@ -117,7 +173,8 @@ def debug(
         raise typer.Exit(1)
     logs = logs_file.read_text(encoding="utf-8") if logs_file else ""
     tools = _tools(db_path, mock)
-    result = asyncio.run(
+    result = _run(
+        tools,
         tools.fusion_debug_error(DebugErrorInput(error_message=error_message, logs=logs))
     )
     _print_json(result)
@@ -132,7 +189,8 @@ def decide(
 ) -> None:
     """Run architecture decision pipeline."""
     tools = _tools(db_path, mock)
-    result = asyncio.run(
+    result = _run(
+        tools,
         tools.fusion_decide_architecture(
             DecideArchitectureInput(question=question, constraints=constraints)
         )
@@ -150,7 +208,8 @@ def plan(
     """Run implementation plan pipeline."""
     feature = feature_file.read_text(encoding="utf-8")
     tools = _tools(db_path, mock)
-    result = asyncio.run(
+    result = _run(
+        tools,
         tools.fusion_plan_feature(
             PlanFeatureInput(feature_description=feature, constraints=constraints)
         )
@@ -169,7 +228,8 @@ def eval_answer(
     question = question_file.read_text(encoding="utf-8")
     answer = answer_file.read_text(encoding="utf-8")
     tools = _tools(db_path, mock)
-    result = asyncio.run(
+    result = _run(
+        tools,
         tools.fusion_eval_answer(EvalAnswerInput(question=question, answer=answer))
     )
     _print_json(result)
@@ -199,7 +259,8 @@ def compare_claude_runs(
 ) -> None:
     """Compare Claude Code + Opus output against Claude Code + Fusion output."""
     tools = _tools(db_path, mock)
-    result = asyncio.run(
+    result = _run(
+        tools,
         tools.fusion_compare_claude_runs(
             CompareClaudeRunsInput(
                 task_prompt=task_file.read_text(encoding="utf-8"),
@@ -365,6 +426,109 @@ def runs_export(
                 default=str,
             )
         )
+
+
+@app.command("init")
+def init(
+    force: Annotated[bool, typer.Option(help="Overwrite an existing user config")] = False,
+    import_legacy: Annotated[
+        bool,
+        typer.Option(
+            "--import-legacy",
+            help="Copy a v0.1.0 ./fusion_runs.db into the user data directory",
+        ),
+    ] = False,
+    legacy_path: Annotated[
+        Path | None, typer.Option(help="Legacy database to import (default: ./fusion_runs.db)")
+    ] = None,
+) -> None:
+    """Create a commented starter user config and show the next steps."""
+    from fusion.storage.legacy import LegacyImportError, import_legacy_db
+
+    target = fusion_paths.user_config_file()
+    if target.exists() and not force:
+        typer.echo(f"{target} already exists; leaving it alone (use --force to replace it).")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        template = Path(__file__).resolve().parent.parent / "config" / "starter_config.yaml"
+        target.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+        typer.echo(f"Wrote starter config: {target}")
+
+    if import_legacy:
+        try:
+            result = import_legacy_db(legacy_path or fusion_paths.legacy_db_path())
+        except LegacyImportError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from None
+        plural = "" if result.runs == 1 else "s"
+        typer.echo(
+            f"Imported {result.runs} run{plural} into {result.destination}; "
+            f"{result.source} was left in place."
+        )
+
+    typer.echo(
+        "\nNext steps:\n"
+        "  1. Set provider keys (environment or a .env file): ANTHROPIC_API_KEY, "
+        "OPENAI_API_KEY, GOOGLE_API_KEY\n"
+        "  2. See the models and prices Fusion will use:  fusion models list\n"
+        "  3. Check the effective configuration:  fusion config show --resolved\n"
+        f"Runs are stored in {fusion_paths.resolve_db_path()}"
+    )
+
+
+@config_app.command("paths")
+def config_paths() -> None:
+    """Show where Fusion reads configuration and keeps its database."""
+    for label, path in (
+        ("user config", fusion_paths.user_config_file()),
+        ("project config", fusion_paths.project_config_file()),
+        ("database", fusion_paths.resolve_db_path()),
+        ("legacy database", fusion_paths.legacy_db_path()),
+    ):
+        state = "exists" if path.exists() else "missing"
+        typer.echo(f"{label:<16} {path}  ({state})")
+
+
+@config_app.command("show")
+def config_show(
+    resolved: Annotated[
+        bool, typer.Option("--resolved", help="Print every merged value with its origin")
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print raw JSON")] = False,
+    key_filter: Annotated[
+        str | None, typer.Option("--filter", help="Only keys containing this text")
+    ] = None,
+) -> None:
+    """Show the configuration layers, or with --resolved the effective values and origins."""
+    config = resolve_config()
+    if not resolved:
+        loaded = {layer.path for layer in config.layers if layer.path is not None}
+        for layer in config.layers:
+            keys = ", ".join(sorted(layer.data)) or "(nothing set)"
+            typer.echo(f"{layer.name}: {keys}")
+        for label, file in (
+            ("user", fusion_paths.user_config_file()),
+            ("project", fusion_paths.project_config_file()),
+        ):
+            if file not in loaded:
+                typer.echo(f"{label}:{file}: (not found)")
+        typer.echo("\nUse --resolved to see every value and which layer set it.")
+        return
+    rows = [
+        {"key": key, "value": value, "origin": config.origin_of(key) or "packaged"}
+        for key, value in flatten(config.data)
+        if key_filter is None or key_filter in key
+    ]
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, default=str))
+        return
+    table = Table(title="Resolved configuration")
+    table.add_column("Key")
+    table.add_column("Value")
+    table.add_column("Origin")
+    for row in rows:
+        table.add_row(str(row["key"]), str(row["value"]), str(row["origin"]))
+    console.print(table)
 
 
 @config_app.command("validate")
@@ -536,7 +700,7 @@ def run_mock(
         raise typer.Exit(1) from None
 
     _ensure_mock(True)
-    pipeline = create_pipeline(db_path=db_path)
+    pipeline = build_pipeline(Settings(use_mock=True, db_path=db_path))
     ctx = PipelineContext(task_type=task_type, primary_content=content)
     result = asyncio.run(pipeline.run(ctx))
 

@@ -14,6 +14,16 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Added
 
+- **Cost ledger:** every LLM call (panel, refinement, judge, synthesis, shadow) is recorded once in a per-run `RunLedger` with tokens, cost, latency, start offset and speed metrics; totals and per-task metrics (`seconds_to_complete`, cost, tokens, effective output tokens/s, critical path) come from it, and the full ledger is stored with each run. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#cost-ledger).
+- `ModelEntry.persona` in the catalog (security-focused and deliberately weak panel members), and catalog roles drive model fallbacks.
+- **Layered configuration:** packaged defaults, then `config.yaml` in the user config directory, then `./.fusion/config.yaml`, then `FUSION__SECTION__KEY` environment variables, then `fusion --set key=value`. Any of `models`, `provider_limits`, `policies`, `budgets`, `fanout`, `refinement` and `baselines` can be overridden or merged, so an installed copy can be customised without editing the package. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#layers-and-locations).
+- `fusion init` (commented starter config, next steps, optional `--import-legacy`), `fusion config show [--resolved] [--json] [--filter]` (every effective value with the layer that set it) and `fusion config paths`.
+- Configuration errors are reported as key, value, source layer and rule instead of a traceback; misspelled sections get a suggestion.
+- Database migration 4 (index on `runs.created_at`).
+- Provider features on `ModelRequest`: `response_schema` (native structured output with a prompt-and-scrape fallback), `reasoning_effort`, `cache_prefix` (Anthropic prompt caching), `stream` (SSE for all three cloud providers), `images` (vision input, guarded by the catalog's `supports_vision`) and `thinking_budget_tokens` for legacy thinking models.
+- Speed metrics on every `ModelResponse`: `total_tokens_per_s`, and for streamed calls `ttft_ms` and `decode_tokens_per_s`; plus `cache_write_tokens` and `retries`.
+- Per-provider rate limiting (`provider_limits` in the catalog: max in-flight requests and requests per minute); see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#rate-limits-and-reasoning-effort).
+- `httpx[http2]` dependency (adds `h2`).
 - **Model catalog** (`src/fusion/config/catalog.yaml`): one source of truth for model IDs, capabilities and prices, verified against official provider docs on 2026-10-05. Prices carry `verified_on` and `source_url` and support effective dates (the Gemini 3.8 Flash introductory price ends 2026-12-31 and doubles from 2027-01-01).
 - `fusion models list` and `fusion models check [--live]` to inspect the catalog and flag stale prices, upcoming price changes and retiring models; `--live` verifies IDs through the providers' free list-models endpoints.
 - A second configurable baseline (GPT-6.1 Sol); `baseline.yaml` now lists baselines as catalog aliases.
@@ -24,6 +34,19 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Changed
 
+- **Pipeline refactor:** the 1,500-line `pipelines.py` is split into stages (`Redact`, `Route`, `ContextEval`, `Panel`, `Refine`, `Judge`, `Aggregate`, `FinalEval`, `Shadow`, `Persist`) over one `RunState`, plus `ledger`, `result`, `output`, `pipeline`, `specialized` and `factory` modules; no function in `orchestration/` exceeds 120 lines. `fusion.orchestration.pipelines` still re-exports the public names. `create_pipeline`/`create_pipelines` are deprecated in favour of `build_pipeline(s)(Settings(...), providers)`.
+- **Judge and eval calls are now part of the reported cost.** Previously only panel, refinement and synthesis calls were itemized, so reported Fusion cost was understated and `usage.per_model`, `cost_latency.steps` and `usage.total_*_tokens` omitted the judge. They now include one `judge:<model>` step per answer, and the "judge calls are not itemized" warning is gone. A call that fails or times out may still have been billed, so a run with such a call reports its total cost as unknown.
+- `usage.total_model_call_latency_ms` is now the sum of all model calls (it previously left out refinement and judge calls).
+- Offline (mock) mode is chosen once by the factory and uses its own registry and routing policies instead of `is_test_mode` branches inside the Router; `Router.route()` and `RoutingPolicy.select_*()` no longer take `test_mode`. Offline routing reasons now read like live ones ("Applied medium budget policy").
+- Panel members answer with the task's system prompt unless their catalog entry sets a `persona`. Previously a persona was guessed from the model alias and strengths, which gave most cloud panelists an unrelated "implementation planner" prompt on every task.
+- Prompts are no longer cut at fixed character limits (2,000-6,000 characters of the task, answers and context were silently dropped). Content is trimmed only when it would exceed the model's catalog `context_window`, and the run then carries a warning naming the model.
+- **Run database moved (breaking):** the default is now `runs.db` in the platform user data directory instead of `./fusion_runs.db` in whatever directory started Fusion, so `fusion mcp` no longer creates files in your project. The old file is not read or moved automatically; run `fusion init --import-legacy` once to copy its history, or set `FUSION_DB_PATH` to keep using it. If your `.env` still contains `FUSION_DB_PATH=./fusion_runs.db` (copied from the old `.env.example`), remove that line.
+- The plugin's `.mcp` server config no longer pins `FUSION_DB_PATH` to the workspace.
+- SQLite: WAL mode, one lock-guarded connection per `RunStore` instead of one per call, writes run in a worker thread from async code, migrations apply atomically, and the lifetime-stats footer queries the database once per run (it was queried twice).
+- **Provider layer overhaul:** each provider keeps one pooled HTTP client (HTTP/2 for cloud providers) that is closed on shutdown; transient failures (429, 408, 5xx, timeouts) are retried with full-jitter backoff and `Retry-After`, 4xx errors never are; failures carry a typed `error_type` (`RateLimit`, `Auth`, `Timeout`, `BadRequest`, `Server`, `Connection`) and a retry count. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#providers).
+- Token accounting is normalized across providers so costs are correct: Anthropic cache reads/writes are included in `input_tokens` and cache writes are billed at the catalog cache-write price; Gemini thinking tokens are included in `output_tokens`. Costs for runs that use caching or thinking models change accordingly.
+- Model parameters now follow the catalog instead of name regexes: OpenAI reasoning models send `max_completion_tokens` and `reasoning_effort`, Gemini sends `thinkingLevel`, Claude sends `output_config.effort`, and sampling parameters are omitted where the catalog says they are unsupported. Panel models (GPT-6 Luna, Gemini 3.8 Flash) default to `low` reasoning effort, and reasoning models request 16384 output tokens so thinking does not truncate answers.
+- Gemini requests send the system prompt as `systemInstruction` and keep user/assistant turns separate.
 - **Default models updated:** panel = Claude Haiku 4.5 + GPT-6 Luna + Gemini 3.8 Flash, synthesizer = Claude Sonnet 5.5, baseline = Claude Opus 5.5 (was GPT-5.4 mini, Gemini 3.5 Flash, Sonnet 4.6 and Opus 4.8). Aliases changed: `gpt-5.4-mini` is now `gpt-luna`, `gpt-5.4-mini-security` is now `gpt-luna-security`.
 - **Pricing corrected:** the previous Gemini price ($0.10/$0.40) belonged to a retired generation, the previous Sonnet and GPT prices were unverified placeholders, and a hard-coded table still priced Opus at $15/$75. Cost reports now use verified list prices, and cached input tokens are billed at the cached rate (or the input rate) instead of being free.
 - `fusion compare-cost` and the `evals/runners/compare_cost.py` runner take a catalog alias (`--opus-model claude-opus`). `fusion config validate` checks the catalog, baselines and routing references and prints catalog warnings.
@@ -39,6 +62,9 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Fixed
 
+- A panel call still pending at the global timeout is attributed to its own model; it used to be attributed to the first model that had not finished.
+- OpenAI-compatible requests no longer break on models that reject `max_tokens` or `temperature`.
+- Errors from providers no longer echo API keys.
 - `FUSION_DEFAULT_PROVIDER=mock` is now honored by the MCP tools. Previously the MCP server ignored it and could call real providers when API keys were present.
 - README no longer links to a nonexistent publication checklist and its tool table matches the server.
 
@@ -49,6 +75,7 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Security
 
+- The Gemini API key is sent in the `x-goog-api-key` header instead of the URL query string, so it no longer appears in logs or exception text; provider error messages are scrubbed of key-shaped strings.
 - `SecurityPolicy` no longer carries file-write or shell-execution switches; Fusion has no code path that writes files or runs commands.
 
 ## [0.1.0] - 2026-07-08

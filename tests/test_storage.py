@@ -2,7 +2,7 @@
 
 import pytest
 
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.routing.classifier import TaskType
 from fusion.storage.run_store import RunStore
 
@@ -14,7 +14,7 @@ def db_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_persisted(db_path: str) -> None:
-    pipeline = create_pipeline(db_path=db_path)
+    pipeline = build_pipeline(Settings(db_path=db_path))
     ctx = PipelineContext(
         task_type=TaskType.PLANNING,
         primary_content="Implement user authentication with OAuth2",

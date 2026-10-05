@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from fusion.config.loader import RefinementConfig, load_routing_policies
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.orchestration.refine import refine_panel_responses
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.providers.mock import MockProvider
@@ -101,7 +101,7 @@ def test_refinement_config_loaded_from_yaml() -> None:
 
 @pytest.mark.asyncio
 async def test_pipeline_runs_refinement_at_high_budget(tmp_path) -> None:
-    pipeline = create_pipeline(db_path=str(tmp_path / "t.db"), use_mock=True)
+    pipeline = build_pipeline(Settings(db_path=str(tmp_path / "t.db"), use_mock=True))
     ctx = PipelineContext(
         task_type=TaskType.CODE_REVIEW,
         primary_content="diff: +def foo():\n+    return eval(user_input)",
@@ -120,7 +120,7 @@ async def test_pipeline_runs_refinement_at_high_budget(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_pipeline_skips_refinement_at_medium_budget(tmp_path) -> None:
-    pipeline = create_pipeline(db_path=str(tmp_path / "t.db"), use_mock=True)
+    pipeline = build_pipeline(Settings(db_path=str(tmp_path / "t.db"), use_mock=True))
     ctx = PipelineContext(
         task_type=TaskType.CODE_REVIEW,
         primary_content="diff: +def foo():\n+    return 1",

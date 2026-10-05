@@ -1,0 +1,37 @@
+# Fusion user configuration. Everything is commented out: uncomment what you want to change.
+#
+# Fusion merges settings in this order (later wins):
+#   packaged defaults -> this file -> ./.fusion/config.yaml (per project)
+#   -> FUSION__SECTION__KEY environment variables -> `fusion --set section.key=value`
+# Mappings merge key by key; lists and single values are replaced.
+# See what is in effect, and where each value came from:  fusion config show --resolved
+#
+# API keys do not belong here. Export them or put them in a .env file:
+#   ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY
+
+# Client-side limits per provider (set to your account's real quota).
+# provider_limits:
+#   anthropic: {max_concurrent: 4, rpm: 50}
+#   openai: {max_concurrent: 8, rpm: 500}
+
+# Panel fan-out controls.
+# fanout:
+#   max_concurrency: 6
+#   per_model_timeout_seconds: 45
+#   global_timeout_seconds: 60
+
+# Spend warnings and defaults.
+# budgets:
+#   warn_cost_usd: 0.5
+
+# Override one field of a catalog model (other fields keep their packaged values).
+# models:
+#   gpt-luna:
+#     default_reasoning_effort: low
+#   ollama-llama:
+#     enabled: true
+
+# Frontier models Fusion's cost is compared against (a list replaces the packaged one).
+# baselines:
+#   - name: "Opus 5.5"
+#     model: claude-opus

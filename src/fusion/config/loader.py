@@ -6,9 +6,15 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from fusion.config.catalog import Catalog, CostTier, ModelEntry, load_catalog
+from fusion.config.layers import (
+    ConfigError,
+    ResolvedConfig,
+    format_validation_error,
+    resolve_config,
+)
 
 __all__ = [
     "BaselineConfig",
@@ -26,6 +32,7 @@ __all__ = [
 ]
 
 _CONFIG_DIR = Path(__file__).parent
+_ROUTING_KEYS = frozenset({"policies", "budgets", "fanout", "refinement"})
 
 BudgetLevelName = Literal["low", "medium", "high", "local_only"]
 
@@ -135,25 +142,45 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_model_registry(path: Path | None = None) -> ModelRegistryConfig:
-    """Load the model registry (the catalog's models) from YAML."""
+    """Load the model registry (the catalog's models)."""
     return ModelRegistryConfig(models=load_catalog(path).models)
 
 
 def load_routing_policies(path: Path | None = None) -> RoutingPoliciesConfig:
-    """Load routing policies from YAML."""
-    config_path = path or (_CONFIG_DIR / "routing_policies.yaml")
-    return RoutingPoliciesConfig.model_validate(_load_yaml(config_path))
+    """Load routing policies: layered configuration, or one explicit file."""
+    if path is not None:
+        return RoutingPoliciesConfig.model_validate(_load_yaml(path))
+    resolved = resolve_config()
+    section = {k: v for k, v in resolved.data.items() if k in _ROUTING_KEYS}
+    try:
+        return RoutingPoliciesConfig.model_validate(section)
+    except ValidationError as exc:
+        raise format_validation_error(exc, section_prefix="", resolved=resolved) from exc
 
 
 def load_baseline(path: Path | None = None, catalog: Catalog | None = None) -> BaselineConfig:
     """Load baseline configs, resolving provider and model ID from the catalog."""
-    config_path = path or (_CONFIG_DIR / "baseline.yaml")
-    raw = _load_yaml(config_path)
+    resolved: ResolvedConfig | None = None
+    if path is not None:
+        raw = _load_yaml(path)
+    else:
+        resolved = resolve_config()
+        raw = {"baselines": resolved.data.get("baselines", [])}
     resolved_catalog = catalog or load_catalog()
     entries: list[BaselineEntry] = []
-    for item in raw.get("baselines", []):
-        entry = BaselineEntry.model_validate(item)
+    for index, item in enumerate(raw.get("baselines", [])):
+        try:
+            entry = BaselineEntry.model_validate(item)
+        except ValidationError as exc:
+            if resolved is None:
+                raise
+            raise format_validation_error(
+                exc, section_prefix=f"baselines.{index}", resolved=resolved
+            ) from exc
         if entry.model:
+            if entry.model not in resolved_catalog.models:
+                msg = f"baselines.{index} ({entry.name}) references unknown model '{entry.model}'"
+                raise ConfigError(msg)
             model = resolved_catalog.get(entry.model)
             entry = entry.model_copy(
                 update={"provider": model.provider, "model_id": model.model_id}

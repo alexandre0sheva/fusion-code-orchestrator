@@ -29,7 +29,9 @@ uv run mypy
 
 ## Tests
 
-- Tests run offline. `tests/conftest.py` forces the mock provider and removes provider keys.
+- Tests run offline. `tests/conftest.py` forces the mock provider, removes provider keys and points
+  user config, user data and project config at an empty temp tree (the `fusion_home` fixture), so a
+  developer's real `~/.config/fusion` or `./.fusion` never leaks in.
 - Use `MockProvider` or `httpx.MockTransport`; never require real keys in a test.
 - A test that calls a real provider must be marked `@pytest.mark.live`. It is skipped by default
   and runs with `uv run pytest -m live`. Live tests cost money; run them only deliberately.

@@ -1,0 +1,503 @@
+{
+  "confidence": 0.68,
+  "cost_comparison": {
+    "baseline_cost_known": true,
+    "baseline_estimated_cost_usd": 0.008372,
+    "baseline_model_id": "claude-opus-5-5",
+    "baseline_name": "Opus 5.5",
+    "comparison_notes": [
+      "Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.",
+      "Baseline estimate strategy: same_input_and_output_tokens."
+    ],
+    "fusion_cost_known": true,
+    "fusion_is_cheaper": true,
+    "fusion_total_cost_usd": 0.0,
+    "savings_percent": 100.0,
+    "savings_usd": 0.008372
+  },
+  "cost_latency": {
+    "steps": [
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 132,
+        "model_name": "mock-fast",
+        "output_tokens": 39,
+        "provider": "mock",
+        "step_name": "panel:mock-fast"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 129,
+        "model_name": "mock-security",
+        "output_tokens": 42,
+        "provider": "mock",
+        "step_name": "panel:mock-security"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 134,
+        "model_name": "mock-weak",
+        "output_tokens": 5,
+        "provider": "mock",
+        "step_name": "panel:mock-weak"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 81,
+        "model_name": "mock-judge",
+        "output_tokens": 22,
+        "provider": "mock",
+        "step_name": "judge:mock-judge"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 84,
+        "model_name": "mock-judge",
+        "output_tokens": 22,
+        "provider": "mock",
+        "step_name": "judge:mock-judge"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 47,
+        "model_name": "mock-judge",
+        "output_tokens": 22,
+        "provider": "mock",
+        "step_name": "judge:mock-judge"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 436,
+        "model_name": "mock-judge",
+        "output_tokens": 58,
+        "provider": "mock",
+        "step_name": "synthesis"
+      }
+    ],
+    "total_cost_known": true,
+    "total_cost_usd": 0.0,
+    "total_input_tokens": 1043,
+    "total_output_tokens": 210,
+    "warnings": [
+      "LLM judge quality check failed; scores may be unreliable",
+      "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
+    ]
+  },
+  "display_markdown": "## Fusion Debug\n\n### Recommendation\n{\"most_likely_causes\": [\"Connection pool exhaustion under load\"], \"ranked_hypotheses\": [{\"hypothesis\": \"Pool size too small\", \"confidence\": 0.8, \"evidence\": \"timeout in acquire()\"}, {\"hypothesis\": \"Connection leak\", \"confidence\": 0.5, \"evidence\": \"missing finally block\"}], \"verification_steps\": [\"Check pool metrics under load\", \"Audit connection return paths\"], \"minimal_fix_strategy\": \"Increase pool size and add connection timeout logging\", \"what_not_to_do\": [\"Do not restart production without checking pool metrics first\"], \"confidence\": 0.68}\n\n### Confidence\n0.70\n\n### Cost & usage\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0084 estimated\n- Estimated savings: $0.0084 / 100.0%\n- Fusion wall time: <t>\n- Panel: 3 models, 3 succeeded, 0 failed\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.\n\n### Caveats\n- LLM judge quality check failed; scores may be unreliable",
+  "evals": {
+    "aggregate_score": 0.74,
+    "context": {
+      "missing_items": [
+        "No file snippets provided"
+      ],
+      "notes": "Context score: 0.70",
+      "score": 0.7,
+      "sufficient": true
+    },
+    "dimension_scores": {
+      "aggregate_answer_quality": 0.76,
+      "aggregate_consensus_strength": 1.0,
+      "aggregate_context_sufficiency": 0.7,
+      "aggregate_final_quality": 0.62,
+      "aggregate_high_risk_penalty": 0.03,
+      "aggregate_provider_success_rate": 1.0,
+      "aggregate_unsupported_claim_penalty": 0.015,
+      "confidence": 0.7,
+      "context_sufficiency": 0.7,
+      "final_quality": 0.62,
+      "judge_quality": 0.79,
+      "mock-fast_overall": 0.76,
+      "mock-security_overall": 0.76,
+      "mock-weak_overall": 0.76
+    },
+    "disagreement": {
+      "consensus": true,
+      "consensus_items": [],
+      "contradictions": [],
+      "disagreement_score": 0.0,
+      "grouped_findings": [
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "increase pool size configuration."
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "add connection timeout logging."
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "verify connections are returned in finally blocks."
+        },
+        {
+          "models": [
+            "mock-security"
+          ],
+          "representative": "potential sql injection via string concatenation."
+        },
+        {
+          "models": [
+            "mock-security"
+          ],
+          "representative": "missing input validation on user-controlled path."
+        },
+        {
+          "models": [
+            "mock-security"
+          ],
+          "representative": "secrets may be logged in debug output."
+        },
+        {
+          "models": [
+            "mock-weak"
+          ],
+          "representative": "looks fine to me. (mock:<id>)"
+        }
+      ],
+      "high_risk_recommendations": [
+        "mock-security: potential sql injection via string concatenation."
+      ],
+      "outlier_models": [],
+      "unique_insights": [
+        "increase pool size configuration.",
+        "add connection timeout logging.",
+        "verify connections are returned in finally blocks.",
+        "potential sql injection via string concatenation.",
+        "missing input validation on user-controlled path.",
+        "secrets may be logged in debug output.",
+        "looks fine to me. (mock:<id>)"
+      ],
+      "unsupported_claims": []
+    },
+    "final": {
+      "claude_code_usefulness": 0.75,
+      "confidence": 0.7,
+      "deterministic_issues": [
+        "Missing expected structural markers in response"
+      ],
+      "deterministic_passed": false,
+      "final_answer_quality": 0.7,
+      "implementation_readiness": 0.65,
+      "notes": "Heuristic final evaluation",
+      "overall_score": 0.62,
+      "residual_risk": 0.3,
+      "test_plan_quality": 0.3
+    },
+    "judge_quality": {
+      "aggregate_score": 0.79,
+      "deterministic_issues": [
+        "Invalid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+      ],
+      "deterministic_passed": false,
+      "dimensions": [
+        {
+          "name": "specificity",
+          "reason": "From judge JSON",
+          "score": 0.8
+        },
+        {
+          "name": "groundedness",
+          "reason": "From judge JSON",
+          "score": 0.75
+        },
+        {
+          "name": "actionability",
+          "reason": "From judge JSON",
+          "score": 0.85
+        },
+        {
+          "name": "overall_score",
+          "reason": "From judge JSON",
+          "score": 0.76
+        }
+      ],
+      "llm_judge_failed": true,
+      "llm_judge_used": true,
+      "notes": "Judge self-evaluation complete",
+      "warnings": [
+        "Judge output failed deterministic checks"
+      ]
+    },
+    "outcome": {
+      "measured": false,
+      "notes": "Outcome evaluation not yet implemented",
+      "outcome_id": null
+    },
+    "per_answer": [
+      {
+        "actionability": 0.85,
+        "codebase_awareness": 0.7,
+        "correctness_likelihood": 0.7,
+        "deterministic_issues": [],
+        "deterministic_passed": true,
+        "groundedness": 0.75,
+        "judge_notes": "mock judge 40ce2a0e",
+        "model_name": "mock-fast",
+        "novelty": 0.5,
+        "overall_score": 0.76,
+        "risk_awareness": 0.8,
+        "specificity": 0.8,
+        "unsupported_claims": 0.1
+      },
+      {
+        "actionability": 0.85,
+        "codebase_awareness": 0.7,
+        "correctness_likelihood": 0.7,
+        "deterministic_issues": [],
+        "deterministic_passed": true,
+        "groundedness": 0.75,
+        "judge_notes": "mock judge e05854a7",
+        "model_name": "mock-security",
+        "novelty": 0.5,
+        "overall_score": 0.76,
+        "risk_awareness": 0.8,
+        "specificity": 0.8,
+        "unsupported_claims": 0.1
+      },
+      {
+        "actionability": 0.85,
+        "codebase_awareness": 0.7,
+        "correctness_likelihood": 0.7,
+        "deterministic_issues": [
+          "Output too short (33 chars, min 50)",
+          "Missing expected structural markers in response"
+        ],
+        "deterministic_passed": false,
+        "groundedness": 0.75,
+        "judge_notes": "mock judge e1f6f71d",
+        "model_name": "mock-weak",
+        "novelty": 0.5,
+        "overall_score": 0.76,
+        "risk_awareness": 0.8,
+        "specificity": 0.8,
+        "unsupported_claims": 0.1
+      }
+    ],
+    "warnings": [
+      "LLM judge quality check failed; scores may be unreliable"
+    ]
+  },
+  "minimal_fix_strategy": "Increase pool size and add connection timeout logging",
+  "most_likely_causes": [
+    "Connection pool exhaustion under load"
+  ],
+  "ranked_hypotheses": [
+    {
+      "confidence": 0.8,
+      "evidence": "timeout in acquire()",
+      "hypothesis": "Pool size too small"
+    },
+    {
+      "confidence": 0.5,
+      "evidence": "missing finally block",
+      "hypothesis": "Connection leak"
+    }
+  ],
+  "result": {
+    "confidence": 0.68,
+    "minimal_fix_strategy": "Increase pool size and add connection timeout logging",
+    "most_likely_causes": [
+      "Connection pool exhaustion under load"
+    ],
+    "ranked_hypotheses": [
+      {
+        "confidence": 0.8,
+        "evidence": "timeout in acquire()",
+        "hypothesis": "Pool size too small"
+      },
+      {
+        "confidence": 0.5,
+        "evidence": "missing finally block",
+        "hypothesis": "Connection leak"
+      }
+    ],
+    "verification_steps": [
+      "Check pool metrics under load",
+      "Audit connection return paths"
+    ],
+    "what_not_to_do": [
+      "Do not restart production without checking pool metrics first"
+    ]
+  },
+  "routing": {
+    "complexity": "low",
+    "estimated_cost_tier": "low",
+    "judge_model": "mock-judge",
+    "reasons": [
+      "Applied medium budget policy"
+    ],
+    "risk": "medium",
+    "selected_panel": [
+      "mock-fast",
+      "mock-security",
+      "mock-weak"
+    ],
+    "synthesizer_model": "mock-judge",
+    "task_type": "debugging",
+    "warnings": []
+  },
+  "usage": {
+    "failed_model_calls": 0,
+    "per_model": [
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 132,
+        "model_alias": "mock-fast",
+        "output_tokens": 39,
+        "provider": "mock",
+        "provider_model_id": "mock-fast",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 171
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 129,
+        "model_alias": "mock-security",
+        "output_tokens": 42,
+        "provider": "mock",
+        "provider_model_id": "mock-security",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 171
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 134,
+        "model_alias": "mock-weak",
+        "output_tokens": 5,
+        "provider": "mock",
+        "provider_model_id": "mock-weak",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 139
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 81,
+        "model_alias": "mock-judge",
+        "output_tokens": 22,
+        "provider": "mock",
+        "provider_model_id": "mock-judge",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 103
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 84,
+        "model_alias": "mock-judge",
+        "output_tokens": 22,
+        "provider": "mock",
+        "provider_model_id": "mock-judge",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 106
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 47,
+        "model_alias": "mock-judge",
+        "output_tokens": 22,
+        "provider": "mock",
+        "provider_model_id": "mock-judge",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 69
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 436,
+        "model_alias": "mock-judge",
+        "output_tokens": 58,
+        "provider": "mock",
+        "provider_model_id": "mock-judge",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 494
+      }
+    ],
+    "successful_model_calls": 7,
+    "total_input_tokens": 1043,
+    "total_output_tokens": 210,
+    "total_tokens": 1253
+  },
+  "verification_steps": [
+    "Check pool metrics under load",
+    "Audit connection return paths"
+  ],
+  "warnings": [
+    "LLM judge quality check failed; scores may be unreliable"
+  ],
+  "what_not_to_do": [
+    "Do not restart production without checking pool metrics first"
+  ]
+}

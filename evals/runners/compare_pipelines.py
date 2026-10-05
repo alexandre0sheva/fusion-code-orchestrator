@@ -8,7 +8,7 @@ import asyncio
 import os
 
 from fusion.config.env import load_env
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.routing.classifier import TaskType
 
 SAMPLES = {
@@ -32,7 +32,7 @@ async def main() -> None:
     if args.mock:
         os.environ["FUSION_DEFAULT_PROVIDER"] = "mock"
 
-    pipeline = create_pipeline(use_mock=args.mock)
+    pipeline = build_pipeline(Settings(use_mock=args.mock))
     print(f"{'Task':<15} {'Score':>8} {'Latency':>10} {'Cost':>8}")
     print("-" * 45)
     for task_type, content in SAMPLES.items():

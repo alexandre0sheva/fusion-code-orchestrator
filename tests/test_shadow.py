@@ -13,7 +13,7 @@ from fusion.benchmark.shadow import (
     should_run_shadow,
 )
 from fusion.config.loader import BaselineEntry
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.providers.base import ModelRequest, ModelResponse
 from fusion.providers.mock import MockProvider
 from fusion.routing.budget import BudgetLevel
@@ -177,7 +177,7 @@ async def test_shadow_missing_provider_skips() -> None:
 @pytest.mark.asyncio
 async def test_pipeline_shadow_stores_comparison_and_stats(tmp_path) -> None:
     db_path = str(tmp_path / "shadow.db")
-    pipeline = create_pipeline(db_path=db_path, use_mock=True)
+    pipeline = build_pipeline(Settings(db_path=db_path, use_mock=True))
     ctx = PipelineContext(
         task_type=TaskType.CODE_REVIEW,
         primary_content="diff: +def foo():\n+    return eval(user_input)",
@@ -210,7 +210,7 @@ async def test_pipeline_shadow_stores_comparison_and_stats(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_pipeline_no_shadow_by_default(tmp_path) -> None:
     db_path = str(tmp_path / "noshadow.db")
-    pipeline = create_pipeline(db_path=db_path, use_mock=True)
+    pipeline = build_pipeline(Settings(db_path=db_path, use_mock=True))
     ctx = PipelineContext(
         task_type=TaskType.CODE_REVIEW,
         primary_content="diff: +def foo():\n+    return 1",

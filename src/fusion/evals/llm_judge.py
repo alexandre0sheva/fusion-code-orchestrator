@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fusion.providers.base import ModelProvider, ModelRequest
+from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.model_registry import ModelRegistry
 
 
@@ -18,15 +19,20 @@ async def judge_response(
     response_content: str,
     task_type: str,
     context: str = "",
+    call: Callable[[ModelRequest], Awaitable[ModelResponse]] | None = None,
 ) -> dict[str, Any]:
-    """Use an LLM judge to score a model response."""
+    """Use an LLM judge to score a model response.
+
+    ``call`` lets the pipeline route the request through its call gateway so the judge's cost is
+    recorded in the run ledger; without it the provider is called directly.
+    """
     model_entry = registry.get(judge_model)
     prompt = (
         f"Evaluate this {task_type} response on a 0-1 scale for each dimension.\n"
         f"Return JSON with keys: specificity, groundedness, actionability, "
         f"correctness_likelihood, risk_awareness, unsupported_claims, "
         f"codebase_awareness, novelty, overall_score, notes.\n\n"
-        f"Context:\n{context[:2000]}\n\nResponse:\n{response_content[:4000]}"
+        f"Context:\n{context}\n\nResponse:\n{response_content}"
     )
     request = ModelRequest(
         model_id=model_entry.model_id,
@@ -36,7 +42,7 @@ async def judge_response(
         json_mode=model_entry.supports_json,
         metadata={"role": "judge", "personality": "judge", "task_type": task_type},
     )
-    completion = await provider.safe_complete(request)
+    completion = await (call or provider.safe_complete)(request)
     if completion.error:
         return heuristic_judge_scores(response_content, notes=completion.error)
     if completion.parsed_json:

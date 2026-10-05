@@ -22,7 +22,8 @@ from fusion.orchestration.pipelines import (
     CodeReviewPipeline,
     DebugPipeline,
     ImplementationPlanPipeline,
-    create_pipelines,
+    Settings,
+    build_pipelines,
 )
 from fusion.orchestration.schemas import (
     AnswerEvalInput as PipelineAnswerEvalInput,
@@ -48,10 +49,7 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def pipelines(db_path: str):
-    return create_pipelines(
-        providers={"mock": MockProvider(latency_ms=1.0)},
-        db_path=db_path,
-    )
+    return build_pipelines(Settings(db_path=db_path), {"mock": MockProvider(latency_ms=1.0)})
 
 
 @pytest.mark.asyncio
@@ -128,10 +126,8 @@ async def test_debug_structured_output(pipelines: dict) -> None:
 @pytest.mark.asyncio
 async def test_llm_judge_fallback(db_path: str) -> None:
     """Pipeline completes when LLM judge is disabled."""
-    pipes = create_pipelines(
-        providers={"mock": MockProvider(latency_ms=0.0)},
-        db_path=db_path,
-        use_llm_judge=False,
+    pipes = build_pipelines(
+        Settings(db_path=db_path, use_llm_judge=False), {"mock": MockProvider(latency_ms=0.0)}
     )
     result = await pipes["debug"].debug(
         DebugInput(error_message="ValueError: invalid literal"),
@@ -156,10 +152,7 @@ def test_deterministic_catches_dangerous_in_run_checks() -> None:
 @pytest.mark.asyncio
 async def test_redaction_before_provider(db_path: str) -> None:
     """Secrets in input are redacted before pipeline stores sanitized input."""
-    pipes = create_pipelines(
-        providers={"mock": MockProvider(latency_ms=0.0)},
-        db_path=db_path,
-    )
+    pipes = build_pipelines(Settings(db_path=db_path), {"mock": MockProvider(latency_ms=0.0)})
     secret_diff = "API_KEY=sk-testsecret12345678901234567890\n+ def foo(): pass"
     result = await pipes["code_review"].review(CodeReviewInput(diff=secret_diff))
     store = RunStore(db_path=db_path)
@@ -172,10 +165,7 @@ async def test_redaction_before_provider(db_path: str) -> None:
 
 @pytest.mark.asyncio
 async def test_run_logging_with_routing(db_path: str) -> None:
-    pipes = create_pipelines(
-        providers={"mock": MockProvider(latency_ms=0.0)},
-        db_path=db_path,
-    )
+    pipes = build_pipelines(Settings(db_path=db_path), {"mock": MockProvider(latency_ms=0.0)})
     result = await pipes["plan"].plan(
         ImplementationPlanInput(feature_request="Add user profiles"),
     )
@@ -205,14 +195,10 @@ async def test_mcp_handlers_return_expected_schemas(db_path: str) -> None:
     )
     assert "recommended_option" in decide
 
-    plan = await tools.fusion_plan_feature(
-        PlanFeatureInput(feature_description="Dark mode toggle")
-    )
+    plan = await tools.fusion_plan_feature(PlanFeatureInput(feature_description="Dark mode toggle"))
     assert "implementation_sequence" in plan
 
-    eval_out = await tools.fusion_eval_answer(
-        EvalAnswerInput(question="Q?", answer="A.")
-    )
+    eval_out = await tools.fusion_eval_answer(EvalAnswerInput(question="Q?", answer="A."))
     assert "score" in eval_out
 
     comparison = await tools.fusion_compare_claude_runs(

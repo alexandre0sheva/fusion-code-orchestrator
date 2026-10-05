@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fusion.config.loader import ModelEntry
+from fusion.orchestration.ledger import CallGateway, standalone_gateway
 from fusion.orchestration.prompts import build_synthesis_prompt, get_role_prompt
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse, ProviderError
 from fusion.routing.classifier import TaskType
@@ -17,16 +18,11 @@ async def synthesize_responses(
     panel_responses: list[tuple[str, str]],
     disagreement_analysis: dict[str, object],
     original_task: str = "",
+    gateway: CallGateway | None = None,
 ) -> ModelResponse:
     """Call synthesizer model to merge panel responses into structured JSON."""
     entry = registry_models[synthesizer_model]
-    provider = providers.get(entry.provider)
-    if provider is None:
-        return ModelResponse(
-            provider=entry.provider,
-            model=entry.model_id,
-            error=f"No provider for {entry.provider}",
-        )
+    gateway = gateway or standalone_gateway(registry_models, providers)
 
     user_prompt = build_synthesis_prompt(
         task_type=task_type,
@@ -46,7 +42,7 @@ async def synthesize_responses(
             "personality": "synthesizer",
         },
     )
-    response = await provider.safe_complete(request)
-    if response.error:
+    response = await gateway.call(stage="synthesis", alias=synthesizer_model, request=request)
+    if response.error and response.error_type != "MissingProvider":
         raise ProviderError(response.error)
     return response

@@ -4,6 +4,17 @@
 # several price schedules with effective_from/effective_until for scheduled provider changes.
 # Re-verify with `uv run fusion models check --live` and the source_url of each price.
 # Verified against official provider docs on 2026-10-05.
+#
+# provider_limits are client-side caps shared by every call to a provider (max in-flight requests
+# and requests per minute); omit a key for "unlimited". Set them to your account's real quota.
+# default_reasoning_effort is what Fusion sends when a request does not choose one. Panel models
+# default to the cheapest effort that works; baselines and the synthesizer keep provider defaults.
+# max_tokens must leave room for thinking tokens, which count against the output cap.
+
+provider_limits:
+  anthropic: {max_concurrent: 8, rpm: 1000}
+  openai: {max_concurrent: 8, rpm: 1000}
+  google: {max_concurrent: 8, rpm: 1000}
 
 models:
   # ---------------------------------------------------------------------------
@@ -28,6 +39,7 @@ models:
     display_name: Mock Security Reviewer
     notes: Security-focused mock personality
     roles: [panel]
+    persona: security_reviewer
     strengths: [code_review, security]
     cost_tier: low
     latency_tier: low
@@ -55,6 +67,7 @@ models:
     display_name: Mock Weak Model
     notes: Low-quality mock for disagreement testing
     roles: [panel]
+    persona: weak_model
     cost_tier: low
     latency_tier: low
     context_tier: small
@@ -103,7 +116,7 @@ models:
     latency_tier: medium
     context_tier: long
     quality_tier: strong
-    max_tokens: 8192
+    max_tokens: 16384
     context_window: 1000000
     max_output: 128000
     supports_json: true
@@ -132,7 +145,7 @@ models:
     latency_tier: medium
     context_tier: long
     quality_tier: frontier
-    max_tokens: 8192
+    max_tokens: 16384
     context_window: 1000000
     max_output: 128000
     supports_json: true
@@ -179,7 +192,8 @@ models:
     model_id: gpt-6-luna
     display_name: GPT-6 Luna
     notes: >-
-      Most efficient OpenAI model. Reasoning effort none..max (default medium); in Chat
+      Most efficient OpenAI model. Reasoning effort none..max (provider default medium, Fusion
+      panel default low); in Chat
       Completions, function calling works only with reasoning_effort none. Sampling params are
       not sent (conservative).
     roles: [panel, judge]
@@ -188,7 +202,7 @@ models:
     latency_tier: low
     context_tier: long
     quality_tier: medium
-    max_tokens: 8192
+    max_tokens: 16384
     context_window: 1050000
     max_output: 128000
     supports_json: true
@@ -196,7 +210,7 @@ models:
     supports_tools: true
     supports_vision: true
     supports_reasoning_effort: true
-    default_reasoning_effort: medium
+    default_reasoning_effort: low
     supports_sampling_params: false
     prices:
       - input_per_1m: 0.10
@@ -211,12 +225,13 @@ models:
     display_name: GPT-6 Luna Security Reviewer
     notes: Security-focused panel role using GPT-6 Luna
     roles: [panel]
+    persona: security_reviewer
     strengths: [code_review, security]
     cost_tier: low
     latency_tier: low
     context_tier: long
     quality_tier: medium
-    max_tokens: 8192
+    max_tokens: 16384
     context_window: 1050000
     max_output: 128000
     supports_json: true
@@ -224,7 +239,7 @@ models:
     supports_tools: true
     supports_vision: true
     supports_reasoning_effort: true
-    default_reasoning_effort: medium
+    default_reasoning_effort: low
     supports_sampling_params: false
     prices:
       - input_per_1m: 0.10
@@ -246,7 +261,7 @@ models:
     latency_tier: medium
     context_tier: long
     quality_tier: strong
-    max_tokens: 8192
+    max_tokens: 16384
     context_window: 1050000
     max_output: 128000
     supports_json: true
@@ -279,7 +294,7 @@ models:
     latency_tier: low
     context_tier: long
     quality_tier: medium
-    max_tokens: 8192
+    max_tokens: 16384
     context_window: 1048576
     max_output: 65536
     supports_json: true
@@ -287,6 +302,7 @@ models:
     supports_tools: true
     supports_vision: true
     supports_reasoning_effort: true
+    default_reasoning_effort: low
     prices:
       - input_per_1m: 0.75
         output_per_1m: 3.75

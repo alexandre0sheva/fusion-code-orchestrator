@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fusion.mcp_server.schemas import (
@@ -21,6 +23,15 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     """Create and configure the FastMCP server with all fusion tools."""
     from fastmcp import FastMCP
 
+    tools = FusionTools(db_path=db_path)
+
+    @asynccontextmanager
+    async def lifespan(_server: Any) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await tools.aclose()
+
     mcp = FastMCP(
         name="fusion-code-orchestrator",
         instructions=(
@@ -28,9 +39,8 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
             "architecture decisions, implementation planning, general coding answers, "
             "and Claude Code run comparison. Claude Code remains the executor."
         ),
+        lifespan=lifespan,
     )
-
-    tools = FusionTools(db_path=db_path)
 
     @mcp.tool()
     async def fusion_ask(input: FusionAskInput) -> dict[str, Any]:

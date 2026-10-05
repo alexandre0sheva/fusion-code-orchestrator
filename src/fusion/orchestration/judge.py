@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fusion.evals.engine import EvalEngine
 from fusion.evals.schemas import ModelResponseEval
 from fusion.providers.base import ModelResponse
+
+if TYPE_CHECKING:
+    from fusion.orchestration.ledger import CallGateway
 
 
 async def judge_panel_responses(
@@ -16,6 +21,7 @@ async def judge_panel_responses(
     context: str = "",
     is_coding_task: bool = False,
     known_files: list[str] | None = None,
+    gateway: CallGateway | None = None,
 ) -> list[ModelResponseEval]:
     """Evaluate each panel response."""
     evaluations: list[ModelResponseEval] = []
@@ -28,6 +34,7 @@ async def judge_panel_responses(
             context=context,
             is_coding_task=is_coding_task,
             known_files=known_files,
+            gateway=gateway,
         )
         evaluations.append(ev)
     return evaluations

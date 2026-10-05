@@ -5,7 +5,7 @@ from fusion.config.loader import load_model_registry
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.classifier import TaskClassifier, TaskType, normalize_task_type
 from fusion.routing.model_registry import ModelRegistry
-from fusion.routing.policy import Router, RoutingPolicy
+from fusion.routing.policy import Router, build_routing
 
 
 def test_classifier_explicit_type() -> None:
@@ -60,7 +60,6 @@ def test_disabled_models_not_selected() -> None:
     decision = router.route(
         explicit_type="architecture_decision",
         budget=BudgetLevel.HIGH,
-        test_mode=False,
     )
     assert "claude-opus-disabled" not in decision.selected_panel
     assert "claude-opus-disabled" not in decision.judge_model
@@ -72,7 +71,6 @@ def test_local_only_falls_back_without_local_models() -> None:
     decision = router.route(
         explicit_type="code_review",
         budget=BudgetLevel.LOCAL_ONLY,
-        test_mode=False,
     )
     assert "No local models configured" in " ".join(decision.warnings)
     for alias in decision.selected_panel:
@@ -81,51 +79,46 @@ def test_local_only_falls_back_without_local_models() -> None:
 
 
 def test_high_risk_code_review_expands_panel() -> None:
-    registry = ModelRegistry()
-    router = Router(registry=registry)
+    router = build_routing(use_mock=True).router
     content = "security auth password production SQL injection vulnerability"
     decision = router.route(
         explicit_type="code_review",
         content=content,
         budget=BudgetLevel.HIGH,
-        test_mode=True,
     )
     assert decision.risk == "high"
     assert len(decision.selected_panel) >= 2
 
 
 def test_low_budget_selects_fewer_models() -> None:
-    registry = ModelRegistry()
-    router = Router(registry=registry)
+    router = build_routing(use_mock=True).router
     low = router.route(
         explicit_type="code_review",
         budget=BudgetLevel.LOW,
-        test_mode=True,
     )
     high = router.route(
         explicit_type="code_review",
         budget=BudgetLevel.HIGH,
-        test_mode=True,
     )
     assert len(low.selected_panel) <= len(high.selected_panel)
 
 
 def test_routing_policy_selects_panel() -> None:
-    routing = RoutingPolicy()
-    panel = routing.select_panel(TaskType.CODE_REVIEW, test_mode=True)
+    routing = build_routing(use_mock=True)
+    panel = routing.select_panel(TaskType.CODE_REVIEW)
     assert len(panel) >= 1
     assert "mock-fast" in panel
 
 
 def test_routing_judge_and_synthesizer() -> None:
-    routing = RoutingPolicy()
-    assert routing.select_judge(TaskType.DEBUGGING, test_mode=True) == "mock-judge"
-    assert routing.select_synthesizer(TaskType.IMPLEMENTATION_PLAN, test_mode=True) == "mock-judge"
+    routing = build_routing(use_mock=True)
+    assert routing.select_judge(TaskType.DEBUGGING) == "mock-judge"
+    assert routing.select_synthesizer(TaskType.IMPLEMENTATION_PLAN) == "mock-judge"
 
 
 def test_production_routing_uses_cloud_models() -> None:
-    routing = RoutingPolicy()
-    panel = routing.select_panel(TaskType.CODE_REVIEW, test_mode=False)
+    routing = build_routing(use_mock=False)
+    panel = routing.select_panel(TaskType.CODE_REVIEW)
     assert "mock-fast" not in panel
     assert any(model in panel for model in ("claude-sonnet", "gpt-luna", "gemini-flash"))
 
@@ -136,7 +129,6 @@ def test_judge_prefers_json_capable_model() -> None:
     decision = router.route(
         explicit_type="answer_eval",
         budget=BudgetLevel.MEDIUM,
-        test_mode=False,
     )
     judge = registry.get(decision.judge_model)
     assert judge.supports_json is True

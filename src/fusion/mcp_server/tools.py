@@ -22,8 +22,9 @@ from fusion.orchestration.pipelines import (
     DebugPipeline,
     FusionAskPipeline,
     ImplementationPlanPipeline,
+    Settings,
+    build_pipelines,
     build_provider_registry,
-    create_pipelines,
 )
 from fusion.orchestration.schemas import (
     AnswerEvalInput as PipelineAnswerEvalInput,
@@ -43,6 +44,7 @@ from fusion.orchestration.schemas import (
 from fusion.orchestration.schemas import (
     ImplementationPlanInput as PipelinePlanInput,
 )
+from fusion.providers.base import close_providers
 from fusion.routing.budget import BudgetLevel
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
@@ -123,7 +125,11 @@ class FusionTools:
     ) -> None:
         use_mock = is_test_mode(use_mock)
         providers = build_provider_registry(use_mock=use_mock)
-        pipelines = create_pipelines(providers=providers, db_path=db_path)
+        self.providers = providers
+        self.run_store = RunStore(db_path=db_path)
+        pipelines = build_pipelines(
+            Settings(use_mock=use_mock, run_store=self.run_store), providers
+        )
         self._code_review = code_review or pipelines["code_review"]
         self._ask = ask or pipelines["ask"]
         self._debug = debug or pipelines["debug"]
@@ -132,6 +138,11 @@ class FusionTools:
         self._answer_eval = answer_eval or pipelines["answer_eval"]
         self._db_path = db_path
         self._use_mock = use_mock
+
+    async def aclose(self) -> None:
+        """Close provider HTTP clients and the run database; call when the host shuts down."""
+        await close_providers(self.providers)
+        self.run_store.close()
 
     async def fusion_ask(self, input: FusionAskInput) -> dict[str, Any]:
         """Answer a general coding task using Fusion as a model-like panel."""
@@ -225,9 +236,8 @@ class FusionTools:
 
     async def fusion_stats(self, input: FusionStatsInput) -> dict[str, Any]:
         """Return cumulative Fusion cost, latency, and shadow win-rate statistics."""
-        store = RunStore(db_path=self._db_path)
-        stats = store.get_stats()
-        recent = store.list_shadow_comparisons(limit=input.recent_shadow_limit)
+        stats = await self.run_store.aget_stats()
+        recent = self.run_store.list_shadow_comparisons(limit=input.recent_shadow_limit)
         return {
             "display_markdown": format_stats_markdown(stats, recent),
             "result": stats_to_dict(stats, recent),

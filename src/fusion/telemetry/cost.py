@@ -22,6 +22,7 @@ class ModelUsage(BaseModel):
     output_tokens: int | None = None
     total_tokens: int | None = None
     cached_input_tokens: int | None = None
+    cache_write_tokens: int | None = None
     reasoning_tokens: int | None = None
     estimated_cost_usd: float | None = None
     actual_cost_usd: float | None = None
@@ -92,17 +93,30 @@ def _token_cost(
     input_tokens: int,
     output_tokens: int,
     cached_input_tokens: int = 0,
+    cache_write_tokens: int = 0,
     reasoning_tokens: int = 0,
 ) -> float:
-    """Cost in USD. ``input_tokens`` includes cached tokens (provider adapters normalize this)."""
+    """Cost in USD.
+
+    ``input_tokens`` includes cached reads and cache writes (provider adapters normalize this):
+    plain input is billed at the input rate, reads at the cached rate, writes at the cache-write
+    rate (falling back to the input rate when the catalog has none).
+    """
     cached = min(cached_input_tokens, input_tokens)
+    written = min(cache_write_tokens, input_tokens - cached)
     cached_price = (
         schedule.cached_input_per_1m
         if schedule.cached_input_per_1m is not None
         else schedule.input_per_1m
     )
-    cost = ((input_tokens - cached) / 1_000_000) * schedule.input_per_1m
+    write_price = (
+        schedule.cache_write_per_1m
+        if schedule.cache_write_per_1m is not None
+        else schedule.input_per_1m
+    )
+    cost = ((input_tokens - cached - written) / 1_000_000) * schedule.input_per_1m
     cost += (cached / 1_000_000) * cached_price
+    cost += (written / 1_000_000) * write_price
     cost += (output_tokens / 1_000_000) * schedule.output_per_1m
     if reasoning_tokens and schedule.reasoning_per_1m is not None:
         cost += (reasoning_tokens / 1_000_000) * schedule.reasoning_per_1m
@@ -182,6 +196,7 @@ class PricingRegistry:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cached_input_tokens=response.cached_input_tokens or 0,
+            cache_write_tokens=response.cache_write_tokens or 0,
             reasoning_tokens=response.reasoning_tokens or 0,
         )
         notes: tuple[str, ...] = ()
@@ -256,6 +271,7 @@ def model_usage_from_response(
         output_tokens=response.output_tokens,
         total_tokens=total_tokens,
         cached_input_tokens=response.cached_input_tokens,
+        cache_write_tokens=response.cache_write_tokens,
         reasoning_tokens=response.reasoning_tokens,
         estimated_cost_usd=cost.amount_usd if cost else response.cost_estimate_usd,
         actual_cost_usd=response.actual_cost_usd,

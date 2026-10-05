@@ -16,13 +16,16 @@ import json
 import os
 import random
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import BaselineEntry, ModelEntry, load_baseline
 from fusion.providers.base import ModelProvider, ModelRequest
 from fusion.telemetry.cost import PricingRegistry
+
+if TYPE_CHECKING:
+    from fusion.orchestration.ledger import CallGateway
 
 _VALID_MODES = {"off", "sampled", "always"}
 
@@ -82,9 +85,9 @@ def _build_blind_judge_prompt(task: str, answer_1: str, answer_2: str) -> str:
         "You are comparing two anonymous answers to the same task. You do not "
         "know which system produced which answer. Judge only on quality: "
         "correctness, groundedness, specificity, actionability, and risk awareness.\n\n"
-        f"## Task\n{task[:6000]}\n\n"
-        f"## Answer 1\n{answer_1[:6000]}\n\n"
-        f"## Answer 2\n{answer_2[:6000]}\n\n"
+        f"## Task\n{task}\n\n"
+        f"## Answer 1\n{answer_1}\n\n"
+        f"## Answer 2\n{answer_2}\n\n"
         "Return ONLY valid JSON with keys: "
         '{"winner": "1" | "2" | "tie", '
         '"answer_1_score": float 0-1, "answer_2_score": float 0-1, '
@@ -119,6 +122,7 @@ async def run_shadow_comparison(
     baseline: BaselineEntry | None = None,
     timeout_seconds: float = 90.0,
     rng: random.Random | None = None,
+    gateway: CallGateway | None = None,
 ) -> ShadowComparison:
     """Call the real baseline on the same task and judge both answers blind."""
     baseline_entry = baseline or load_baseline().baseline
@@ -139,16 +143,23 @@ async def run_shadow_comparison(
         return result
 
     baseline_start = time.perf_counter()
-    baseline_response = await provider.safe_complete(
-        ModelRequest(
-            model_id=baseline_entry.model_id,
-            system_prompt=system_prompt,
-            user_prompt=task_prompt,
-            max_tokens=8192,
-            timeout=timeout_seconds,
-            metadata={"role": "shadow_baseline"},
-        )
+    baseline_request = ModelRequest(
+        model_id=baseline_entry.model_id,
+        system_prompt=system_prompt,
+        user_prompt=task_prompt,
+        max_tokens=8192,
+        timeout=timeout_seconds,
+        metadata={"role": "shadow_baseline"},
     )
+    if gateway is not None:
+        baseline_response = await gateway.call(
+            stage="shadow_baseline",
+            alias=baseline_entry.model or baseline_entry.model_id,
+            request=baseline_request,
+            provider_name=baseline_entry.provider,
+        )
+    else:
+        baseline_response = await provider.safe_complete(baseline_request)
     if baseline_response.latency_ms <= 0:
         baseline_response.latency_ms = (time.perf_counter() - baseline_start) * 1000
     if baseline_response.error or not baseline_response.content.strip():
@@ -179,17 +190,21 @@ async def run_shadow_comparison(
         if fusion_first
         else (baseline_response.content, fusion_answer)
     )
-    judge_response = await judge_provider.safe_complete(
-        ModelRequest(
-            model_id=judge_entry.model_id,
-            system_prompt="You are an impartial evaluation judge. Return only valid JSON.",
-            user_prompt=_build_blind_judge_prompt(task_prompt, answer_1, answer_2),
-            max_tokens=1024,
-            json_mode=judge_entry.supports_json,
-            timeout=timeout_seconds,
-            metadata={"role": "shadow_judge"},
-        )
+    judge_request = ModelRequest(
+        model_id=judge_entry.model_id,
+        system_prompt="You are an impartial evaluation judge. Return only valid JSON.",
+        user_prompt=_build_blind_judge_prompt(task_prompt, answer_1, answer_2),
+        max_tokens=1024,
+        json_mode=judge_entry.supports_json,
+        timeout=timeout_seconds,
+        metadata={"role": "shadow_judge"},
     )
+    if gateway is not None:
+        judge_response = await gateway.call(
+            stage="shadow_judge", alias=judge_model_alias, request=judge_request
+        )
+    else:
+        judge_response = await judge_provider.safe_complete(judge_request)
     verdict = (
         judge_response.parsed_json
         if judge_response.parsed_json and "winner" in judge_response.parsed_json

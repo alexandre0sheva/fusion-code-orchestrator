@@ -4,7 +4,7 @@ import pytest
 
 from fusion.mcp_server.schemas import ReviewDiffInput
 from fusion.mcp_server.tools import FusionTools
-from fusion.orchestration.pipelines import PipelineContext, create_pipeline
+from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.routing.classifier import TaskType
 
 
@@ -15,7 +15,7 @@ def db_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_code_review_pipeline(db_path: str) -> None:
-    pipeline = create_pipeline(db_path=db_path)
+    pipeline = build_pipeline(Settings(db_path=db_path))
     diff = (
         "diff --git a/app.py b/app.py\n"
         "--- a/app.py\n"

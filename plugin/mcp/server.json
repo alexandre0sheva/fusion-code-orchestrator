@@ -2,10 +2,7 @@
   "mcpServers": {
     "fusion": {
       "command": "uv",
-      "args": ["run", "--directory", "${workspaceFolder}", "fusion", "mcp"],
-      "env": {
-        "FUSION_DB_PATH": "${workspaceFolder}/fusion_runs.db"
-      }
+      "args": ["run", "--directory", "${workspaceFolder}", "fusion", "mcp"]
     }
   }
 }

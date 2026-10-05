@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from functools import partial
+from typing import TYPE_CHECKING, Any
 
 from fusion.evals.answer_eval import build_model_response_eval
 from fusion.evals.context_eval import evaluate_context
@@ -19,9 +20,12 @@ from fusion.evals.schemas import (
     ModelResponseEval,
     OutcomeEvalResult,
 )
-from fusion.providers.base import ModelProvider
+from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.classifier import TaskType, canonical_task_key
 from fusion.routing.model_registry import ModelRegistry
+
+if TYPE_CHECKING:
+    from fusion.orchestration.ledger import CallGateway
 
 
 class EvalEngine:
@@ -37,6 +41,10 @@ class EvalEngine:
         self._registry = registry
         self._providers = provider_resolver or {}
         self._use_llm_judge = use_llm_judge
+
+    @property
+    def use_llm_judge(self) -> bool:
+        return self._use_llm_judge
 
     def evaluate_context(
         self,
@@ -61,6 +69,7 @@ class EvalEngine:
         context: str = "",
         known_files: list[str] | None = None,
         is_coding_task: bool = False,
+        gateway: CallGateway | None = None,
     ) -> ModelResponseEval:
         judge_scores: dict[str, float | str] | None = None
         judge_failed = False
@@ -75,6 +84,11 @@ class EvalEngine:
                     response_content=content,
                     task_type=task_type,
                     context=context,
+                    call=(
+                        partial(_gateway_call, gateway, judge_model)
+                        if gateway is not None
+                        else None
+                    ),
                 )
                 notes = judge_scores.get("notes", "")
                 if isinstance(notes, str) and notes.startswith("Failed"):
@@ -100,8 +114,8 @@ class EvalEngine:
             known_files=known_files,
         )
         if judge_failed:
-            eval_result.judge_notes = (
-                f"{eval_result.judge_notes}; LLM judge fallback active".strip("; ")
+            eval_result.judge_notes = f"{eval_result.judge_notes}; LLM judge fallback active".strip(
+                "; "
             )
         return eval_result
 
@@ -262,3 +276,8 @@ class EvalEngine:
             "implementation_plan",
             "architecture_decision",
         }
+
+
+async def _gateway_call(gateway: CallGateway, alias: str, request: ModelRequest) -> ModelResponse:
+    """Judge calls go through the run's gateway so their cost lands in the ledger."""
+    return await gateway.call(stage="judge", alias=alias, request=request)
