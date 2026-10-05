@@ -1,8 +1,14 @@
-baseline:
-  name: "Opus 4.8"
-  provider: "anthropic"
-  model_id: "claude-opus-4-8"
-  pricing_alias: "anthropic.claude-opus-4-8"
-  description: "Single frontier model baseline for comparison"
-  enabled: true
-  estimate_strategy: "same_input_and_output_tokens"
+# Frontier baselines that Fusion's cost is compared against. `model` is a catalog alias; the
+# provider, model ID and price come from catalog.yaml. The first enabled entry is the default
+# baseline for cost comparison and shadow A/B; the others are additional arms for `fusion bench`.
+baselines:
+  - name: "Opus 5.5"
+    model: claude-opus
+    description: "Single frontier model baseline for comparison"
+    enabled: true
+    estimate_strategy: "same_input_and_output_tokens"
+  - name: "GPT-6.1 Sol"
+    model: gpt-sol
+    description: "Second frontier-class baseline from a different provider"
+    enabled: true
+    estimate_strategy: "same_input_and_output_tokens"

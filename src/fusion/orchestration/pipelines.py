@@ -277,7 +277,7 @@ class BasePipeline:
 
         panel_models = self._resolve_available_models(
             routing_decision.selected_panel,
-            fallback=["gemini-flash", "claude-sonnet", "gpt-5.4-mini", "mock-fast"],
+            fallback=["gemini-flash", "claude-sonnet", "gpt-luna", "mock-fast"],
             warnings=warnings,
             role="panel",
         )
@@ -289,7 +289,7 @@ class BasePipeline:
         )[0]
         synthesizer_model = self._resolve_available_models(
             [routing_decision.synthesizer_model],
-            fallback=["claude-sonnet", "gpt-5.4-mini", "gemini-flash", "mock-judge"],
+            fallback=["claude-sonnet", "gpt-luna", "gemini-flash", "mock-judge"],
             warnings=warnings,
             role="synthesizer",
         )[0]
@@ -635,8 +635,8 @@ class BasePipeline:
                 shadow_baseline_entry = BaselineEntry(
                     name="Mock Baseline",
                     provider="mock",
+                    model="mock-fast",
                     model_id="mock-fast",
-                    pricing_alias="mock.mock-fast",
                 )
             shadow_result = await run_shadow_comparison(
                 task_prompt=build_user_prompt(

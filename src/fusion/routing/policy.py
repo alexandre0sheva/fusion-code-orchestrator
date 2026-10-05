@@ -19,7 +19,7 @@ from fusion.routing.model_registry import ModelRegistry
 Complexity = Literal["low", "medium", "high"]
 Risk = Literal["low", "medium", "high"]
 
-_CLOUD_FALLBACK_PANEL = ["gemini-flash", "claude-sonnet", "gpt-5.4-mini"]
+_CLOUD_FALLBACK_PANEL = ["gemini-flash", "claude-sonnet", "gpt-luna"]
 _MOCK_PANEL = ["mock-fast", "mock-security", "mock-weak"]
 
 
@@ -186,7 +186,7 @@ class Router:
             )
             if not synth_filtered:
                 synth_filtered = self._registry.filter_candidates(
-                    ["claude-sonnet", "gpt-5.4-mini", "mock-judge"],
+                    ["claude-sonnet", "gpt-luna", "mock-judge"],
                     budget=BudgetLevel.MEDIUM,
                     local_only=False,
                 )

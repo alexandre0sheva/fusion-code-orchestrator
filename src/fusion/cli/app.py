@@ -12,13 +12,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from fusion.cli.models_cmd import models_app
+from fusion.config.catalog import catalog_warnings, load_catalog
 from fusion.config.env import load_env
-from fusion.config.loader import (
-    load_baseline,
-    load_model_registry,
-    load_pricing,
-    load_routing_policies,
-)
+from fusion.config.loader import load_baseline, load_routing_policies
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
     DebugErrorInput,
@@ -42,6 +39,7 @@ runs_app = typer.Typer(help="Inspect orchestration run history")
 config_app = typer.Typer(help="Validate Fusion configuration")
 app.add_typer(runs_app, name="runs")
 app.add_typer(config_app, name="config")
+app.add_typer(models_app, name="models")
 console = Console()
 
 load_env()
@@ -376,20 +374,32 @@ def config_validate(
     """Validate YAML config, pricing, baseline, fanout, and provider env vars."""
     issues: list[str] = []
     warnings: list[str] = []
-    models = load_model_registry()
+    catalog = load_catalog()
+    models = catalog.models
     routing = load_routing_policies()
-    pricing = load_pricing()
-    baseline = load_baseline().baseline
+    baselines = load_baseline(catalog=catalog).baselines
 
-    for alias, model in models.models.items():
+    for alias, model in models.items():
         if not model.provider:
             issues.append(f"Model {alias} has no provider")
-        price_key = f"{model.provider}.{model.model_id}"
-        if model.enabled and price_key not in pricing.pricing:
-            warnings.append(f"No pricing entry for enabled model {alias} ({price_key})")
+        if model.enabled and model.price_at() is None:
+            warnings.append(f"No price in effect today for enabled model {alias}")
+    warnings.extend(catalog_warnings(catalog))
 
-    if baseline.enabled and baseline.pricing_alias not in pricing.pricing:
-        warnings.append(f"No pricing entry for baseline alias {baseline.pricing_alias}")
+    for entry in baselines:
+        if entry.enabled and entry.model and entry.model not in models:
+            issues.append(f"Baseline {entry.name} references unknown model {entry.model}")
+
+    referenced: set[str] = set()
+    for policy in routing.policies.values():
+        referenced.update(policy.panel_models)
+        referenced.update(policy.high_risk_panel_models)
+        referenced.update([policy.judge_model, policy.synthesizer_model])
+        for budget in policy.budgets.values():
+            referenced.update(budget.panel_models)
+            referenced.update(filter(None, [budget.judge_model, budget.synthesizer_model]))
+    for alias in sorted(referenced - set(models)):
+        issues.append(f"Routing policy references unknown model {alias}")
 
     fanout = routing.fanout
     if fanout.global_timeout_seconds < fanout.per_model_timeout_seconds:
@@ -401,7 +411,7 @@ def config_validate(
         "google": "GOOGLE_API_KEY",
     }
     for provider, env_name in provider_env.items():
-        enabled = any(m.enabled and m.provider == provider for m in models.models.values())
+        enabled = any(m.enabled and m.provider == provider for m in models.values())
         if enabled and not os.environ.get(env_name):
             message = f"{env_name} missing for enabled {provider} models"
             (issues if strict else warnings).append(message)
@@ -420,14 +430,14 @@ def compare_cost(
     fusion_run_id: Annotated[str, typer.Option(help="Fusion run_id from MCP output")],
     opus_input_tokens: Annotated[int, typer.Option(help="Opus input tokens from Claude Code")],
     opus_output_tokens: Annotated[int, typer.Option(help="Opus output tokens from Claude Code")],
-    opus_model: Annotated[str, typer.Option(help="Opus model id for pricing")] = (
-        "claude-opus-4-8"
+    opus_model: Annotated[str, typer.Option(help="Catalog model alias for pricing")] = (
+        "claude-opus"
     ),
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
     """Compare Fusion run cost vs Claude Opus token usage."""
     from fusion.storage.run_store import RunStore
-    from fusion.telemetry.pricing import estimate_cost_usd
+    from fusion.telemetry.cost import estimate_alias_cost
 
     store = RunStore(db_path=db_path)
     record = store.get_run(fusion_run_id)
@@ -437,11 +447,16 @@ def compare_cost(
 
     fusion_in = sum(s.input_tokens for s in record.steps)
     fusion_out = sum(s.output_tokens for s in record.steps)
-    opus_cost = estimate_cost_usd(
-        input_tokens=opus_input_tokens,
-        output_tokens=opus_output_tokens,
-        model=opus_model,
-    )
+    try:
+        estimate = estimate_alias_cost(
+            opus_model,
+            input_tokens=opus_input_tokens,
+            output_tokens=opus_output_tokens,
+        )
+    except KeyError:
+        console.print(f"[red]Unknown catalog model: {opus_model}[/red]")
+        raise typer.Exit(1) from None
+    opus_cost = estimate.amount_usd or 0.0
 
     table = Table(title="Fusion vs Opus cost (estimated list prices)")
     table.add_column("Source")
@@ -478,39 +493,6 @@ def compare_cost(
         "[dim]Opus tokens are from Claude Code, not Fusion MCP. "
         "Judge LLM calls may add uncaptured Fusion cost.[/dim]"
     )
-
-
-@app.command("compare-implement")
-def compare_implement_cmd(
-    task: Annotated[str, typer.Option(help="Implementation task")],
-    workspace: Annotated[str, typer.Option(help="Workspace root path")] = "",
-    constraints: Annotated[str, typer.Option(help="Constraints")] = "",
-    verify_command: Annotated[str, typer.Option(help="Verification command")] = "",
-    max_steps: Annotated[int, typer.Option(help="Max agent steps per arm")] = 40,
-    mock: Annotated[bool, typer.Option(help="Use mock providers")] = False,
-    db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
-) -> None:
-    """Run Opus vs Fusion implementation benchmark."""
-    import os
-    from pathlib import Path
-
-    from fusion.benchmark.compare import compare_implementations
-
-    if mock:
-        os.environ["FUSION_DEFAULT_PROVIDER"] = "mock"
-    root = workspace or os.environ.get("FUSION_WORKSPACE_ROOT", os.getcwd())
-    result = asyncio.run(
-        compare_implementations(
-            task=task,
-            workspace_root=Path(root),
-            constraints=constraints,
-            verify_command=verify_command,
-            max_agent_steps=max_steps,
-            db_path=db_path,
-            use_mock=mock,
-        )
-    )
-    _print_json(result.model_dump())
 
 
 @app.command()

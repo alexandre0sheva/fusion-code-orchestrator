@@ -7,8 +7,9 @@ import argparse
 import json
 from pathlib import Path
 
+from fusion.config.catalog import load_catalog
 from fusion.storage.run_store import RunStore
-from fusion.telemetry.pricing import MODEL_PRICING, estimate_cost_usd
+from fusion.telemetry.cost import estimate_alias_cost
 
 
 def _load_fusion_usage(run_id: str, db_path: str | None) -> dict[str, object]:
@@ -57,9 +58,9 @@ def main() -> None:
     parser.add_argument("--opus-output-tokens", type=int, required=True)
     parser.add_argument(
         "--opus-model",
-        default="claude-opus-4-8",
-        choices=sorted(MODEL_PRICING.keys()),
-        help="Model used for the Opus baseline answer",
+        default="claude-opus",
+        choices=sorted(load_catalog().models),
+        help="Catalog model alias used for the baseline answer's price",
     )
     parser.add_argument(
         "--db-path",
@@ -79,10 +80,13 @@ def main() -> None:
         run_id = str(data.get("run_id", run_id))
 
     fusion = _load_fusion_usage(run_id, args.db_path)
-    opus_cost = estimate_cost_usd(
-        input_tokens=args.opus_input_tokens,
-        output_tokens=args.opus_output_tokens,
-        model=args.opus_model,
+    opus_cost = (
+        estimate_alias_cost(
+            args.opus_model,
+            input_tokens=args.opus_input_tokens,
+            output_tokens=args.opus_output_tokens,
+        ).amount_usd
+        or 0.0
     )
 
     print("Cost comparison (list prices, approximate)")

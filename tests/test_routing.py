@@ -127,7 +127,7 @@ def test_production_routing_uses_cloud_models() -> None:
     routing = RoutingPolicy()
     panel = routing.select_panel(TaskType.CODE_REVIEW, test_mode=False)
     assert "mock-fast" not in panel
-    assert any(model in panel for model in ("claude-sonnet", "gpt-5.4-mini", "gemini-flash"))
+    assert any(model in panel for model in ("claude-sonnet", "gpt-luna", "gemini-flash"))
 
 
 def test_judge_prefers_json_capable_model() -> None:

@@ -3,7 +3,7 @@ policies:
     task_type: code_review
     panel_models:
       - claude-haiku
-      - gpt-5.4-mini-security
+      - gpt-luna-security
       - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
@@ -11,7 +11,7 @@ policies:
     min_context_score: 0.3
     high_risk_panel_models:
       - claude-sonnet
-      - gpt-5.4-mini-security
+      - gpt-luna-security
       - claude-haiku
       - gemini-flash
     high_risk_max_panel_size: 4
@@ -23,13 +23,13 @@ policies:
       medium:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini-security
+          - gpt-luna-security
           - gemini-flash
         max_panel_size: 3
       high:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini-security
+          - gpt-luna-security
           - gemini-flash
         max_panel_size: 3
       local_only:
@@ -42,7 +42,7 @@ policies:
     task_type: debugging
     panel_models:
       - claude-haiku
-      - gpt-5.4-mini
+      - gpt-luna
       - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
@@ -56,13 +56,13 @@ policies:
       medium:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       high:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       local_only:
@@ -74,7 +74,7 @@ policies:
     task_type: architecture_decision
     panel_models:
       - claude-haiku
-      - gpt-5.4-mini
+      - gpt-luna
       - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
@@ -88,13 +88,13 @@ policies:
       medium:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       high:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       local_only:
@@ -106,7 +106,7 @@ policies:
     task_type: implementation_plan
     panel_models:
       - claude-haiku
-      - gpt-5.4-mini
+      - gpt-luna
       - gemini-flash
     judge_model: gemini-flash
     synthesizer_model: claude-sonnet
@@ -120,13 +120,13 @@ policies:
       medium:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       high:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       local_only:
@@ -183,7 +183,7 @@ policies:
       high:
         panel_models:
           - claude-haiku
-          - gpt-5.4-mini
+          - gpt-luna
           - gemini-flash
         max_panel_size: 3
       local_only:

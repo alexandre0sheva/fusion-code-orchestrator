@@ -53,3 +53,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Fusion local state and benchmark output
+bench-results/
+.fusion/

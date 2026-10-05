@@ -26,7 +26,7 @@ _MOCK_BASELINE = BaselineEntry(
     name="Mock Baseline",
     provider="mock",
     model_id="mock-fast",
-    pricing_alias="mock.mock-fast",
+    model="mock-fast",
 )
 
 

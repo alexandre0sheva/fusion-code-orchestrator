@@ -12,15 +12,19 @@ import httpx
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse, ProviderError
 from fusion.providers.http_utils import post_json_with_retries, try_parse_json
 
-_OPUS_MINOR_NO_SAMPLING = re.compile(r"^claude-opus-4-(\d+)(?:-|$)")
+_CLAUDE_VERSION = re.compile(
+    r"^claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)"
+)
 
 
 def supports_sampling_params(model_id: str) -> bool:
-    """Return False for Opus 4.7+ models that reject temperature/top_p/top_k."""
-    match = _OPUS_MINOR_NO_SAMPLING.match(model_id)
+    """Return False for Claude 4.7+ models, which reject temperature/top_p/top_k with a 400."""
+    match = _CLAUDE_VERSION.match(model_id)
     if match is None:
         return True
-    return int(match.group(1)) < 7
+    major = int(match.group(1))
+    minor = int(match.group(2) or 0)
+    return (major, minor) < (4, 7)
 
 
 class AnthropicProvider(ModelProvider):

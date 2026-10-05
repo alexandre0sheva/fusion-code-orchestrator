@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any
 
-from fusion.benchmark.compare import compare_implementations
+from fusion.config.env import is_test_mode
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
-    CompareImplementInput,
     DebugErrorInput,
     DecideArchitectureInput,
     EvalAnswerInput,
@@ -122,8 +119,9 @@ class FusionTools:
         plan: ImplementationPlanPipeline | None = None,
         answer_eval: AnswerEvalPipeline | None = None,
         db_path: str | None = None,
-        use_mock: bool = False,
+        use_mock: bool | None = None,
     ) -> None:
+        use_mock = is_test_mode(use_mock)
         providers = build_provider_registry(use_mock=use_mock)
         pipelines = create_pipelines(providers=providers, db_path=db_path)
         self._code_review = code_review or pipelines["code_review"]
@@ -353,22 +351,3 @@ class FusionTools:
             },
             "warnings": [],
         }
-
-    async def fusion_compare_implement(self, input: CompareImplementInput) -> dict[str, Any]:
-        """Run Opus vs Fusion implementation benchmark with cost and latency."""
-        root = input.workspace_root.strip() or os.environ.get(
-            "FUSION_WORKSPACE_ROOT", os.getcwd()
-        )
-        result = await compare_implementations(
-            task=input.task,
-            workspace_root=Path(root),
-            constraints=input.constraints,
-            verify_command=input.verify_command,
-            max_agent_steps=input.max_agent_steps,
-            budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
-            opus_model=input.opus_model,
-            fusion_executor_model=input.fusion_executor_model,
-            db_path=self._db_path,
-            use_mock=self._use_mock,
-        )
-        return result.model_dump()

@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from pydantic import BaseModel, Field
 
-from fusion.config.loader import (
-    BaselineEntry,
-    ModelEntry,
-    PricingConfig,
-    PricingEntry,
-    load_baseline,
-    load_pricing,
-)
+from fusion.config.catalog import Catalog, ModelEntry, PriceSchedule, load_catalog
+from fusion.config.loader import BaselineEntry, load_baseline
 from fusion.providers.base import ModelResponse
 
 
@@ -79,30 +74,69 @@ class CostEstimate:
     notes: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class ResolvedPrice:
+    """A catalog model together with the price schedule in effect today."""
+
+    alias: str
+    schedule: PriceSchedule
+
+
 def _pricing_key(provider: str, model_id: str) -> str:
     return f"{provider}.{model_id}"
 
 
-class PricingRegistry:
-    """Lookup and compute costs from configured pricing entries."""
+def _token_cost(
+    schedule: PriceSchedule,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cached_input_tokens: int = 0,
+    reasoning_tokens: int = 0,
+) -> float:
+    """Cost in USD. ``input_tokens`` includes cached tokens (provider adapters normalize this)."""
+    cached = min(cached_input_tokens, input_tokens)
+    cached_price = (
+        schedule.cached_input_per_1m
+        if schedule.cached_input_per_1m is not None
+        else schedule.input_per_1m
+    )
+    cost = ((input_tokens - cached) / 1_000_000) * schedule.input_per_1m
+    cost += (cached / 1_000_000) * cached_price
+    cost += (output_tokens / 1_000_000) * schedule.output_per_1m
+    if reasoning_tokens and schedule.reasoning_per_1m is not None:
+        cost += (reasoning_tokens / 1_000_000) * schedule.reasoning_per_1m
+    return cost
 
-    def __init__(self, config: PricingConfig | None = None) -> None:
-        self._config = config or load_pricing()
+
+class PricingRegistry:
+    """Looks up date-aware prices from the model catalog and computes costs."""
+
+    def __init__(self, catalog: Catalog | None = None, *, today: date | None = None) -> None:
+        self._catalog = catalog or load_catalog()
+        self._today = today
 
     @property
-    def entries(self) -> dict[str, PricingEntry]:
-        return self._config.pricing
+    def catalog(self) -> Catalog:
+        return self._catalog
 
-    def get(self, provider: str, model_id: str, alias: str | None = None) -> PricingEntry | None:
-        keys = []
-        if alias:
-            keys.append(alias)
-        keys.append(_pricing_key(provider, model_id))
-        for key in keys:
-            entry = self._config.pricing.get(key)
-            if entry:
-                return entry
-        return None
+    def lookup(
+        self,
+        provider: str,
+        model_id: str,
+        alias: str | None = None,
+    ) -> ResolvedPrice | None:
+        """Find the price in effect today for a catalog alias or a provider model ID."""
+        entry = self._catalog.models.get(alias) if alias else None
+        if entry is None:
+            entry = self._catalog.find(provider, model_id)
+        if entry is None:
+            return None
+        schedule = entry.price_at(self._today or date.today())
+        if schedule is None:
+            return None
+        alias_name = entry.alias or _pricing_key(provider, model_id)
+        return ResolvedPrice(alias=alias_name, schedule=schedule)
 
     def estimate_response_cost(
         self,
@@ -111,9 +145,8 @@ class PricingRegistry:
     ) -> CostEstimate:
         """Compute cost for a provider response.
 
-        Provider-returned actual cost wins. Provider-returned estimate wins next.
-        Configured pricing is used when token counts are available. Legacy per-1K
-        model config is the final compatibility fallback.
+        Provider-returned actual cost wins, then a provider-returned estimate, then the
+        catalog price schedule in effect today when token counts are available.
         """
         if response.actual_cost_usd is not None:
             return CostEstimate(response.actual_cost_usd, known=True, is_estimate=False)
@@ -130,55 +163,31 @@ class PricingRegistry:
                 notes=("Token usage unavailable; cost unknown.",),
             )
 
-        entry = self.get(
+        resolved = self.lookup(
             response.provider,
             response.model,
-            f"{response.provider}.{response.model}",
+            model_entry.alias if model_entry else None,
         )
-        if entry:
-            if (
-                entry.input_price_per_1m_tokens is None
-                or entry.output_price_per_1m_tokens is None
-            ):
-                return CostEstimate(
-                    None,
-                    known=False,
-                    is_estimate=True,
-                    notes=(f"Pricing incomplete for {entry.alias}.",),
-                )
-            input_billable = max(input_tokens - (response.cached_input_tokens or 0), 0)
-            cost = (input_billable / 1_000_000) * entry.input_price_per_1m_tokens
-            cost += (output_tokens / 1_000_000) * entry.output_price_per_1m_tokens
-            if response.cached_input_tokens and entry.cached_input_price_per_1m_tokens is not None:
-                cost += (
-                    response.cached_input_tokens / 1_000_000
-                ) * entry.cached_input_price_per_1m_tokens
-            if response.reasoning_tokens and entry.reasoning_price_per_1m_tokens is not None:
-                cost += (
-                    response.reasoning_tokens / 1_000_000
-                ) * entry.reasoning_price_per_1m_tokens
-            notes: tuple[str, ...] = ()
-            if entry.is_estimate:
-                notes = (f"Pricing for {entry.alias} is marked as an estimate.",)
-            return CostEstimate(cost, known=True, is_estimate=entry.is_estimate, notes=notes)
-
-        if model_entry and (model_entry.cost_per_1k_input or model_entry.cost_per_1k_output):
-            cost = (input_tokens / 1000.0) * model_entry.cost_per_1k_input
-            cost += (output_tokens / 1000.0) * model_entry.cost_per_1k_output
+        if resolved is None:
+            missing_key = _pricing_key(response.provider, response.model)
             return CostEstimate(
-                cost,
-                known=True,
+                None,
+                known=False,
                 is_estimate=True,
-                notes=("Used legacy model registry cost_per_1k fallback.",),
+                notes=(f"No price in effect for {missing_key}.",),
             )
-
-        missing_key = _pricing_key(response.provider, response.model)
-        return CostEstimate(
-            None,
-            known=False,
-            is_estimate=True,
-            notes=(f"No pricing configured for {missing_key}.",),
+        schedule = resolved.schedule
+        cost = _token_cost(
+            schedule,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_input_tokens=response.cached_input_tokens or 0,
+            reasoning_tokens=response.reasoning_tokens or 0,
         )
+        notes: tuple[str, ...] = ()
+        if schedule.is_estimate:
+            notes = (f"Pricing for {resolved.alias} is marked as an estimate.",)
+        return CostEstimate(cost, known=True, is_estimate=schedule.is_estimate, notes=notes)
 
     def estimate_tokens_cost(
         self,
@@ -189,30 +198,44 @@ class PricingRegistry:
         output_tokens: int,
         pricing_alias: str | None = None,
     ) -> CostEstimate:
-        entry = self.get(provider, model_id, pricing_alias)
-        if entry is None:
+        """Estimate what a token volume would cost on a model (used for baselines)."""
+        resolved = self.lookup(provider, model_id, pricing_alias)
+        if resolved is None:
             missing_key = pricing_alias or _pricing_key(provider, model_id)
             return CostEstimate(
                 None,
                 known=False,
                 is_estimate=True,
-                notes=(f"No pricing configured for {missing_key}.",),
+                notes=(f"No price in effect for {missing_key}.",),
             )
-        if entry.input_price_per_1m_tokens is None or entry.output_price_per_1m_tokens is None:
-            return CostEstimate(
-                None,
-                known=False,
-                is_estimate=True,
-                notes=(f"Pricing incomplete for {entry.alias}.",),
-            )
-        cost = (input_tokens / 1_000_000) * entry.input_price_per_1m_tokens
-        cost += (output_tokens / 1_000_000) * entry.output_price_per_1m_tokens
+        cost = _token_cost(
+            resolved.schedule, input_tokens=input_tokens, output_tokens=output_tokens
+        )
         notes = (
-            (f"Pricing for {entry.alias} is marked as an estimate.",)
-            if entry.is_estimate
+            (f"Pricing for {resolved.alias} is marked as an estimate.",)
+            if resolved.schedule.is_estimate
             else ()
         )
         return CostEstimate(cost, known=True, is_estimate=True, notes=notes)
+
+
+def estimate_alias_cost(
+    alias: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    registry: PricingRegistry | None = None,
+) -> CostEstimate:
+    """Estimate the cost of a token volume on a catalog model alias."""
+    pricing = registry or PricingRegistry()
+    entry = pricing.catalog.get(alias)
+    return pricing.estimate_tokens_cost(
+        provider=entry.provider,
+        model_id=entry.model_id,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        pricing_alias=alias,
+    )
 
 
 def model_usage_from_response(
@@ -243,16 +266,6 @@ def model_usage_from_response(
         error_type=response.error_type,
         error=response.error,
     )
-
-
-def compute_cost(response: ModelResponse, model_entry: ModelEntry) -> float:
-    """Backward-compatible numeric cost helper.
-
-    Returns 0.0 when cost is unknown. New code should prefer PricingRegistry
-    so it can preserve unknown/estimated status.
-    """
-    estimate = PricingRegistry().estimate_response_cost(response, model_entry)
-    return estimate.amount_usd or 0.0
 
 
 def compare_to_baseline(
@@ -299,7 +312,7 @@ def compare_to_baseline(
     baseline_cost = registry.estimate_tokens_cost(
         provider=baseline_entry.provider,
         model_id=baseline_entry.model_id or "",
-        pricing_alias=baseline_entry.pricing_alias,
+        pricing_alias=baseline_entry.model,
         input_tokens=usage.total_input_tokens,
         output_tokens=usage.total_output_tokens,
     )

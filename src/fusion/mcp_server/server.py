@@ -6,7 +6,6 @@ from typing import Any
 
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
-    CompareImplementInput,
     DebugErrorInput,
     DecideArchitectureInput,
     EvalAnswerInput,
@@ -72,11 +71,6 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     async def fusion_compare_claude_runs(input: CompareClaudeRunsInput) -> dict[str, Any]:
         """Compare Claude Code + Opus output against Claude Code + Fusion output."""
         return await tools.fusion_compare_claude_runs(input)
-
-    @mcp.tool()
-    async def fusion_compare_implement(input: CompareImplementInput) -> dict[str, Any]:
-        """Implement a task twice (Opus vs Fusion) and return cost, latency, and results."""
-        return await tools.fusion_compare_implement(input)
 
     return mcp
 

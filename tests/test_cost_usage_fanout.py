@@ -7,7 +7,8 @@ import time
 
 import pytest
 
-from fusion.config.loader import FanoutConfig, ModelEntry, PricingConfig, PricingEntry
+from fusion.config.catalog import Catalog, PriceSchedule
+from fusion.config.loader import FanoutConfig, ModelEntry
 from fusion.evals.engine import EvalEngine
 from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelResponseEval
 from fusion.mcp_server.schemas import ReviewDiffInput
@@ -136,24 +137,25 @@ async def test_below_quorum_returns_diagnostic_pipeline_result(tmp_path) -> None
 
 
 def test_cost_calculation_and_baseline_comparison() -> None:
+    source = {"verified_on": "2026-10-05", "source_url": "https://example.com/pricing"}
     pricing = PricingRegistry(
-        PricingConfig(
-            pricing={
-                "test.model": PricingEntry(
+        Catalog(
+            models={
+                "test-model": ModelEntry(
+                    alias="test-model",
                     provider="test",
                     model_id="model",
-                    alias="test.model",
-                    input_price_per_1m_tokens=10,
-                    output_price_per_1m_tokens=20,
-                    is_estimate=False,
+                    prices=[
+                        PriceSchedule(input_per_1m=10, output_per_1m=20, **source)  # type: ignore[arg-type]
+                    ],
                 ),
-                "anthropic.claude-opus-4-8": PricingEntry(
+                "claude-opus": ModelEntry(
+                    alias="claude-opus",
                     provider="anthropic",
-                    model_id="claude-opus-4-8",
-                    alias="anthropic.claude-opus-4-8",
-                    input_price_per_1m_tokens=15,
-                    output_price_per_1m_tokens=75,
-                    is_estimate=True,
+                    model_id="claude-opus-5-5",
+                    prices=[
+                        PriceSchedule(input_per_1m=15, output_per_1m=75, **source)  # type: ignore[arg-type]
+                    ],
                 ),
             }
         )
@@ -187,7 +189,7 @@ def test_cost_calculation_and_baseline_comparison() -> None:
 
 
 def test_unknown_pricing_stays_unknown() -> None:
-    pricing = PricingRegistry(PricingConfig(pricing={}))
+    pricing = PricingRegistry(Catalog(models={}))
     response = ModelResponse(
         provider="unknown",
         model="model",
@@ -210,7 +212,7 @@ async def test_mcp_output_includes_markdown_usage_and_comparison(tmp_path) -> No
     assert "Cost & usage" in output["display_markdown"]
     assert "usage" in output and output["usage"]["per_model"]
     assert "cost_comparison" in output
-    assert output["cost_comparison"]["baseline_name"] == "Opus 4.8"
+    assert output["cost_comparison"]["baseline_name"] == "Opus 5.5"
     assert "result" in output
 
 

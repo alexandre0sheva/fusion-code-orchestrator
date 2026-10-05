@@ -1,4 +1,4 @@
-"""Load YAML configuration files for models and routing."""
+"""Load YAML configuration files for routing, baselines and the model registry."""
 
 from __future__ import annotations
 
@@ -8,35 +8,26 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
+from fusion.config.catalog import Catalog, CostTier, ModelEntry, load_catalog
+
+__all__ = [
+    "BaselineConfig",
+    "BaselineEntry",
+    "BudgetConfig",
+    "CostTier",
+    "FanoutConfig",
+    "ModelEntry",
+    "ModelRegistryConfig",
+    "RefinementConfig",
+    "RoutingPoliciesConfig",
+    "load_baseline",
+    "load_model_registry",
+    "load_routing_policies",
+]
+
 _CONFIG_DIR = Path(__file__).parent
 
-CostTier = Literal["low", "medium", "high"]
-LatencyTier = Literal["low", "medium", "high"]
-ContextTier = Literal["small", "medium", "long"]
-QualityTier = Literal["weak", "medium", "strong", "frontier"]
 BudgetLevelName = Literal["low", "medium", "high", "local_only"]
-
-
-class ModelEntry(BaseModel):
-    """A single model definition in the registry."""
-
-    alias: str = ""
-    provider: str
-    model_id: str
-    enabled: bool = True
-    strengths: list[str] = Field(default_factory=list)
-    cost_tier: CostTier = "medium"
-    latency_tier: LatencyTier = "medium"
-    context_tier: ContextTier = "medium"
-    quality_tier: QualityTier = "medium"
-    supports_json: bool = False
-    supports_tools: bool | None = None
-    notes: str = ""
-    max_tokens: int = 4096
-    cost_per_1k_input: float = 0.0
-    cost_per_1k_output: float = 0.0
-    display_name: str = ""
-    capabilities: list[str] = Field(default_factory=list)
 
 
 class ModelRegistryConfig(BaseModel):
@@ -109,44 +100,29 @@ class RoutingPoliciesConfig(BaseModel):
     refinement: RefinementConfig = Field(default_factory=RefinementConfig)
 
 
-class PricingEntry(BaseModel):
-    """Published or estimated model pricing in USD per one million tokens."""
-
-    provider: str
-    model_id: str
-    alias: str
-    input_price_per_1m_tokens: float | None = Field(default=None, ge=0)
-    output_price_per_1m_tokens: float | None = Field(default=None, ge=0)
-    cached_input_price_per_1m_tokens: float | None = Field(default=None, ge=0)
-    reasoning_price_per_1m_tokens: float | None = Field(default=None, ge=0)
-    currency: str = "USD"
-    source_notes: str = ""
-    updated_at: str = ""
-    is_estimate: bool = True
-
-
-class PricingConfig(BaseModel):
-    """Pricing registry keyed by provider/model alias."""
-
-    pricing: dict[str, PricingEntry] = Field(default_factory=dict)
-
-
 class BaselineEntry(BaseModel):
-    """Single frontier model baseline used for cost comparison."""
+    """A frontier model that Fusion's cost and quality are compared against."""
 
-    name: str = "Opus 4.8"
+    name: str = "Opus 5.5"
+    model: str | None = None  # catalog alias; provider/model_id are resolved from it
     provider: str = "anthropic"
-    model_id: str | None = "claude-opus-4-8"
-    pricing_alias: str = "anthropic.claude-opus-4-8"
+    model_id: str | None = "claude-opus-5-5"
     description: str = "Single frontier model baseline for comparison"
     enabled: bool = True
     estimate_strategy: str = "same_input_and_output_tokens"
 
 
 class BaselineConfig(BaseModel):
-    """Baseline config wrapper."""
+    """Configured baselines; the first enabled one is the default."""
 
-    baseline: BaselineEntry = Field(default_factory=BaselineEntry)
+    baselines: list[BaselineEntry] = Field(default_factory=lambda: [BaselineEntry()])
+
+    @property
+    def baseline(self) -> BaselineEntry:
+        for entry in self.baselines:
+            if entry.enabled:
+                return entry
+        return self.baselines[0]
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -159,17 +135,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_model_registry(path: Path | None = None) -> ModelRegistryConfig:
-    """Load the model registry from YAML."""
-    config_path = path or (_CONFIG_DIR / "default_models.yaml")
-    raw = _load_yaml(config_path)
-    models_raw = raw.get("models", {})
-    models: dict[str, ModelEntry] = {}
-    for alias, entry_data in models_raw.items():
-        if not isinstance(entry_data, dict):
-            continue
-        entry = ModelEntry.model_validate({**entry_data, "alias": alias})
-        models[alias] = entry
-    return ModelRegistryConfig(models=models)
+    """Load the model registry (the catalog's models) from YAML."""
+    return ModelRegistryConfig(models=load_catalog(path).models)
 
 
 def load_routing_policies(path: Path | None = None) -> RoutingPoliciesConfig:
@@ -178,13 +145,18 @@ def load_routing_policies(path: Path | None = None) -> RoutingPoliciesConfig:
     return RoutingPoliciesConfig.model_validate(_load_yaml(config_path))
 
 
-def load_pricing(path: Path | None = None) -> PricingConfig:
-    """Load model pricing registry from YAML."""
-    config_path = path or (_CONFIG_DIR / "pricing.yaml")
-    return PricingConfig.model_validate(_load_yaml(config_path))
-
-
-def load_baseline(path: Path | None = None) -> BaselineConfig:
-    """Load baseline model comparison config from YAML."""
+def load_baseline(path: Path | None = None, catalog: Catalog | None = None) -> BaselineConfig:
+    """Load baseline configs, resolving provider and model ID from the catalog."""
     config_path = path or (_CONFIG_DIR / "baseline.yaml")
-    return BaselineConfig.model_validate(_load_yaml(config_path))
+    raw = _load_yaml(config_path)
+    resolved_catalog = catalog or load_catalog()
+    entries: list[BaselineEntry] = []
+    for item in raw.get("baselines", []):
+        entry = BaselineEntry.model_validate(item)
+        if entry.model:
+            model = resolved_catalog.get(entry.model)
+            entry = entry.model_copy(
+                update={"provider": model.provider, "model_id": model.model_id}
+            )
+        entries.append(entry)
+    return BaselineConfig(baselines=entries) if entries else BaselineConfig()

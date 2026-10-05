@@ -35,25 +35,11 @@ while preserving normal Claude Code behavior.
 
 ## Prerequisites
 
-Install and configure the plugin as described in the root README, then verify:
+Set up the MCP server and plugin as described in [INTEGRATIONS.md](INTEGRATIONS.md), put provider
+keys in `.env` (see [CONFIGURATION.md](CONFIGURATION.md)), and verify:
 
 ```bash
 uv run fusion config validate
-uv run fusion run-mock --task code_review --content "diff --git a/app.py b/app.py\n+def foo(): pass"
-```
-
-For live runs, set provider API keys in `.env`:
-
-```bash
-ANTHROPIC_API_KEY=
-OPENAI_API_KEY=
-GOOGLE_API_KEY=
-```
-
-Optional local-only/mock development:
-
-```bash
-export FUSION_DEFAULT_PROVIDER=mock
 ```
 
 ## Recommended run folder

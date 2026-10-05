@@ -126,31 +126,6 @@ class FusionStatsInput(BaseModel):
     )
 
 
-class CompareImplementInput(BaseModel):
-    """Input for fusion_compare_implement benchmark tool."""
-
-    task: str = Field(description="Implementation task to run in both Opus and Fusion arms")
-    workspace_root: str = Field(
-        default="",
-        description="Project root (defaults to FUSION_WORKSPACE_ROOT or cwd)",
-    )
-    constraints: str = Field(default="", description="Constraints for the implementation")
-    verify_command: str = Field(
-        default="",
-        description="Optional shell command to verify both implementations (e.g. uv run pytest -q)",
-    )
-    max_agent_steps: int = Field(default=40, description="Max agent turns per arm")
-    budget: str = Field(
-        default="medium",
-        description="Fusion orchestration budget: low/medium/high",
-    )
-    opus_model: str = Field(default="claude-opus", description="Model alias for Opus baseline arm")
-    fusion_executor_model: str = Field(
-        default="claude-sonnet",
-        description="Model alias for Fusion executor agent",
-    )
-
-
 class CompareClaudeRunsInput(BaseModel):
     """Input for comparing Claude Code + Opus vs Claude Code + Fusion outputs."""
 

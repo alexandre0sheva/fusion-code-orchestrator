@@ -3,7 +3,7 @@
   "name": "Fusion Code Orchestrator",
   "version": "0.1.0",
   "description": "Multi-model orchestration and evaluation engine for coding workflows",
-  "author": "Fusion Code Orchestrator Contributors",
+  "author": "Oleksandr Shevchenko",
   "license": "MIT",
   "mcpServers": {
     "fusion": {

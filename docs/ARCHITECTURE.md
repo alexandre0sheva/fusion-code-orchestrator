@@ -3,6 +3,26 @@
 Fusion Code Orchestrator is a Python MCP server that gives Claude Code model-like
 multi-model workflows for coding tasks. It calls providers directly through adapters.
 
+## Pipeline flow
+
+```text
+Claude Code -> MCP tool -> Orchestration pipeline
+                               |-- Secret redaction
+                               |-- Task classification and routing
+                               |-- Context eval
+                               |-- Panel fan-out (concurrent, cheap models)
+                               |-- Refinement round (high budget: anonymized peer review)
+                               |-- Response eval (LLM judge + deterministic)
+                               |-- Disagreement analysis
+                               |-- Synthesis (Claude Sonnet)
+                               |-- Final eval
+                               |-- Shadow baseline A/B (opt-in: real baseline + blind judge)
+                               `-- SQLite logging + cumulative stats
+```
+
+Panel members receive role prompts (coding reviewer, security reviewer, debugger, architect, ...)
+defined in `src/fusion/orchestration/prompts.py`.
+
 ## Components
 
 ### MCP server
@@ -17,7 +37,6 @@ multi-model workflows for coding tasks. It calls providers directly through adap
 - `fusion_eval_answer`
 - `fusion_compare_claude_runs`
 - `fusion_stats`
-- `fusion_compare_implement`
 
 `src/fusion/mcp_server/tools.py` converts MCP input schemas into orchestration pipeline
 inputs and returns Pydantic output models as JSON dictionaries.
@@ -46,7 +65,7 @@ routes. `MockProvider` supports deterministic offline tests and development.
 - synthesizer model;
 - budget tier and routing warnings.
 
-Model metadata lives in `src/fusion/config/default_models.yaml`. Task policies and fanout
+Model metadata and prices live in the catalog, `src/fusion/config/catalog.yaml`. Task policies and fanout
 settings live in `src/fusion/config/routing_policies.yaml`.
 
 ### Fanout
@@ -63,7 +82,7 @@ It tracks:
 - structured failure status;
 - panel wall latency, max model latency, and summed model-call latency.
 
-Synthesis runs after fanout and disagreement analysis. The MCP request is still a normal
+Config keys and failure semantics are in [CONFIGURATION.md](CONFIGURATION.md#fan-out). Synthesis runs after fanout and disagreement analysis. The MCP request is still a normal
 blocking request from Claude Code's perspective.
 
 ### Refinement (mixture-of-agents)
@@ -78,7 +97,7 @@ each call is traced as `refine:{model}` with full usage and cost.
 ### Shadow baseline A/B
 
 `src/fusion/benchmark/shadow.py` optionally calls the configured baseline model
-(Opus 4.8) on the same sanitized task after synthesis, then asks the judge model for a
+(Opus 5.5 by default) on the same sanitized task after synthesis, then asks the judge model for a
 blind pairwise verdict (answers presented in randomized order, unlabeled). Trigger via
 `FUSION_SHADOW_MODE` (`off` | `sampled` | `always`, with `FUSION_SHADOW_SAMPLE_RATE`)
 or a per-call `shadow_baseline` flag which overrides the env in both directions.
@@ -128,8 +147,9 @@ Raw panel outputs are not included in MCP responses unless `include_raw_outputs=
 - `CostComparison`
 - `PricingRegistry`
 
-Pricing is loaded from `src/fusion/config/pricing.yaml`. Baseline comparison is loaded from
-`src/fusion/config/baseline.yaml`.
+Prices come from the model catalog (`src/fusion/config/catalog.yaml`, date-aware price schedules
+with provenance); baseline comparison is loaded from `src/fusion/config/baseline.yaml`. See
+[COSTS.md](COSTS.md).
 
 ### Storage
 
@@ -161,6 +181,3 @@ The orchestration MCP tools are side-effect free inside MCP: they do not execute
 commands in user repositories or edit files themselves. That boundary should not block
 Claude Code. Claude Code can use Fusion's answer like a cheaper model response, then edit,
 run tests, and continue the normal coding workflow.
-
-Agent benchmark mode is separate, opt-in, and guarded by `FUSION_AGENT_MODE=true` and
-`FUSION_WORKSPACE_ROOT`.

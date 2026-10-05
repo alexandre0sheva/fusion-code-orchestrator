@@ -67,7 +67,7 @@ async def test_openai_missing_api_key_structured() -> None:
 
     provider = OpenAIProvider(api_key="")
     response = await provider.safe_complete(
-        ModelRequest(model_id="gpt-5.4-mini", user_prompt="hi")
+        ModelRequest(model_id="gpt-luna", user_prompt="hi")
     )
     assert response.error is not None
     assert "OPENAI_API_KEY" in response.error

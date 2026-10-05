@@ -52,7 +52,7 @@ Do **not** call Fusion for:
 - `budget: "high"` adds a mixture-of-agents refinement round (panel models revise
   after seeing anonymized peer answers) — use it for hard or high-stakes tasks.
 - `shadow_baseline: true` on any orchestration tool also runs the real baseline model
-  (Opus 4.8) on the same task and records a blind pairwise verdict. Use it when the
+  (Opus 5.5 by default) on the same task and records a blind pairwise verdict. Use it when the
   user wants proof that Fusion matches big-model quality; it costs extra API money.
 - When the user asks "how is Fusion doing" or wants savings/quality numbers, call
   `fusion_stats`.
