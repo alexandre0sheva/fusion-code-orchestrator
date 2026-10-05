@@ -93,6 +93,8 @@ class RunState:
     guard: BudgetGuard
     warnings: list[str] = field(default_factory=list)
 
+    redact: bool = True  # scrub secret-looking text from the task (a mode default, overridable)
+
     run_id: str = ""
     trace: OrchestrationTrace | None = None
     sanitized_primary: str = ""
@@ -173,10 +175,19 @@ class RunState:
 
     @classmethod
     def start(
-        cls, ctx: PipelineContext, deps: PipelineDeps, mode: Mode = Mode.REAL
+        cls,
+        ctx: PipelineContext,
+        deps: PipelineDeps,
+        mode: Mode = Mode.REAL,
+        *,
+        seed: int | None = None,
+        redact: bool | None = None,
+        ledger: RunLedger | None = None,
     ) -> RunState:
+        """Open a run. ``seed`` and ``redact`` override the mode's defaults; ``ledger`` lets the
+        caller keep the run's cost record even if a stage raises."""
         warnings: list[str] = []
-        ledger = RunLedger(deps.clock)
+        ledger = ledger or RunLedger(deps.clock)
         settings = MODE_SETTINGS[mode]
         gateway = CallGateway(
             ledger=ledger,
@@ -186,7 +197,8 @@ class RunState:
             warnings=warnings,
             truncate_prompts=settings.truncate_prompts,
             temperature=settings.temperature,
-            seed=settings.seed,
+            seed=settings.seed if seed is None else seed,
+            stream=settings.stream,
         )
         strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
         started = deps.clock()
@@ -208,4 +220,5 @@ class RunState:
                 pricing=deps.pricing,
             ),
             warnings=warnings,
+            redact=settings.redact if redact is None else redact,
         )

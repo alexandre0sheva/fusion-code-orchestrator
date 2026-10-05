@@ -53,21 +53,37 @@ class Mode(StrEnum):
 
 @dataclass(frozen=True)
 class ModeSettings:
-    """What a mode changes about a run. Redaction and the full stored ledger apply to both modes."""
+    """What a mode changes about a run. The full stored ledger applies to both modes."""
 
     lifetime_stats: bool  # append the lifetime-stats footer to display output
     shadow: bool  # shadow A/B runs may happen
     truncate_prompts: bool  # trim prompts that exceed a model's context window
     temperature: float | None  # sampling temperature for calls that do not choose one
     seed: int | None  # sampling seed for providers that accept one
+    redact: bool  # scrub secret-looking text from the task before any model sees it
+    stream: bool  # stream every call so time-to-first-token and decode speed are measured
 
 
 MODE_SETTINGS: dict[Mode, ModeSettings] = {
     Mode.REAL: ModeSettings(
-        lifetime_stats=True, shadow=True, truncate_prompts=True, temperature=None, seed=None
+        lifetime_stats=True,
+        shadow=True,
+        truncate_prompts=True,
+        temperature=None,
+        seed=None,
+        redact=True,
+        stream=False,
     ),
+    # Redaction is off because ground-truth tasks may contain secret-looking strings on purpose
+    # (a review task about a hard-coded key); a study turns it back on with ``redact=True``.
     Mode.BENCHMARK: ModeSettings(
-        lifetime_stats=False, shadow=False, truncate_prompts=False, temperature=0.0, seed=0
+        lifetime_stats=False,
+        shadow=False,
+        truncate_prompts=False,
+        temperature=0.0,
+        seed=0,
+        redact=False,
+        stream=True,
     ),
 }
 

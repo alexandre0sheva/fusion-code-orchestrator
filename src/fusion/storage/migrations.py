@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -69,6 +69,43 @@ _MIGRATIONS: dict[int, str] = {
     4: """
     CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
     CREATE INDEX IF NOT EXISTS idx_shadow_run_id ON shadow_comparisons(run_id);
+    """,
+    5: """
+    CREATE TABLE IF NOT EXISTS bench_runs (
+        run_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        stop_reason TEXT,
+        dataset TEXT NOT NULL,
+        mock INTEGER NOT NULL DEFAULT 0,
+        config_json TEXT NOT NULL,
+        total_jobs INTEGER NOT NULL DEFAULT 0,
+        done_jobs INTEGER NOT NULL DEFAULT 0,
+        spent_usd REAL NOT NULL DEFAULT 0,
+        eval_spent_usd REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS bench_items (
+        run_id TEXT NOT NULL REFERENCES bench_runs(run_id),
+        job_key TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        arm TEXT NOT NULL,
+        repeat INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        quality REAL,
+        solved INTEGER,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        eval_cost_usd REAL NOT NULL DEFAULT 0,
+        seconds REAL,
+        item_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (run_id, job_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bench_items_arm ON bench_items(run_id, arm);
+    CREATE INDEX IF NOT EXISTS idx_bench_runs_created_at ON bench_runs(created_at);
     """,
 }
 

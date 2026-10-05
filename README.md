@@ -116,6 +116,7 @@ src/fusion/
   config/         YAML registries and env loading
   evals/          LLM judge and deterministic checks
   benchmark/      shadow A/B baseline comparison
+  bench/          `fusion bench`: ground-truth studies, planner, simulated models
   telemetry/      usage, cost, baseline comparison
   security/       secret redaction
   storage/        SQLite run store

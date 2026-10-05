@@ -68,9 +68,11 @@ share one code path and one ledger. The fields are documented in
 
 A run also has a **mode** (`Mode.REAL` or `Mode.BENCHMARK`), passed as `Pipeline.run(ctx, mode=...)`
 and kept on `RunState` and `PipelineResult`. `MODE_SETTINGS` holds what a mode changes: whether the
-lifetime footer and shadow A/B are allowed, whether prompts are trimmed to the context window, and a
-fixed temperature and seed. `CallGateway` applies the last two for every call of the run (a request
-or member that sets its own temperature wins). The table is in
+lifetime footer and shadow A/B are allowed, whether prompts are trimmed to the context window,
+whether secrets are redacted, whether calls stream, and a fixed temperature and seed. `CallGateway`
+applies the sampling and streaming defaults for every call of the run (a request or member that sets
+its own temperature wins). `run()` also takes `seed`, `redact` and `ledger` for one run, and a
+halted run's `PipelineResult.halt_reason` says why it stopped. The table is in
 [CONFIGURATION.md](CONFIGURATION.md#modes).
 
 ### Offline and live
@@ -378,6 +380,9 @@ migrations apply atomically (`BEGIN IMMEDIATE`) so concurrent first opens are sa
 - cost comparison;
 - warnings and errors.
 
+The same schema also holds the benchmark tables (`bench_runs`, `bench_items`), used only by
+`bench-results/bench.db`.
+
 CLI inspection commands:
 
 ```bash
@@ -387,6 +392,27 @@ uv run fusion runs costs
 uv run fusion runs compare-baseline RUN_ID
 uv run fusion runs export --format jsonl
 ```
+
+### Benchmark framework
+
+`src/fusion/bench/` runs studies; methodology, commands and the measurement block are in
+[BENCHMARKING.md](BENCHMARKING.md#benchmark-mode-fusion-bench). The modules:
+
+| Module | Role |
+|--------|------|
+| `spec.py`, `arms.py` | `BenchTask`, `Arm`, `BenchConfig`, dataset loading; arms resolved to strategies, with overrides |
+| `runner.py` | `run_bench`: jobs keyed by hash, run concurrently under the per-provider limiters, resumable; a governor reserves each job's worst case against `max_usd` and the spend ledger |
+| `plan.py` | the cost and time estimator, built on `budget_guard.plan_calls`, and the fit-to-budget suggestion |
+| `store.py` | `results.jsonl` per run plus the `bench_runs` and `bench_items` tables (migration 5) in `bench-results/bench.db` |
+| `cache.py`, `spend.py` | the disk response cache (a provider wrapper that flags replays with `ModelResponse.cache_hit`) and the live-spend ledger |
+| `scoring.py`, `metrics.py`, `summary.py` | the `Scorer` protocol and built-in `PointsScorer`; `BenchMetrics` built from a run's ledger; per-arm summary rows |
+| `virtual.py` | an event loop with a virtual clock, used for simulated runs |
+| `cli.py` | the `fusion bench` commands |
+
+`providers/simulated.py` holds the simulated models. The runner builds an ordinary `BasePipeline`
+over a strategy book extended with the study's arms and calls `run(..., mode=Mode.BENCHMARK)` with a
+`RunLedger` of its own, so a failed run's spending is still known; nothing in the pipeline knows it
+is being benchmarked beyond the mode.
 
 ## Safety boundaries
 

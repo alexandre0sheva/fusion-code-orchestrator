@@ -22,7 +22,7 @@ Quality gate before saying a task is done: pytest, ruff and mypy all pass.
 
 `mcp_server/` tool handlers and schemas · `orchestration/` staged pipeline (`stages`, `ledger`,
 `factory`), fanout, refine, synthesis, prompts · `providers/` direct API adapters + mock · `routing/` classifier, registry, policy, budget ·
-`evals/` judge + deterministic checks · `benchmark/` shadow A/B and legacy compare · `telemetry/`
+`evals/` judge + deterministic checks · `benchmark/` shadow A/B and legacy compare · `bench/` studies (`fusion bench`) · `telemetry/`
 cost and usage · `storage/` SQLite · `config/` YAML + env · `security/` redaction · `cli/` Typer app.
 Also: `plugin/` Claude Code plugin, `evals/` datasets and runners, `tests/`.
 

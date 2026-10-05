@@ -349,7 +349,7 @@
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
   },
-  "display_markdown": "## Fusion Answer\n\n### Answer\nPanel consensus on code quality (mock:<id>)\n\n### Key claims\n- [critical] SQL injection through a string-formatted query, finding, mock-security (1/3, unique)\n- [high] Missing error handling around the database call, finding, mock-fast, mock-security (2/3, consensus)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- [low] The function lacks type hints on its return value, finding, mock-fast (1/3, unique)\n- [low] Looks fine to me, finding, mock-weak (1/3, unique)\n- 3 more (detail: full)\n\n### Confidence\n0.33 (agreement 0.06 across 3 of 3 models, evidence 33%)\n\n### Cost\n$0.0000 estimated \u00b7 0.0s \u00b7 panel-refine, 7 calls",
+  "display_markdown": "## Fusion Answer\n\n### Answer\nPanel consensus on code quality (mock:<id>)\n\n### Key claims\n- [critical] SQL injection through a string-formatted query, finding, mock-security (1/3, unique)\n- [high] Missing error handling around the database call, finding, mock-fast, mock-security (2/3, consensus)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- [low] The function lacks type hints on its return value, finding, mock-fast (1/3, unique)\n- [low] Looks fine to me, finding, mock-weak (1/3, unique)\n- 3 more (detail: full)\n\n### Confidence\n0.33 (agreement 0.06 across 3 of 3 models, evidence 33%)\n\n### Cost\n$0.0000 estimated \u00b7 <t> \u00b7 panel-refine, 7 calls",
   "evals": {
     "aggregate_score": 0.235206,
     "context": {

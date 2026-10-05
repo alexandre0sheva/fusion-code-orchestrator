@@ -56,6 +56,14 @@ def resolve_db_path(db_path: str | Path | None = None) -> Path:
     return _env_path("FUSION_DB_PATH") or default_db_path()
 
 
+def bench_results_dir() -> Path:
+    """Where benchmark runs, their database and the spend ledger live (git-ignored).
+
+    ``FUSION_BENCH_DIR`` overrides the default ``bench-results`` under the project directory.
+    """
+    return _env_path("FUSION_BENCH_DIR") or project_dir() / "bench-results"
+
+
 def legacy_db_path() -> Path:
     """Where v0.1.0 kept its database: a cwd-relative file."""
     return Path.cwd() / LEGACY_DB_FILE

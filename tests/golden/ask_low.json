@@ -165,7 +165,7 @@
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
   },
-  "display_markdown": "## Fusion Answer\n\n### Answer\nCode review summary (mock:<id>)\n\n### Key claims\n- [med] Missing error handling around the database call, finding, mock-fast (1/1, unique)\n- [low] The function lacks type hints on its return value, finding, mock-fast (1/1, unique)\n- Add a guard clause for empty input, recommendation, mock-fast (1/1, unique)\n- Add a unit test for the empty input edge case, test, mock-fast (1/1, unique)\n\n### Confidence\n0.28, low information: 1 model answered, so agreement could not be measured\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 0.0s \u00b7 solo-cheap, 1 call\n\n### Caveats\n- Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)",
+  "display_markdown": "## Fusion Answer\n\n### Answer\nCode review summary (mock:<id>)\n\n### Key claims\n- [med] Missing error handling around the database call, finding, mock-fast (1/1, unique)\n- [low] The function lacks type hints on its return value, finding, mock-fast (1/1, unique)\n- Add a guard clause for empty input, recommendation, mock-fast (1/1, unique)\n- Add a unit test for the empty input edge case, test, mock-fast (1/1, unique)\n\n### Confidence\n0.28, low information: 1 model answered, so agreement could not be measured\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 <t> \u00b7 solo-cheap, 1 call\n\n### Caveats\n- Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)",
   "evals": {
     "aggregate_score": 0.293333,
     "context": {

@@ -14,6 +14,9 @@ _VOLATILE_KEYS = re.compile(
 )
 _RUN_TAG = re.compile(r"mock:[0-9a-f]{6,}")
 _WALL_LINE = re.compile(r"^- (Fusion wall time|Shadow baseline latency): .*$", re.M)
+# The cost line of display_markdown ends "... · 0.0s · strategy, N calls": the run's wall time,
+# which a slow or loaded machine rounds up to 0.1s or more.
+_COST_LINE_TIME = re.compile(r"· \d+\.\ds ·")
 
 
 def normalize(value: Any) -> Any:
@@ -26,6 +29,7 @@ def normalize(value: Any) -> Any:
         return round(value, 6)
     if isinstance(value, str):
         text = _WALL_LINE.sub(lambda m: f"- {m.group(1)}: <t>", value)
+        text = _COST_LINE_TIME.sub("· <t> ·", text)
         return _RUN_TAG.sub("mock:<id>", text)
     return value
 

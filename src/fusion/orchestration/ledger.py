@@ -58,6 +58,7 @@ class CallRecord(BaseModel):
     decode_tokens_per_s: float | None = None
     retries: int = 0
     trimmed: bool = False
+    cache_hit: bool = False  # replayed from a response cache: free, with its original latency
 
     def to_usage(self) -> ModelUsage:
         total = None
@@ -272,6 +273,7 @@ class CallGateway:
         truncate_prompts: bool = True,
         temperature: float | None = None,
         seed: int | None = None,
+        stream: bool = False,
     ) -> None:
         self.ledger = ledger
         self.models = models
@@ -282,6 +284,7 @@ class CallGateway:
         self.truncate_prompts = truncate_prompts
         self.temperature = temperature
         self.seed = seed
+        self.stream = stream
 
     async def call(
         self,
@@ -306,7 +309,7 @@ class CallGateway:
             )
             return self._record(stage, alias, response, entry, started_ms, "missing_provider")
 
-        request = self._with_sampling(request)
+        request = self._with_sampling(request, entry)
         note = None
         if self.truncate_prompts:
             request, note = fit_to_context(request, entry)
@@ -332,12 +335,14 @@ class CallGateway:
             status = "failed"
         return self._record(stage, alias, response, entry, started_ms, status, trimmed=bool(note))
 
-    def _with_sampling(self, request: ModelRequest) -> ModelRequest:
+    def _with_sampling(self, request: ModelRequest, entry: ModelEntry | None) -> ModelRequest:
         update: dict[str, object] = {}
         if request.temperature is None and self.temperature is not None:
             update["temperature"] = self.temperature
         if request.seed is None and self.seed is not None:
             update["seed"] = self.seed
+        if self.stream and not request.stream and (entry is None or entry.supports_streaming):
+            update["stream"] = True
         return request.model_copy(update=update) if update else request
 
     @staticmethod
@@ -360,7 +365,7 @@ class CallGateway:
         trimmed: bool = False,
     ) -> ModelResponse:
         response.model_alias = alias
-        if status == "missing_provider":
+        if status == "missing_provider" or response.cache_hit:
             cost_usd: float | None = 0.0  # nothing was sent, so nothing was billed
             cost_known, cost_is_estimate = True, False
         else:
@@ -391,6 +396,7 @@ class CallGateway:
                 decode_tokens_per_s=response.decode_tokens_per_s,
                 retries=response.retries,
                 trimmed=trimmed,
+                cache_hit=response.cache_hit,
             )
         )
         return response

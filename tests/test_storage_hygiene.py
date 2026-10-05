@@ -43,7 +43,7 @@ def test_migration_4_adds_indexes(tmp_path: Path) -> None:
         names = {r[1] for r in conn.execute("SELECT * FROM sqlite_master WHERE type='index'")}
         version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
     assert {"idx_runs_created_at", "idx_shadow_run_id"} <= names
-    assert version == SCHEMA_VERSION == 4
+    assert version == SCHEMA_VERSION == 5
     store.close()
 
 

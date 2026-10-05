@@ -14,6 +14,12 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Added
 
+- **Benchmark framework (`fusion bench`).** `fusion bench run --dataset D --arms a,b,c --repeats 3 --max-usd 5 [--mock]` runs every (task, arm, repeat) of a ground-truth dataset as a resumable, concurrent job and records the answer, the claims, the full call ledger and a measured metrics block (seconds to complete, cost, tokens, effective and per-model tokens per second, time to first token, calls, retries, quality, solved). `fusion bench plan` estimates cost and time as a range before spending anything and suggests the largest study that fits `--max-usd`; a live run will not start without a passing plan unless `--yes`. `list`, `show` and `resume` inspect and continue runs; results are kept in `bench-results/` (git-ignored; `FUSION_BENCH_DIR` moves it). See [docs/BENCHMARKING.md](docs/BENCHMARKING.md#benchmark-mode-fusion-bench).
+- **Live-spend ledger and caps.** Every live benchmark call is appended to `bench-results/spend.json`, no job starts that would pass the roadmap's $20 total, and `--max-usd` stops a run cleanly (status `stopped`, resumable) when the next job's worst case would not fit. `fusion bench spend` shows the ledger.
+- **Simulated models** (`--mock`): a study runs the real pipeline, strategies, catalog models and prices on `SimulatedProvider`s with a configured skill, price, speed and correlated mistakes, deterministic by seed, on a virtual-time event loop, so a study is free, instant, repeatable and needs no API keys. Its skill numbers are assumptions, not measurements.
+- Disk response cache for live studies: a repeated request is replayed at zero cost, flagged `cache_hit` on its ledger record and `latency_valid: false` on its item. `ModelResponse.cache_hit` and `CallRecord.cache_hit` are new fields.
+- `Pipeline.run` accepts `seed`, `redact` and `ledger`; `PipelineResult.halt_reason` says why a run stopped early; database migration 5 adds the `bench_runs` and `bench_items` tables.
+
 - **Latency work.** A run's wall time is now its critical path: the judge's per-answer calls run together and alongside synthesis (a strategy's `judge_feeds_synthesis: true` restores waiting), the shadow baseline starts with the panel instead of after it, and a refinement round is skipped when the panel already agrees (`refinement.skip_above_agreement`, default 0.8, `null` to always refine). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#concurrency-and-latency).
 - `fanout.early_return` (`quorum`, `grace_ms`) stops waiting for stragglers shortly after quorum and cancels them, and `fanout.hedge_after_ms` asks another panel model when one is slow. Both are off by default. Cancelled calls are recorded with unknown cost.
 - `RunLedger.timeline()` returns every call as a start/end span on the run's clock.
@@ -49,6 +55,7 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Changed
 
+- **Benchmark mode streams every call and no longer redacts secrets** (it fixes the sampling seed per repeat, as before). Streaming measures time to first token and decode speed; redaction would alter ground-truth tasks that contain secret-looking text on purpose, and `redact: true` turns it back on. Real mode is unchanged. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#modes).
 - `max_cost_usd` and `max_latency_s` on a strategy were only checked after a run; they now stop spending before and during it (see Added). A run that still ends over a cap adds a warning.
 - `fanout_to_panel` accepts `min_successful`, replacing the configured quorum for one call.
 - `fanout.max_concurrency` now caps in-flight calls per provider rather than across the whole panel, so a slow provider no longer holds up calls to others.

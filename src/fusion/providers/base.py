@@ -109,6 +109,9 @@ class ModelResponse(BaseModel):
     # output_tokens / latency; needs provider-reported output tokens.
     total_tokens_per_s: float | None = None
     retries: int = 0
+    # Replayed from a response cache: no request was sent and nothing was billed. The latency and
+    # speed fields keep the values measured when the answer was first obtained.
+    cache_hit: bool = False
     finish_reason: str | None = None
     raw_response: dict[str, Any] | None = None
     error: str | None = None

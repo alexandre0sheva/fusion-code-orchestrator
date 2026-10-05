@@ -452,6 +452,8 @@ def test_mode_settings_differ_where_the_roadmap_says() -> None:
     assert (real.temperature, real.seed) == (None, None)
     assert (bench.lifetime_stats, bench.shadow, bench.truncate_prompts) == (False, False, False)
     assert (bench.temperature, bench.seed) == (0.0, 0)
+    assert (real.redact, real.stream) == (True, False)
+    assert (bench.redact, bench.stream) == (False, True)
 
 
 async def test_benchmark_mode_fixes_temperature_and_seed(tmp_path: Path) -> None:

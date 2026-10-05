@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
 
+from fusion.bench.cli import bench_app
 from fusion.cli.models_cmd import models_app
 from fusion.config import paths as fusion_paths
 from fusion.config.catalog import catalog_warnings, load_catalog
@@ -66,6 +67,7 @@ app.add_typer(runs_app, name="runs")
 app.add_typer(config_app, name="config")
 app.add_typer(strategies_app, name="strategies")
 app.add_typer(models_app, name="models")
+app.add_typer(bench_app, name="bench")
 console = Console()
 
 load_env()
@@ -155,7 +157,7 @@ def review_diff(
         tools,
         tools.fusion_review_diff(
             ReviewDiffInput(diff=diff_text, context=context, goals=goals, strategy=strategy)
-        )
+        ),
     )
     _print_json(result)
 
@@ -186,7 +188,7 @@ def debug(
         tools,
         tools.fusion_debug_error(
             DebugErrorInput(error_message=error_message, logs=logs, strategy=strategy)
-        )
+        ),
     )
     _print_json(result)
 
@@ -206,10 +208,8 @@ def decide(
     result = _run(
         tools,
         tools.fusion_decide_architecture(
-            DecideArchitectureInput(
-                question=question, constraints=constraints, strategy=strategy
-            )
-        )
+            DecideArchitectureInput(question=question, constraints=constraints, strategy=strategy)
+        ),
     )
     _print_json(result)
 
@@ -233,7 +233,7 @@ def plan(
             PlanFeatureInput(
                 feature_description=feature, constraints=constraints, strategy=strategy
             )
-        )
+        ),
     )
     _print_json(result)
 
@@ -250,8 +250,7 @@ def eval_answer(
     answer = answer_file.read_text(encoding="utf-8")
     tools = _tools(db_path, mock)
     result = _run(
-        tools,
-        tools.fusion_eval_answer(EvalAnswerInput(question=question, answer=answer))
+        tools, tools.fusion_eval_answer(EvalAnswerInput(question=question, answer=answer))
     )
     _print_json(result)
 
@@ -293,7 +292,7 @@ def compare_claude_runs(
                 opus_latency_ms=opus_latency_ms,
                 fusion_latency_ms=fusion_latency_ms,
             )
-        )
+        ),
     )
     _print_json(result)
 

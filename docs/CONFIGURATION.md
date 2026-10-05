@@ -73,6 +73,7 @@ reports it as a warning so mock and local development stay easy.
 | `FUSION_CONFIG_DIR` | Directory holding the user `config.yaml` | platform config dir |
 | `FUSION_DATA_DIR` | Directory holding `runs.db` | platform data dir |
 | `FUSION_PROJECT_DIR` | Directory whose `.fusion/config.yaml` is the project layer | working directory |
+| `FUSION_BENCH_DIR` | Where benchmark runs, their database, the response cache and `spend.json` live | `bench-results` under the project directory |
 | `FUSION__<SECTION>__<KEY>` | Override one config key (see [Layers and locations](#layers-and-locations)) | unset |
 | `FUSION_SHADOW_MODE` | Shadow A/B against the real baseline: `off`, `sampled`, `always` | `off` |
 | `FUSION_SHADOW_SAMPLE_RATE` | Fraction of runs shadowed in `sampled` mode | `0.2` |
@@ -263,16 +264,18 @@ mode is an argument of `Pipeline.run(ctx, mode=...)`, not a global.
 
 | | `real` | `benchmark` |
 |--|--------|-------------|
-| Secret redaction | on | on |
+| Secret redaction | on | off, so ground-truth tasks reach the models as written; a study can turn it on |
 | Judge | the strategy's `judge` (default `off`) | the strategy's `judge` |
-| Sampling | provider defaults | temperature `0` and seed `0` unless a member sets its own (seeds reach OpenAI, Google and Ollama; Anthropic has none) |
+| Sampling | provider defaults | temperature `0` and seed `0` (a study sets its own seed per repeat) unless a member sets its own temperature (seeds reach OpenAI, Google and Ollama; Anthropic has none) |
+| Streaming | off | on for every model that supports it, so time to first token and decode speed are measured |
 | Prompts over a model's context window | trimmed, with a warning | sent as is |
 | Shadow A/B | per `FUSION_SHADOW_MODE` and `shadow_baseline` | never |
 | Lifetime-stats footer | appended at `detail: full` | omitted |
 | Stored ledger | full | full |
 
-The benchmark runner that drives this mode and its provider-response cache arrive with the benchmark
-framework; see [BENCHMARKING.md](BENCHMARKING.md).
+`Pipeline.run` also takes `seed` and `redact` to override these two for one run, and `ledger` to
+keep the run's calls when a stage raises. The runner that drives benchmark mode, its provider-response
+cache and its spend limits are described in [BENCHMARKING.md](BENCHMARKING.md#benchmark-mode-fusion-bench).
 
 ## Response cache
 

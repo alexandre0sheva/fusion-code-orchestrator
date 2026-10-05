@@ -9,6 +9,7 @@ from fusion.config.loader import BaselineEntry
 from fusion.evals.engine import EvalEngine
 from fusion.orchestration.cache import ResponseCache, request_key
 from fusion.orchestration.context import PipelineContext, PipelineDeps, RunState
+from fusion.orchestration.ledger import RunLedger
 from fusion.orchestration.output import ResultPresenter
 from fusion.orchestration.result import PipelineResult
 from fusion.orchestration.schemas import CostLatencyInfo, Detail
@@ -75,13 +76,23 @@ class BasePipeline:
     def _run_store(self) -> RunStore:
         return self.deps.run_store
 
-    async def run(self, ctx: PipelineContext, *, mode: Mode = Mode.REAL) -> PipelineResult:
+    async def run(
+        self,
+        ctx: PipelineContext,
+        *,
+        mode: Mode = Mode.REAL,
+        seed: int | None = None,
+        redact: bool | None = None,
+        ledger: RunLedger | None = None,
+    ) -> PipelineResult:
         """Execute every stage; halted runs skip to the stages that must always run.
 
         The strategy comes from ``ctx.strategy`` (or ``ctx.budget``); ``mode`` says whether the run
-        serves Claude Code (real) or is measured in a study (benchmark).
+        serves Claude Code (real) or is measured in a study (benchmark). A study varies ``seed``
+        per repeat, may turn ``redact`` back on, and passes its own ``ledger`` so the money a run
+        spent is known even when a stage raises.
         """
-        state = RunState.start(ctx, self.deps, mode)
+        state = RunState.start(ctx, self.deps, mode, seed=seed, redact=redact, ledger=ledger)
         key = self._cache_key(state) if mode is Mode.REAL else None
         if key is not None and (hit := self._cache.get(key)) is not None:
             return hit

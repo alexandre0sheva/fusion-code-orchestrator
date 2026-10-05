@@ -85,12 +85,17 @@ class RedactStage(_Stage):
 
     async def run(self, state: RunState) -> RunState:
         ctx = state.ctx
-        primary = redact_secrets(ctx.primary_content)
-        context = redact_secrets(ctx.context)
-        state.sanitized_primary = primary.text
-        state.sanitized_context = context.text
-        state.sanitized_snippets = [redact_secrets(s).text for s in ctx.file_snippets]
-        state.redaction_count = primary.redaction_count + context.redaction_count
+        if state.redact:
+            primary = redact_secrets(ctx.primary_content)
+            context = redact_secrets(ctx.context)
+            state.sanitized_primary = primary.text
+            state.sanitized_context = context.text
+            state.sanitized_snippets = [redact_secrets(s).text for s in ctx.file_snippets]
+            state.redaction_count = primary.redaction_count + context.redaction_count
+        else:  # benchmark mode: the task reaches the models exactly as written
+            state.sanitized_primary = ctx.primary_content
+            state.sanitized_context = ctx.context
+            state.sanitized_snippets = list(ctx.file_snippets)
 
         state.run_id = await self.deps.run_store.acreate_run(
             task_type=ctx.task_type.value,
@@ -1032,6 +1037,7 @@ class PersistStage(_Stage):
             agreement=state.agreement,
             cascade=state.cascade,
             budget=state.budget_report(),
+            halt_reason=state.halt.reason if state.halt else None,
         )
 
 

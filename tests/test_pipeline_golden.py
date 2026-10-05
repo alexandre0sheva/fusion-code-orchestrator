@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from _golden import check_golden
+from _golden import check_golden, normalize
 from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipelines
 from fusion.orchestration.schemas import (
     AnswerEvalInput,
@@ -128,3 +128,10 @@ async def test_golden_insufficient_context(pipes: Any) -> None:
             "steps": [s.step_name for s in result.trace.steps],
         },
     )
+
+
+def test_golden_normalisation_ignores_how_long_a_run_took() -> None:
+    """A slow or loaded machine rounds the cost line's wall time to 0.1s, 0.2s or more."""
+    template = "### Cost\n$0.0000 estimated \u00b7 {t}s \u00b7 panel-cheap, 4 calls"
+    rendered = {normalize(template.format(t=t)) for t in ("0.0", "0.1", "2.7", "12.3")}
+    assert len(rendered) == 1
