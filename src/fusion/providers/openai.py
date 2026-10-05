@@ -65,6 +65,8 @@ class OpenAICompatibleProvider(HttpProvider):
         }
         if request.temperature is not None and (entry is None or entry.supports_sampling_params):
             payload["temperature"] = request.temperature
+        if request.seed is not None and (entry is None or entry.supports_sampling_params):
+            payload["seed"] = request.seed
         effort = self.effective_effort(request, entry)
         if effort is not None:
             payload["reasoning_effort"] = effort

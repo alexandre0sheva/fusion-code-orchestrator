@@ -6,7 +6,7 @@ canonical home for its topic (see the docs contract in [../CONTRIBUTING.md](../C
 | Document | Purpose |
 |----------|---------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | MCP server, routing, fan-out, evals, telemetry and storage internals |
-| [CONFIGURATION.md](CONFIGURATION.md) | Environment variables, YAML config, providers, budgets, fan-out, refinement |
+| [CONFIGURATION.md](CONFIGURATION.md) | Environment variables, YAML config, providers, strategies, budgets, fan-out, refinement |
 | [COSTS.md](COSTS.md) | Pricing registry, baseline comparison, cost and latency limitations |
 | [BENCHMARKING.md](BENCHMARKING.md) | How to measure Fusion against a single model |
 | [INTEGRATIONS.md](INTEGRATIONS.md) | Claude Code and Cursor setup, MCP tool reference |

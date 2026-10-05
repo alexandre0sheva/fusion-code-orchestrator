@@ -7,6 +7,7 @@ import pytest
 from fusion.config.loader import RefinementConfig, load_routing_policies
 from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
 from fusion.orchestration.refine import refine_panel_responses
+from fusion.orchestration.strategy import load_strategy_book
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.providers.mock import MockProvider
 from fusion.routing.budget import BudgetLevel
@@ -48,7 +49,7 @@ async def test_refinement_replaces_answers_on_success() -> None:
         providers={"mock": MockProvider()},
         task_type=TaskType.CODE_REVIEW,
         original_task="review this diff",
-        config=RefinementConfig(enabled_budgets=["high"]),
+        config=RefinementConfig(),
     )
     assert result.ran
     assert result.refined_count == 2
@@ -67,7 +68,7 @@ async def test_refinement_failure_keeps_round1_answer() -> None:
         providers={"mock": FailingProvider()},
         task_type=TaskType.CODE_REVIEW,
         original_task="review this diff",
-        config=RefinementConfig(enabled_budgets=["high"]),
+        config=RefinementConfig(),
     )
     assert result.ran
     assert result.refined_count == 0
@@ -86,17 +87,19 @@ async def test_refinement_skipped_below_min_panel_size() -> None:
         providers={"mock": MockProvider()},
         task_type=TaskType.CODE_REVIEW,
         original_task="review this diff",
-        config=RefinementConfig(enabled_budgets=["high"], min_panel_size=2),
+        config=RefinementConfig(min_panel_size=2),
     )
     assert not result.ran
     assert refined == responses
 
 
-def test_refinement_config_loaded_from_yaml() -> None:
-    config = load_routing_policies()
-    assert config.refinement.enabled_for("high")
-    assert not config.refinement.enabled_for("medium")
-    assert not config.refinement.enabled_for("low")
+def test_refinement_rounds_come_from_the_strategy_not_the_config() -> None:
+    book = load_strategy_book()
+    assert book.for_budget(BudgetLevel.HIGH).rounds == 2
+    assert book.for_budget(BudgetLevel.MEDIUM).rounds == 1
+    with pytest.raises(ValueError, match="enabled_budgets"):
+        RefinementConfig.model_validate({"enabled_budgets": ["high"]})
+    assert load_routing_policies().refinement.min_panel_size == 2
 
 
 @pytest.mark.asyncio

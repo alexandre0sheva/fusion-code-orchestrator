@@ -10,20 +10,24 @@ A run is a list of **stages** that read and write one `RunState` (`src/fusion/or
 ```text
 Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
    RedactStage       redact secrets, open the run record
-   RouteStage        classify, pick panel/judge/synthesizer, fall back by catalog role
+   RouteStage        apply the strategy: panel/aggregator/judge models, fall back by catalog role
    ContextEvalStage  score the context            -- halts: "insufficient context"
    PanelStage        concurrent fan-out           -- halts: quorum not met
-   RefineStage       optional peer-review round (high budget)
-   JudgeStage        LLM judge + deterministic checks per answer
-   AggregateStage    disagreement analysis + synthesis
+   RefineStage       the strategy's extra peer-review rounds (rounds - 1; none for rounds: 1)
+   JudgeStage        deterministic checks per answer; LLM judge when the strategy's judge is on
+   AggregateStage    disagreement analysis + final answer (solo: the answer itself; llm:
+                     one synthesizer call; digest: the panel's answers, no call)
    FinalEvalStage    final eval, structured output, budget warnings
    ShadowStage       optional blind A/B against the real baseline
    PersistStage      build the result from the ledger, store the run (always runs)
 ```
 
-A halted run skips straight to `PersistStage`, which still stores a diagnostic result. Stages hold
+The stage list is the same for every strategy; each stage reads the strategy from `RunState` and
+skips what it does not call for (a solo run has no refinement round and no synthesis call). A
+halted run skips straight to `PersistStage`, which still stores a diagnostic result. Stages hold
 no state of their own, so each can be unit-tested with a prepared `RunState`. The modules are
-`context` (inputs, shared dependencies, `RunState`), `stages`, `ledger`, `result`, `output`
+`context` (inputs, shared dependencies, `RunState`), `strategy` (strategies and run modes),
+`stages`, `ledger`, `result`, `output`
 (display text, usage and persisted views), `pipeline` (the runner), `specialized` (the six
 task pipelines that map results to tool outputs) and `factory` (`build_pipelines(Settings,
 providers)`). `pipelines.py` only re-exports; `create_pipeline(s)` are deprecated aliases.
@@ -44,12 +48,30 @@ The gateway also keeps prompts inside the model's context window: if a prompt ex
 `context_window` it is trimmed in the middle and a warning naming the model is added to the run.
 Models with no declared window are never trimmed.
 
-### Modes
+### Strategies and run modes
+
+A **strategy** (`strategy.py`, packaged in `config/strategies.yaml`) is data: `kind` (`solo` or
+`panel`), `members` (catalog aliases, each with an optional role, temperature and reasoning effort),
+`rounds`, `aggregator`, `judge` and optional cost/latency caps. `RunState.start` resolves it once
+per run, from `PipelineContext.strategy` or else the legacy `budget` through `budget_strategies`, so
+an unknown name fails before a run is recorded. The router turns the strategy into the models to
+call, and the stages do the rest. Benchmark baselines are `solo` strategies, so a baseline and Fusion
+share one code path and one ledger. The fields are documented in
+[CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets).
+
+A run also has a **mode** (`Mode.REAL` or `Mode.BENCHMARK`), passed as `Pipeline.run(ctx, mode=...)`
+and kept on `RunState` and `PipelineResult`. `MODE_SETTINGS` holds what a mode changes: whether the
+lifetime footer and shadow A/B are allowed, whether prompts are trimmed to the context window, and a
+fixed temperature and seed. `CallGateway` applies the last two for every call of the run (a request
+or member that sets its own temperature wins). The table is in
+[CONFIGURATION.md](CONFIGURATION.md#modes).
+
+### Offline and live
 
 Offline (mock) and live mode differ in configuration, not in code paths. `factory.build_deps` picks
 the mode once (`Settings.use_mock`, or `FUSION_DEFAULT_PROVIDER=mock`): live mode builds a registry
-of real models and the packaged routing policies; offline mode builds a registry of mock models and
-policies pointing at them (`mock_routing_policies`). Router, stages and fallbacks never ask whether
+of real models and the packaged strategies; offline mode builds a registry of mock models and
+strategies of the same shapes running on them (`mock_strategy_book`). Router, stages and fallbacks never ask whether
 they are under test; role fallbacks (`panel`, `judge`, `synthesizer`) come from the catalog roles of
 whichever registry is in use. A panel model's persona prompt comes from its catalog `persona`
 field; models without one answer with the task's own system prompt.
@@ -125,15 +147,18 @@ routes. `MockProvider` supports deterministic offline tests and development.
 
 ### Router
 
-`src/fusion/routing/policy.py` classifies task type, complexity, and risk, then selects:
+`src/fusion/routing/policy.py` classifies task type, complexity, and risk, then turns the run's
+strategy into:
 
-- panel models;
-- judge model;
-- synthesizer model;
-- budget tier and routing warnings.
+- panel models (the strategy's enabled members; if none is enabled, the catalog's panel-role models
+  with a warning);
+- the judge model (the task policy's `judge_model`, else a JSON-capable model with the judge role);
+- the aggregator model (an `llm` aggregator only; empty for solo and digest);
+- the resolved strategy name, an estimated cost tier and routing warnings.
 
-Model metadata and prices live in the catalog, `src/fusion/config/catalog.yaml`. Task policies and fanout
-settings live in `src/fusion/config/routing_policies.yaml`.
+`RoutingDecision.strategy` reports the strategy that ran. Model metadata and prices live in the
+catalog, `src/fusion/config/catalog.yaml`; per-task judge and context thresholds and fan-out settings
+in `src/fusion/config/routing_policies.yaml`; strategies in `src/fusion/config/strategies.yaml`.
 
 ### Fanout
 
@@ -156,11 +181,10 @@ Claude Code's perspective.
 
 ### Refinement (mixture-of-agents)
 
-`src/fusion/orchestration/refine.py` runs an optional second round after fanout when
-the routing config enables it for the effective budget (`refinement.enabled_budgets`,
-default `[high]`). Each successful panel model receives the peer answers anonymized as
-"Response A/B/C" plus its own answer and returns a revised answer. Failures keep the
-round-1 answer. Refined answers feed the judge, disagreement analysis, and synthesis;
+`src/fusion/orchestration/refine.py` runs after fanout, once for each round the strategy asks for
+beyond the first (`rounds - 1`; the packaged `panel-refine` has `rounds: 2`). Each successful panel
+model receives the peer answers anonymized as "Response A/B/C" plus its own answer and returns a
+revised answer. Failures keep the previous answer. Refined answers feed the judge, disagreement analysis, and synthesis;
 each call is traced as `refine:{model}` with full usage and cost.
 
 ### Shadow baseline A/B
@@ -181,16 +205,17 @@ overhead and are never counted as Fusion cost. All shadow failures degrade to wa
 `RunStore.get_stats()` aggregates cumulative totals: run counts, Fusion spend, baseline
 estimates, per-task-type breakdown, and shadow win/tie/loss counts. Rendering lives in
 `src/fusion/telemetry/stats_format.py`, surfaced through the `fusion stats` CLI command,
-the `fusion_stats` MCP tool, and a one-line lifetime footer on every run's
-`display_markdown`.
+the `fusion_stats` MCP tool, and a one-line lifetime footer on every real-mode run's
+`display_markdown` (benchmark mode omits it).
 
 ### Evals
 
 `src/fusion/evals/engine.py` coordinates hybrid evals:
 
 - deterministic checks always run;
-- LLM judge runs when a configured judge model is available;
-- heuristic fallback runs when judge calls fail;
+- the LLM judge runs only when the strategy's `judge` is `light` or `full` and a judge model is
+  available (the default, `off`, makes no judge call);
+- heuristic fallback scoring replaces the judge when it is off or its calls fail;
 - final aggregate confidence combines context sufficiency, consensus, answer quality,
   final quality, provider success rate, unsupported-claim penalty, and residual risk.
 

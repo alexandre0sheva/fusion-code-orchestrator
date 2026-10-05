@@ -70,10 +70,13 @@ class EvalEngine:
         known_files: list[str] | None = None,
         is_coding_task: bool = False,
         gateway: CallGateway | None = None,
+        use_llm: bool = True,
     ) -> ModelResponseEval:
+        """Score one answer. ``use_llm=False`` (a strategy with the judge off) skips the judge."""
         judge_scores: dict[str, float | str] | None = None
         judge_failed = False
-        if self._use_llm_judge:
+        llm_judge = self._use_llm_judge and use_llm
+        if llm_judge:
             model_entry = self._registry.get(judge_model)
             provider = self._providers.get(model_entry.provider)
             if provider and provider.is_available():
@@ -98,7 +101,11 @@ class EvalEngine:
         if judge_scores is None:
             judge_scores = heuristic_judge_scores(
                 content,
-                notes="LLM judge unavailable; using heuristic scoring",
+                notes=(
+                    "LLM judge unavailable; using heuristic scoring"
+                    if llm_judge
+                    else "LLM judge off; using heuristic scoring"
+                ),
             )
 
         is_coding = is_coding_task or task_type in {

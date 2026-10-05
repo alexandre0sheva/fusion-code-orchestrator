@@ -81,7 +81,7 @@ async def test_route_stage_selects_models_and_falls_back_by_catalog_role(tmp_pat
     deps = _deps(tmp_path, use_mock=False, providers={"openai": OpenAIOnly()})
     state = _state(deps)
     state = await RouteStage(deps).run(state)
-    assert state.panel_models == ["gpt-luna-security"]  # the only panel member with a provider
+    assert state.panel_models == ["gpt-luna"]  # the only panel member with a provider
     assert (
         state.judge_model == "gpt-luna"
     )  # gemini-flash is unavailable; next model with role judge
@@ -130,7 +130,10 @@ async def test_panel_stage_halts_without_quorum_and_keeps_the_diagnostics(tmp_pa
     deps.run_store.close()
 
 
-async def test_judge_stage_runs_alone_on_a_prepared_state(tmp_path: Path) -> None:
+async def test_judge_stage_runs_alone_on_a_prepared_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FUSION__STRATEGIES__PANEL-CHEAP__JUDGE", "light")
     deps = _deps(tmp_path)
     state = _state(deps)
     for stage in (RedactStage, RouteStage, ContextEvalStage, PanelStage):
@@ -186,7 +189,10 @@ def _priced_mock_catalog() -> Any:
     return catalog.model_copy(update={"models": models})
 
 
-async def test_judge_and_synthesis_cost_is_part_of_the_reported_total(tmp_path: Path) -> None:
+async def test_judge_and_synthesis_cost_is_part_of_the_reported_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FUSION__STRATEGIES__PANEL-CHEAP__JUDGE", "light")
     pricing = PricingRegistry(_priced_mock_catalog())
     pipes = build_pipelines(
         Settings(use_mock=True, db_path=str(tmp_path / "c.db"), pricing=pricing),
@@ -326,7 +332,7 @@ def test_router_has_no_test_mode_branches() -> None:
 
 def test_mock_mode_is_selected_by_the_factory(tmp_path: Path) -> None:
     mock_deps = _deps(tmp_path)
-    decision = mock_deps.routing.router.route(explicit_type="code_review", budget=BudgetLevel.HIGH)
+    decision = mock_deps.routing.route(TaskType.CODE_REVIEW, budget=BudgetLevel.HIGH)
     assert decision.selected_panel and all(
         mock_deps.registry.get(m).provider == "mock" for m in decision.selected_panel
     )
@@ -334,7 +340,7 @@ def test_mock_mode_is_selected_by_the_factory(tmp_path: Path) -> None:
     live = build_deps(
         Settings(use_mock=False, db_path=str(tmp_path / "l.db")), {"openai": MockProvider()}
     )
-    live_decision = live.routing.router.route(explicit_type="code_review")
+    live_decision = live.routing.route(TaskType.CODE_REVIEW)
     assert all(live.registry.get(m).provider != "mock" for m in live_decision.selected_panel)
     mock_deps.run_store.close()
     live.run_store.close()

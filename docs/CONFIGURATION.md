@@ -1,14 +1,14 @@
 # Configuration
 
-Canonical reference for environment variables, YAML config files, routing, budgets, fan-out and
+Canonical reference for environment variables, YAML config files, strategies, budgets, fan-out and
 refinement. Cost and pricing methodology lives in [COSTS.md](COSTS.md).
 
 ## Layers and locations
 
 Settings come from five layers; a later layer overrides an earlier one:
 
-1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml` and `baseline.yaml` inside the
-   package (`src/fusion/config/`). Do not edit these in an installed copy.
+1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml`, `strategies.yaml` and
+   `baseline.yaml` inside the package (`src/fusion/config/`). Do not edit these in an installed copy.
 2. **User config**: `config.yaml` in the platform config directory (`fusion config paths` prints it;
    `fusion init` creates a commented starter).
 3. **Project config**: `.fusion/config.yaml` in the working directory (or `FUSION_PROJECT_DIR`).
@@ -17,9 +17,9 @@ Settings come from five layers; a later layer overrides an earlier one:
 5. **`fusion --set section.key=value`** (repeatable, placed before the command).
 
 User and project files may set these top-level sections: `models`, `provider_limits`, `policies`,
-`budgets`, `fanout`, `refinement` and `baselines`. A misspelled section is an error with a
+`budgets`, `fanout`, `refinement`, `strategies`, `budget_strategies` and `baselines`. A misspelled section is an error with a
 suggestion. Mappings merge key by key, so `models: {gpt-luna: {max_tokens: 1234}}` changes one field
-and keeps the rest; lists (`baselines`, `panel_models`) and single values are replaced.
+and keeps the rest; lists (`baselines`, a strategy's `members`) and single values are replaced.
 
 ```bash
 uv run fusion config show                    # which layers exist and what each one sets
@@ -34,7 +34,8 @@ Validation errors name the key, the offending value, the layer that set it and t
 |------|---------|
 | `.env` | Provider keys and runtime toggles. Loaded automatically by the CLI and the MCP server. |
 | `src/fusion/config/catalog.yaml` | Model catalog: aliases, provider model IDs, capabilities, tiers, enable flags and verified prices. |
-| `src/fusion/config/routing_policies.yaml` | Task routing, per-budget panels, fan-out and refinement settings. |
+| `src/fusion/config/routing_policies.yaml` | Per-task judge model and context threshold; fan-out and refinement settings. |
+| `src/fusion/config/strategies.yaml` | Strategies (which models answer, rounds, aggregation, judging) and the budget-to-strategy table. |
 | `src/fusion/config/baseline.yaml` | Frontier baseline(s), as catalog aliases, that Fusion's cost is compared against. |
 
 ## Run database
@@ -92,8 +93,8 @@ How the shadow A/B works and how to read its results: [BENCHMARKING.md](BENCHMAR
 | Mock | `FUSION_DEFAULT_PROVIDER=mock` or `--mock` | Tests and offline development only |
 
 Ollama and LM Studio never block cloud usage. They are registered only when explicitly enabled. If
-the `local_only` budget is requested but no local models are configured, Fusion falls back to cloud
-models with a warning.
+the `local_only` budget (strategy `panel-local`) is requested but no local models are enabled, Fusion
+falls back to cloud models with a warning.
 
 ```bash
 export OLLAMA_ENABLED=true
@@ -114,32 +115,108 @@ Three catalog settings tune provider calls (all in `src/fusion/config/catalog.ya
 | `persona` | per model | Panel persona prompt (for example `security_reviewer`). Without one a model answers with the task's own system prompt. |
 | `max_tokens` | per model | Output cap Fusion requests. Thinking tokens count against it, so reasoning models use 16384. |
 
-## Routing and budgets
+## Strategies and budgets
 
-Every tool accepts an optional `budget`: `low`, `medium`, `high` or `local_only`. Per-task panels,
-the judge and the synthesizer are defined in `routing_policies.yaml`; per-budget overrides sit under
-each policy's `budgets:` key. Model IDs, capabilities, prices and enable flags are in `catalog.yaml`.
+A **strategy** says who answers a task and how the answers are combined. Every tool accepts an
+optional `strategy` (a name from `strategies.yaml`); `fusion strategies list` prints them. Without
+one, the legacy `budget` argument picks the strategy through `budget_strategies`, and the response's
+`routing.strategy` reports which one ran. Switching strategy is a config or argument change, never a
+code change.
 
-| Budget | Behaviour |
-|--------|-----------|
-| `low` | One cheap model, no refinement |
-| `medium` | Cheap three-model panel, no refinement |
-| `high` | Cheap panel plus the refinement round |
-| `local_only` | Only Ollama / LM Studio models |
+```yaml
+strategies:
+  my-panel:
+    kind: panel                  # solo | panel
+    members:                     # catalog aliases; solo has exactly one
+      - model: claude-haiku
+      - model: gpt-luna
+        role: security_reviewer  # "auto" (default) = the catalog persona, else the task prompt
+        temperature: 0.2         # optional per member
+        reasoning_effort: low    # optional per member
+    rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
+    aggregator: llm              # llm | digest
+    aggregator_model: claude-sonnet   # omit for the catalog's synthesizer role
+    judge: off                   # off | light | full
+    max_cost_usd: 0.05           # optional; going over adds a warning
+    max_latency_s: 60            # optional; going over adds a warning
+budget_strategies:
+  medium: my-panel
+```
 
-Default panel at `medium` budget:
+| Strategy | Runs | Calls per task |
+|----------|------|----------------|
+| `solo-frontier` | Claude Opus 5.5 | 1 |
+| `solo-sol` | GPT-6.1 Sol | 1 |
+| `solo-cheap` | Claude Haiku 4.5 | 1 |
+| `solo-luna` | GPT-6 Luna | 1 |
+| `panel-cheap` (default) | Haiku 4.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 4.5 | 3 + 1 |
+| `panel-cheap-strong-synth` | the same panel, merged by Claude Sonnet 5.5 | 3 + 1 |
+| `panel-refine` | the same panel plus one refinement round, merged by Haiku 4.5 | 3 + 3 + 1 |
+| `panel-digest` | the same panel, no synthesis: the answers come back for Claude Code to merge | 3 |
+| `panel-local` | Ollama and LM Studio models; falls back to the cloud panel with a warning when none are enabled | 2 + 1 |
 
-| Role | Models |
-|------|--------|
-| Code review panel | Claude Haiku 4.5, GPT-6 Luna (security role), Gemini 3.8 Flash |
-| Debug panel | Claude Haiku 4.5, GPT-6 Luna, Gemini 3.8 Flash |
-| Judge | Gemini 3.8 Flash (JSON scoring) |
-| Synthesizer | Claude Sonnet 5.5 |
+How the fields behave:
 
-The panel is intentionally cheap; the synthesizer is the strongest model in the loop because
-mixture-of-agents quality depends most on the final aggregation step. High-risk code reviews
-automatically add Claude Sonnet 5.5 to the panel. Panel members receive real role prompts defined in
+- **`solo`** returns the model's answer as is (one call, no synthesis). Benchmark baselines are solo
+  strategies, so a baseline and Fusion share one code path and one cost ledger.
+- **`rounds`** counts answer rounds: `rounds: 3` is the panel plus two refinement rounds. In a
+  refinement round each member sees the other members' anonymized answers and revises its own; a
+  member whose call fails keeps its previous answer. Timeouts and the minimum panel size are under
+  [Refinement](#refinement-mixture-of-agents).
+- **`aggregator: llm`** makes one synthesizer call; **`digest`** makes none and returns every answer
+  plus the disagreement summary. `vote` and `best_of` are reserved names and are rejected for now.
+- **`judge`**: `off` runs only the deterministic checks and makes no judge call (the default, so a
+  run costs only its panel and aggregator). `light` has the judge model score each answer.
+  `full` does the same and also records a check of the judge's own output under
+  `evals.judge_quality`. Which model judges is the task's `judge_model` in `routing_policies.yaml`.
+- A model may appear only once in a strategy. `kind: cascade` is reserved and rejected for now.
+- `max_cost_usd` and `max_latency_s` are checked after the run and add a warning; they do not stop
+  a run.
+
+Budgets are aliases kept for compatibility:
+
+| Budget | Strategy |
+|--------|----------|
+| `low` | `solo-cheap` |
+| `medium` | `panel-cheap` |
+| `high` | `panel-refine` |
+| `local_only` | `panel-local` |
+
+Override a strategy field the same way as any setting, for example
+`FUSION__STRATEGIES__PANEL-CHEAP__AGGREGATOR_MODEL=claude-sonnet` or
+`fusion --set strategies.panel-cheap.judge=light review-diff ...`. `fusion config validate` checks
+that every strategy names catalog models.
+
+The panel is intentionally cheap; a stronger aggregator (`panel-cheap-strong-synth`) is the first
+lever when quality matters more than cost. Panel members receive the role prompts in
 `src/fusion/orchestration/prompts.py`.
+
+### Upgrading from v0.1.0
+
+`policies.<task>.panel_models`, `max_panel_size`, `high_risk_*`, `budgets` and `synthesizer_model`, and
+`refinement.enabled_budgets` and `max_rounds`, are gone; a config that still sets them fails with a
+message naming the key. Move the panel into a strategy and set `rounds` for refinement. The
+per-task choices went away with them: code review no longer swaps in the security-focused GPT-6 Luna
+(`gpt-luna-security` remains in the catalog; give a member `role: security_reviewer` to get the same
+prompt for every task) and no longer widens the panel for high-risk diffs.
+
+## Modes
+
+A run is either `real` (the default; serving Claude Code) or `benchmark` (measured in a study). The
+mode is an argument of `Pipeline.run(ctx, mode=...)`, not a global.
+
+| | `real` | `benchmark` |
+|--|--------|-------------|
+| Secret redaction | on | on |
+| Judge | the strategy's `judge` (default `off`) | the strategy's `judge` |
+| Sampling | provider defaults | temperature `0` and seed `0` unless a member sets its own (seeds reach OpenAI, Google and Ollama; Anthropic has none) |
+| Prompts over a model's context window | trimmed, with a warning | sent as is |
+| Shadow A/B | per `FUSION_SHADOW_MODE` and `shadow_baseline` | never |
+| Lifetime-stats footer | appended | omitted |
+| Stored ledger | full | full |
+
+The benchmark runner that drives this mode and its provider-response cache arrive with the benchmark
+framework; see [BENCHMARKING.md](BENCHMARKING.md).
 
 ## Fan-out
 
@@ -162,17 +239,16 @@ diagnostic instead of pretending synthesis succeeded. Internals: [ARCHITECTURE.m
 
 ## Refinement (mixture-of-agents)
 
-At the budgets listed in `enabled_budgets`, each surviving panel model sees the other models'
-answers anonymized as "Response A/B/C" plus its own, critiques them, and returns a revised answer
-before synthesis. A model whose refinement call fails keeps its round-1 answer.
+Strategies with `rounds` above 1 add refinement rounds: each surviving panel model sees the other
+models' answers anonymized as "Response A/B/C" plus its own, critiques them, and returns a revised
+answer before synthesis. A model whose refinement call fails keeps its previous answer. The
+controls below apply to every refinement round; how many rounds run is the strategy's `rounds`.
 
 ```yaml
 refinement:
-  enabled_budgets: [high]
   per_model_timeout_seconds: 45
   global_timeout_seconds: 60
-  min_panel_size: 2
-  max_rounds: 1
+  min_panel_size: 2          # fewer answers than this and refinement is skipped with a warning
 ```
 
 ## Pricing and baseline

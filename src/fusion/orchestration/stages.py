@@ -20,7 +20,8 @@ from fusion.orchestration.output_parser import parse_structured_output
 from fusion.orchestration.prompts import build_user_prompt, get_system_prompt
 from fusion.orchestration.refine import refine_panel_responses
 from fusion.orchestration.result import PanelResult, PipelineResult, build_usage_summary
-from fusion.orchestration.synthesize import synthesize_responses
+from fusion.orchestration.strategy import PanelMember
+from fusion.orchestration.synthesize import build_digest, synthesize_responses
 from fusion.security.redaction import redact_secrets
 from fusion.storage.run_store import ShadowComparisonRecord
 from fusion.telemetry.cost import CostComparison, compare_to_baseline
@@ -64,6 +65,8 @@ class RedactStage(_Stage):
                 "changed_files": ctx.changed_files,
                 "metadata": ctx.metadata,
                 "budget": ctx.budget.value,
+                "strategy": ctx.strategy,
+                "mode": state.mode.value,
             },
             sanitized_input={
                 "primary_content": state.sanitized_primary,
@@ -81,14 +84,16 @@ class RedactStage(_Stage):
 
 
 class RouteStage(_Stage):
-    """Classify the task, pick models, and resolve which are actually available."""
+    """Apply the run's strategy: pick models, and resolve which are actually available."""
 
     async def run(self, state: RunState) -> RunState:
         ctx = state.ctx
+        strategy = state.strategy
+        assert strategy is not None  # resolved by RunState.start
         decision = self.deps.routing.router.route(
+            strategy=strategy,
             explicit_type=ctx.task_type.value,
             content=state.sanitized_primary,
-            budget=ctx.budget,
         )
         if ctx.max_models:
             decision.selected_panel = decision.selected_panel[: ctx.max_models]
@@ -96,10 +101,13 @@ class RouteStage(_Stage):
         state.warnings.extend(decision.warnings)
 
         state.panel_models = self._available(decision.selected_panel, "panel", state.warnings)
+        configured = {m.model: m for m in strategy.members}
+        state.members = [configured.get(a, PanelMember(model=a)) for a in state.panel_models]
         state.judge_model = self._available([decision.judge_model], "judge", state.warnings)[0]
-        state.synthesizer_model = self._available(
-            [decision.synthesizer_model], "synthesizer", state.warnings
-        )[0]
+        if decision.synthesizer_model:
+            state.synthesizer_model = self._available(
+                [decision.synthesizer_model], "synthesizer", state.warnings
+            )[0]
         if state.trace is not None:
             state.trace.panel_models = state.panel_models
         return state
@@ -179,6 +187,7 @@ class PanelStage(_Stage):
             changed_files=state.ctx.changed_files,
             config=self.deps.routing.budgets.fanout,
             gateway=state.gateway,
+            members={m.model: m for m in state.members},
         )
         state.fanout = fanout
         state.warnings.extend(fanout.warnings)
@@ -226,22 +235,33 @@ class PanelStage(_Stage):
 
 
 class RefineStage(_Stage):
-    """Optional mixture-of-agents round: panelists revise after seeing anonymized peers."""
+    """Mixture-of-agents rounds: panelists revise after seeing anonymized peers.
+
+    A strategy's ``rounds`` is the number of answer rounds, so ``rounds - 1`` refinements run.
+    """
 
     async def run(self, state: RunState) -> RunState:
+        assert state.strategy is not None
         config = self.deps.routing.budgets.refinement
-        if not config.enabled_for(state.ctx.budget.value):
-            return state
-        state.successful, state.refinement = await refine_panel_responses(
-            responses=state.successful,
-            registry_models=self.deps.registry.models,
-            providers=self.deps.providers,
-            task_type=state.task_type,
-            original_task=state.sanitized_primary,
-            config=config,
-            gateway=state.gateway,
-        )
-        state.warnings.extend(state.refinement.warnings)
+        members = {m.model: m for m in state.members}
+        for _ in range(state.strategy.rounds - 1):
+            state.successful, round_result = await refine_panel_responses(
+                responses=state.successful,
+                registry_models=self.deps.registry.models,
+                providers=self.deps.providers,
+                task_type=state.task_type,
+                original_task=state.sanitized_primary,
+                config=config,
+                gateway=state.gateway,
+                members=members,
+            )
+            merged = round_result
+            if state.refinement is not None:
+                merged = state.refinement.merged(round_result)
+            state.refinement = merged
+            state.warnings.extend(round_result.warnings)
+            if not round_result.ran:
+                break
         return state
 
 
@@ -249,10 +269,16 @@ class RefineStage(_Stage):
 
 
 class JudgeStage(_Stage):
-    """Score each panel answer (LLM judge plus deterministic checks)."""
+    """Score each panel answer: deterministic checks always, the LLM judge per the strategy.
+
+    ``judge: off`` makes no model call, ``light`` scores each answer with the judge model, and
+    ``full`` also checks the judge's own output.
+    """
 
     async def run(self, state: RunState) -> RunState:
+        assert state.strategy is not None
         engine = self.deps.eval_engine
+        judge = state.strategy.judge
         state.evaluations = await judge_panel_responses(
             eval_engine=engine,
             responses=state.successful,
@@ -262,8 +288,9 @@ class JudgeStage(_Stage):
             is_coding_task=engine.is_coding_task(state.task_type),
             known_files=state.ctx.changed_files or None,
             gateway=state.gateway,
+            use_llm=judge != "off",
         )
-        if state.evaluations and engine.use_llm_judge:
+        if state.evaluations and engine.use_llm_judge and judge == "full":
             await self._check_judge_quality(state)
         state.panel_results = self._panel_results(state)
         return state
@@ -312,21 +339,32 @@ class JudgeStage(_Stage):
 
 
 class AggregateStage(_Stage):
-    """Analyse agreement between answers and synthesize one recommendation."""
+    """Analyse agreement, then produce the final answer the way the strategy says.
+
+    ``solo`` returns the one member's answer; a ``digest`` aggregator returns the panel's answers
+    for Claude Code to merge; ``llm`` makes one synthesizer call.
+    """
 
     async def run(self, state: RunState) -> RunState:
+        assert state.strategy is not None
+        strategy = state.strategy
         panel_texts = [(m, r.content) for m, r in state.successful]
         state.disagreement = analyze_disagreement(state.evaluations, panel_contents=panel_texts)
-        state.synth_response = await synthesize_responses(
-            synthesizer_model=state.synthesizer_model,
-            registry_models=self.deps.registry.models,
-            providers=self.deps.providers,
-            task_type=state.task_type,
-            panel_responses=panel_texts,
-            disagreement_analysis=state.disagreement,
-            original_task=state.sanitized_primary,
-            gateway=state.gateway,
-        )
+        if strategy.kind == "solo":
+            state.synth_response = state.successful[0][1]
+        elif strategy.aggregator == "digest":
+            state.synth_response = build_digest(panel_texts, state.disagreement)
+        else:
+            state.synth_response = await synthesize_responses(
+                synthesizer_model=state.synthesizer_model,
+                registry_models=self.deps.registry.models,
+                providers=self.deps.providers,
+                task_type=state.task_type,
+                panel_responses=panel_texts,
+                disagreement_analysis=state.disagreement,
+                original_task=state.sanitized_primary,
+                gateway=state.gateway,
+            )
         return state
 
 
@@ -367,7 +405,28 @@ class FinalEvalStage(_Stage):
                 state.budget.record(cost_usd=record.cost_usd, latency_ms=record.latency_ms)
         state.warnings.extend(state.budget.warnings)
         state.stamp_latency(self.deps.clock)
+        state.warnings.extend(_cap_warnings(state))
         return state
+
+
+def _cap_warnings(state: RunState) -> list[str]:
+    """Warn when a run went over its strategy's cost or latency cap (caps do not stop a run)."""
+    strategy = state.strategy
+    assert strategy is not None
+    found: list[str] = []
+    total = state.ledger.total_cost()
+    if strategy.max_cost_usd is not None and total.known and total.usd > strategy.max_cost_usd:
+        found.append(
+            f"Strategy '{strategy.name}' cost ${total.usd:.4f} exceeded its cap "
+            f"of ${strategy.max_cost_usd:.4f}"
+        )
+    seconds = state.total_latency_ms / 1000
+    if strategy.max_latency_s is not None and seconds > strategy.max_latency_s:
+        found.append(
+            f"Strategy '{strategy.name}' took {seconds:.1f}s, over its cap "
+            f"of {strategy.max_latency_s:.1f}s"
+        )
+    return found
 
 
 def _score(disagreement: dict[str, object]) -> float:
@@ -382,7 +441,7 @@ class ShadowStage(_Stage):
     """Optional blind A/B against the real frontier baseline (measurement, not Fusion cost)."""
 
     async def run(self, state: RunState) -> RunState:
-        if not should_run_shadow(state.ctx.shadow_baseline):
+        if not state.mode_settings.shadow or not should_run_shadow(state.ctx.shadow_baseline):
             return state
         assert state.synth_response is not None
         fusion_cost = state.ledger.total_cost()
@@ -503,6 +562,7 @@ class PersistStage(_Stage):
             warnings=state.warnings,
             evals=state.evals,
             ledger=state.ledger,
+            mode=state.mode,
         )
 
 

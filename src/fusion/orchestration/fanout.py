@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 from fusion.config.loader import FanoutConfig, ModelEntry
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.prompts import build_user_prompt, get_role_prompt, get_system_prompt
+from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.classifier import TaskType
 
@@ -75,10 +77,12 @@ async def fanout_to_panel(
     changed_files: list[str] | None = None,
     config: FanoutConfig | None = None,
     gateway: CallGateway | None = None,
+    members: Mapping[str, PanelMember] | None = None,
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
     Every call is recorded by ``gateway`` (a throwaway one when the caller has no run ledger).
+    ``members`` carries per-model settings (role, temperature, reasoning effort) from a strategy.
     """
     fanout_config = config or FanoutConfig()
     gateway = gateway or standalone_gateway(registry_models, providers)
@@ -97,7 +101,8 @@ async def fanout_to_panel(
 
     async def _call(model_name: str) -> PanelCallResult:
         entry = registry_models[model_name]
-        persona = entry.persona
+        member = (members or {}).get(model_name)
+        persona = member.role if member and member.role != "auto" else entry.persona
         request = ModelRequest(
             model_id=entry.model_id,
             system_prompt=get_role_prompt(persona) if persona else task_prompt,
@@ -105,6 +110,7 @@ async def fanout_to_panel(
             max_tokens=entry.max_tokens,
             timeout=fanout_config.per_model_timeout_seconds,
             metadata={"task_type": task_type.value, "role": "panel", "personality": persona},
+            **member_overrides(member),
         )
         async with semaphore:  # the per-model timeout starts once a slot is free
             response = await gateway.call(

@@ -66,6 +66,8 @@ class OllamaProvider(HttpProvider):
         options: dict[str, Any] = {"num_predict": request.max_tokens}
         if request.temperature is not None:
             options["temperature"] = request.temperature
+        if request.seed is not None:
+            options["seed"] = request.seed
         payload: dict[str, Any] = {
             "model": request.model_id,
             "messages": messages,

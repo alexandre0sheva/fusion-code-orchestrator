@@ -153,6 +153,7 @@ class FusionTools:
                 file_snippets=input.file_snippets,
                 changed_files=input.changed_files,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                strategy=input.strategy,
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
                 shadow_baseline=input.shadow_baseline,
@@ -169,6 +170,7 @@ class FusionTools:
                 repo_context=input.repo_context or input.repo_summary,
                 goals=input.goals,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                strategy=input.strategy,
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
                 shadow_baseline=input.shadow_baseline,
@@ -186,6 +188,7 @@ class FusionTools:
                 recent_changes=input.recent_changes,
                 environment=input.environment,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                strategy=input.strategy,
                 shadow_baseline=input.shadow_baseline,
             )
         )
@@ -200,6 +203,7 @@ class FusionTools:
                 options=input.options,
                 repo_context=input.context,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                strategy=input.strategy,
                 shadow_baseline=input.shadow_baseline,
             )
         )
@@ -214,6 +218,7 @@ class FusionTools:
                 repo_context=input.context,
                 existing_patterns=input.existing_patterns,
                 budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                strategy=input.strategy,
                 shadow_baseline=input.shadow_baseline,
             )
         )

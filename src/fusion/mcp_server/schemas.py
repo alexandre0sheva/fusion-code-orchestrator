@@ -20,6 +20,13 @@ class ReviewDiffInput(BaseModel):
     repo_context: str = Field(default="", description="Repository context")
     goals: str = Field(default="", description="Review goals or focus areas")
     budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
+    strategy: str | None = Field(
+        default=None,
+        description=(
+            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
+            "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
     include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
     shadow_baseline: bool | None = Field(
@@ -39,6 +46,13 @@ class FusionAskInput(BaseModel):
     file_snippets: list[str] = Field(default_factory=list, description="Relevant file snippets")
     changed_files: list[str] = Field(default_factory=list, description="Relevant file paths")
     budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
+    strategy: str | None = Field(
+        default=None,
+        description=(
+            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
+            "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
     include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
     shadow_baseline: bool | None = Field(
@@ -62,6 +76,13 @@ class DebugErrorInput(BaseModel):
     recent_changes: str = Field(default="", description="Recent changes that may relate")
     environment: str = Field(default="", description="Runtime environment details")
     budget: str = Field(default="medium", description="Budget level")
+    strategy: str | None = Field(
+        default=None,
+        description=(
+            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
+            "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
     shadow_baseline: bool | None = Field(
         default=None,
         description=(
@@ -80,6 +101,13 @@ class DecideArchitectureInput(BaseModel):
     context: str = Field(default="", description="System context")
     file_snippets: list[str] = Field(default_factory=list)
     budget: str = Field(default="medium", description="Budget level")
+    strategy: str | None = Field(
+        default=None,
+        description=(
+            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
+            "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
     shadow_baseline: bool | None = Field(
         default=None,
         description=(
@@ -98,6 +126,13 @@ class PlanFeatureInput(BaseModel):
     file_snippets: list[str] = Field(default_factory=list)
     existing_patterns: str = Field(default="", description="Existing patterns to follow")
     budget: str = Field(default="medium", description="Budget level")
+    strategy: str | None = Field(
+        default=None,
+        description=(
+            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
+            "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
     shadow_baseline: bool | None = Field(
         default=None,
         description=(

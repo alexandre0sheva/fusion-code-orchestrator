@@ -98,7 +98,8 @@ def analyze_disagreement(
     strong_models = {e.model_name for e in evaluations if e.overall_score >= 0.7}
     if weak_models and strong_models:
         contradictions.append(
-            f"Score divergence between {', '.join(weak_models)} and {', '.join(strong_models)}"
+            f"Score divergence between {', '.join(sorted(weak_models))} "
+            f"and {', '.join(sorted(strong_models))}"
         )
     for outlier in outliers:
         contradictions.append(f"Outlier model: {outlier}")

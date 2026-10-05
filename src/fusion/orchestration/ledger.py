@@ -255,12 +255,19 @@ class CallGateway:
         providers: dict[str, ModelProvider],
         pricing: PricingRegistry,
         warnings: list[str] | None = None,
+        truncate_prompts: bool = True,
+        temperature: float | None = None,
+        seed: int | None = None,
     ) -> None:
         self.ledger = ledger
         self.models = models
         self.providers = providers
         self.pricing = pricing
         self.warnings = warnings if warnings is not None else []
+        # Run-wide defaults (benchmark mode fixes them); a request that sets its own value wins.
+        self.truncate_prompts = truncate_prompts
+        self.temperature = temperature
+        self.seed = seed
 
     async def call(
         self,
@@ -285,7 +292,10 @@ class CallGateway:
             )
             return self._record(stage, alias, response, entry, started_ms, "missing_provider")
 
-        request, note = fit_to_context(request, entry)
+        request = self._with_sampling(request)
+        note = None
+        if self.truncate_prompts:
+            request, note = fit_to_context(request, entry)
         if note:
             self.warnings.append(note)
         began = time.perf_counter()
@@ -307,6 +317,14 @@ class CallGateway:
         if status == "success" and not response.ok:
             status = "failed"
         return self._record(stage, alias, response, entry, started_ms, status, trimmed=bool(note))
+
+    def _with_sampling(self, request: ModelRequest) -> ModelRequest:
+        update: dict[str, object] = {}
+        if request.temperature is None and self.temperature is not None:
+            update["temperature"] = self.temperature
+        if request.seed is None and self.seed is not None:
+            update["seed"] = self.seed
+        return request.model_copy(update=update) if update else request
 
     @staticmethod
     def _failure(

@@ -32,6 +32,8 @@ class ModelRequest(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""
     temperature: float | None = None
+    # Sampling seed, sent to providers that accept one (OpenAI, Google, Ollama).
+    seed: int | None = None
     max_tokens: int = 4096
     json_mode: bool = False
     # JSON Schema the answer must follow. Mapped to each provider's native structured output

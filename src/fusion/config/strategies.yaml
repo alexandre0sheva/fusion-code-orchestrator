@@ -1,0 +1,90 @@
+# Strategies: declarative arms. A strategy says who answers, for how many rounds, who aggregates
+# and whether a judge scores the answers. Models are catalog aliases (catalog.yaml).
+#
+# kind: solo   one model answers; the answer is returned as is (one call, no synthesis)
+# kind: panel  several models answer; `rounds` > 1 adds peer-refinement rounds; then `aggregator`
+#              merges the answers (llm = one synthesizer call, digest = return the answers)
+# judge: off   deterministic checks only, no judge calls (default)
+#        light the LLM judge scores each answer
+#        full  light, plus a check of the judge's own output
+
+strategies:
+  solo-frontier:
+    kind: solo
+    description: Claude Opus 5.5 alone; the quality baseline.
+    members:
+      - model: claude-opus
+
+  solo-sol:
+    kind: solo
+    description: GPT-6.1 Sol alone; the second frontier baseline.
+    members:
+      - model: gpt-sol
+
+  solo-cheap:
+    kind: solo
+    description: Claude Haiku 4.5 alone; the cheap single-model baseline.
+    members:
+      - model: claude-haiku
+
+  solo-luna:
+    kind: solo
+    description: GPT-6 Luna alone; a cheap single model from a second vendor.
+    members:
+      - model: gpt-luna
+
+  panel-cheap:
+    kind: panel
+    description: Three cheap models from three vendors, merged by a cheap synthesizer. The default.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: llm
+    aggregator_model: claude-haiku
+
+  panel-cheap-strong-synth:
+    kind: panel
+    description: The cheap panel, merged by Claude Sonnet 5.5 for a stronger final answer.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: llm
+    aggregator_model: claude-sonnet
+
+  panel-refine:
+    kind: panel
+    description: The cheap panel plus one peer-refinement round before synthesis.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    rounds: 2
+    aggregator: llm
+    aggregator_model: claude-haiku
+
+  panel-digest:
+    kind: panel
+    description: The cheap panel with no synthesis call; Claude Code reads the answers and aggregates.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: digest
+
+  panel-local:
+    kind: panel
+    description: Local models only (Ollama / LM Studio). Falls back to the cloud panel with a warning when none are enabled.
+    members:
+      - model: ollama-llama
+      - model: lmstudio-local
+    aggregator: llm
+    aggregator_model: ollama-llama
+
+# The legacy `budget` argument of the tools resolves to a strategy through this table.
+budget_strategies:
+  low: solo-cheap
+  medium: panel-cheap
+  high: panel-refine
+  local_only: panel-local

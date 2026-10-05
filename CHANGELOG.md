@@ -14,6 +14,10 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Added
 
+- **Strategies:** a strategy is declarative data (`strategies` config section, packaged in `strategies.yaml`) that says which catalog models answer, how many rounds, who aggregates (`llm` or `digest`) and whether a judge scores the answers (`off`/`light`/`full`). Nine ship: `solo-frontier`, `solo-sol`, `solo-cheap`, `solo-luna`, `panel-cheap` (the default), `panel-cheap-strong-synth`, `panel-refine`, `panel-digest` and `panel-local`. Every `fusion_*` tool and the CLI (`--strategy`) accept one, `routing.strategy` reports which ran, and `fusion strategies list` prints them. Solo strategies are one provider call, which is what benchmark baselines use. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#strategies-and-budgets).
+- **Run modes:** `Pipeline.run(ctx, mode=Mode.REAL | Mode.BENCHMARK)`. Benchmark mode fixes temperature and seed, sends prompts untrimmed, never runs the shadow baseline and omits the lifetime footer. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#modes).
+- `ModelRequest.seed`, sent to OpenAI, Google and Ollama where the model accepts sampling parameters.
+- `max_cost_usd` and `max_latency_s` on a strategy add a warning when a run exceeds them.
 - **Cost ledger:** every LLM call (panel, refinement, judge, synthesis, shadow) is recorded once in a per-run `RunLedger` with tokens, cost, latency, start offset and speed metrics; totals and per-task metrics (`seconds_to_complete`, cost, tokens, effective output tokens/s, critical path) come from it, and the full ledger is stored with each run. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#cost-ledger).
 - `ModelEntry.persona` in the catalog (security-focused and deliberately weak panel members), and catalog roles drive model fallbacks.
 - **Layered configuration:** packaged defaults, then `config.yaml` in the user config directory, then `./.fusion/config.yaml`, then `FUSION__SECTION__KEY` environment variables, then `fusion --set key=value`. Any of `models`, `provider_limits`, `policies`, `budgets`, `fanout`, `refinement` and `baselines` can be overridden or merged, so an installed copy can be customised without editing the package. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#layers-and-locations).
@@ -34,6 +38,11 @@ Add each user-visible change below under the matching heading as its task lands.
 
 ### Changed
 
+- **Which models run is now chosen by a strategy, and the default changed.** The legacy `budget` argument still works and maps to strategies: `low` → `solo-cheap` (one Haiku call, previously a Gemini panel of one plus synthesis and judging), `medium` → `panel-cheap` (Haiku 4.5, GPT-6 Luna and Gemini 3.8 Flash for every task, merged by **Haiku 4.5** instead of Sonnet 5.5; use `panel-cheap-strong-synth` for Sonnet), `high` → `panel-refine`, `local_only` → `panel-local`.
+- **The LLM judge is off by default.** Runs no longer make a judge call per answer; scoring falls back to deterministic checks and heuristics, so a run costs only its panel and aggregator. Set a strategy's `judge` to `light` or `full` to restore it.
+- `policies.<task>` now holds only `judge_model` and `min_context_score`, and `refinement` only timeouts and `min_panel_size`; refinement rounds come from a strategy's `rounds`. A config that still sets `panel_models`, `max_panel_size`, `high_risk_*`, `budgets`, `synthesizer_model`, `enabled_budgets` or `max_rounds` fails with a message naming the key. Code review no longer swaps in the security-focused GPT-6 Luna or widens the panel for high-risk diffs. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#upgrading-from-v010).
+- `Router.route()` takes a `strategy` instead of a `budget`; model filtering by cost tier is gone, so a strategy may name any enabled model.
+- Run display text gains a `Strategy:` line.
 - **Pipeline refactor:** the 1,500-line `pipelines.py` is split into stages (`Redact`, `Route`, `ContextEval`, `Panel`, `Refine`, `Judge`, `Aggregate`, `FinalEval`, `Shadow`, `Persist`) over one `RunState`, plus `ledger`, `result`, `output`, `pipeline`, `specialized` and `factory` modules; no function in `orchestration/` exceeds 120 lines. `fusion.orchestration.pipelines` still re-exports the public names. `create_pipeline`/`create_pipelines` are deprecated in favour of `build_pipeline(s)(Settings(...), providers)`.
 - **Judge and eval calls are now part of the reported cost.** Previously only panel, refinement and synthesis calls were itemized, so reported Fusion cost was understated and `usage.per_model`, `cost_latency.steps` and `usage.total_*_tokens` omitted the judge. They now include one `judge:<model>` step per answer, and the "judge calls are not itemized" warning is gone. A call that fails or times out may still have been billed, so a run with such a call reports its total cost as unknown.
 - `usage.total_model_call_latency_ms` is now the sum of all model calls (it previously left out refinement and judge calls).
@@ -67,9 +76,11 @@ Add each user-visible change below under the matching heading as its task lands.
 - Errors from providers no longer echo API keys.
 - `FUSION_DEFAULT_PROVIDER=mock` is now honored by the MCP tools. Previously the MCP server ignored it and could call real providers when API keys were present.
 - README no longer links to a nonexistent publication checklist and its tool table matches the server.
+- The disagreement summary listed models in an order that changed between processes (it joined a set); it is now sorted, so identical runs produce identical output.
 
 ### Removed
 
+- `RefinementConfig.enabled_budgets`, `RefinementConfig.max_rounds` and `RefinementConfig.enabled_for()` (a strategy's `rounds` replaces them), and `ModelRegistry.filter_candidates()` with `cost_tier_within_budget()`.
 - `default_models.yaml`, `pricing.yaml` and the hard-coded `fusion.telemetry.pricing` table (replaced by the catalog), plus the `cost_per_1k_*` model fields and the unused `compute_cost` helper.
 - **Legacy agent harness** (breaking): the `fusion_compare_implement` MCP tool, the `fusion compare-implement` CLI command, the `fusion.agent` package, `fusion.benchmark.compare`, and the `FUSION_AGENT_MODE` / `FUSION_WORKSPACE_ROOT` settings. It executed file writes and shell commands for little value and its one real run was inconclusive. The MCP server now exposes eight tools. To compare Fusion against a single model use `fusion_compare_claude_runs`, the shadow A/B, or the `fusion bench` mode coming in this release (see [docs/BENCHMARKING.md](docs/BENCHMARKING.md)). The June 2026 result is archived in `evals/archive/`.
 

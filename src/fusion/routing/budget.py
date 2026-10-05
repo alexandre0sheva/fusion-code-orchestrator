@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from fusion.config.loader import BudgetConfig, CostTier
+from fusion.config.loader import BudgetConfig
 
 LOCAL_PROVIDERS = frozenset({"ollama", "lmstudio", "mock"})
 
@@ -17,22 +17,6 @@ class BudgetLevel(StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     LOCAL_ONLY = "local_only"
-
-
-_COST_TIER_RANK: dict[CostTier, int] = {"low": 0, "medium": 1, "high": 2}
-
-
-def cost_tier_within_budget(model_tier: CostTier, budget: BudgetLevel) -> bool:
-    """Return True if a model's cost tier fits the selected budget."""
-    if budget == BudgetLevel.LOCAL_ONLY:
-        return True
-    rank = _COST_TIER_RANK[model_tier]
-    limits: dict[BudgetLevel, int] = {
-        BudgetLevel.LOW: 0,
-        BudgetLevel.MEDIUM: 1,
-        BudgetLevel.HIGH: 2,
-    }
-    return rank <= limits[budget]
 
 
 @dataclass

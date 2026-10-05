@@ -49,11 +49,12 @@ register an MCP server that runs `uv run fusion mcp` from your clone, then resta
 ## How it works
 
 ```text
-Claude Code -> MCP tool -> redact -> route -> cheap panel (parallel) -> [refine] -> judge
+Claude Code -> MCP tool -> redact -> route (strategy) -> cheap panel (parallel) -> [refine]
                                                    -> synthesize -> answer + cost/latency + run trace
 ```
 
-Panel calls run concurrently and tolerate partial failure. At `high` budget the panel models also
+Panel calls run concurrently and tolerate partial failure. Which models run is a *strategy*
+(`fusion strategies list`); `panel-refine`, selected by the `high` budget, also has the panel models
 revise their answers after seeing anonymized peer answers (mixture-of-agents). Every run is stored in
 SQLite and compared against a baseline model; an opt-in shadow mode also calls the real baseline and
 records a blind pairwise verdict. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -95,7 +96,7 @@ deterministic mock provider.
 | Topic | Document |
 |-------|----------|
 | Internals and data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Env vars, YAML config, routing, budgets | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| Env vars, YAML config, strategies, budgets | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | Cost and pricing methodology | [docs/COSTS.md](docs/COSTS.md) |
 | Measuring Fusion vs a single model | [docs/BENCHMARKING.md](docs/BENCHMARKING.md) |
 | Claude Code / Cursor setup, tool reference | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |

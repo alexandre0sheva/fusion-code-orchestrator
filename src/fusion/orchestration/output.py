@@ -192,7 +192,9 @@ class ResultPresenter:
         lines.extend(self._shadow_lines(result))
         if cost_comparison.comparison_notes:
             lines.append(f"- Note: {cost_comparison.comparison_notes[0]}")
-        footer = self.lifetime_footer(result.run_id)
+        footer = None
+        if result.mode_settings.lifetime_stats:
+            footer = self.lifetime_footer(result.run_id)
         if footer:
             lines.append(footer)
         if result.warnings:
@@ -211,6 +213,7 @@ class ResultPresenter:
             cost_comparison.baseline_estimated_cost_usd, cost_comparison.baseline_cost_known
         )
         lines = [
+            f"- Strategy: {result.routing.strategy}",
             f"- Fusion cost: {fusion_cost}",
             f"- {cost_comparison.baseline_name} baseline estimate: {baseline_cost}",
         ]
@@ -312,6 +315,7 @@ class ResultPresenter:
             "final_eval": result.final_eval.model_dump(),
             "disagreement": result.disagreement,
             "routing": result.routing.model_dump(),
+            "mode": result.mode.value,
             "evals": result.evals.model_dump() if result.evals else {},
             "usage": result.usage.model_dump() if result.usage else {},
             "cost_comparison": (

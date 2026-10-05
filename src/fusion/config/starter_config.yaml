@@ -20,6 +20,17 @@
 #   per_model_timeout_seconds: 45
 #   global_timeout_seconds: 60
 
+# Strategies decide which models answer and how the answers are combined (`fusion strategies list`).
+# strategies:
+#   panel-cheap:
+#     aggregator_model: claude-sonnet   # change one field of a packaged strategy
+#   my-panel:                           # or define your own
+#     kind: panel
+#     members: [{model: claude-haiku}, {model: gemini-flash}]
+#     judge: off
+# budget_strategies:
+#   medium: my-panel                    # what the legacy `budget: medium` runs
+
 # Spend warnings and defaults.
 # budgets:
 #   warn_cost_usd: 0.5

@@ -487,3 +487,29 @@ async def test_lmstudio_uses_openai_compatible_schema_and_images() -> None:
     payload = body(seen[0])
     assert payload["response_format"]["type"] == "json_schema"
     assert payload["messages"][-1]["content"][0]["type"] == "image_url"
+
+
+# ------------------------------------------------------------------------------------- seeds
+
+
+async def test_openai_seed_is_sent_only_where_the_catalog_allows_sampling_params() -> None:
+    catalog = catalog_with(
+        make_entry("old", "openai", "gpt-old", supports_reasoning_effort=False),
+        make_entry("new", "openai", "gpt-new", supports_sampling_params=False),
+    )
+    transport, seen = always(openai_ok())
+    provider = openai(transport, catalog)
+    for model in ("gpt-old", "gpt-new"):
+        await provider.safe_complete(ModelRequest(model_id=model, user_prompt="x", seed=7))
+    await provider.safe_complete(ModelRequest(model_id="gpt-old", user_prompt="x"))
+    assert body(seen[0])["seed"] == 7
+    assert "seed" not in body(seen[1])
+    assert "seed" not in body(seen[2])
+
+
+async def test_google_seed_goes_into_generation_config() -> None:
+    transport, seen = always(google_ok())
+    await google(transport).safe_complete(
+        ModelRequest(model_id="gemini-3.8-flash", user_prompt="x", seed=3)
+    )
+    assert body(seen[0])["generationConfig"]["seed"] == 3

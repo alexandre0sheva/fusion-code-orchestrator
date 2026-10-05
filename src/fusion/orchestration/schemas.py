@@ -65,6 +65,7 @@ class CodeReviewInput(BaseModel):
     repo_context: str = ""
     goals: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    strategy: str | None = None
     max_models: int | None = None
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
@@ -78,6 +79,7 @@ class FusionAskInput(BaseModel):
     file_snippets: list[str] = Field(default_factory=list)
     changed_files: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    strategy: str | None = None
     max_models: int | None = None
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
@@ -138,6 +140,7 @@ class DebugInput(BaseModel):
     recent_changes: str = ""
     environment: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    strategy: str | None = None
     shadow_baseline: bool | None = None
 
 
@@ -169,6 +172,7 @@ class ArchitectureDecisionInput(BaseModel):
     options: list[str] = Field(default_factory=list)
     repo_context: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    strategy: str | None = None
     shadow_baseline: bool | None = None
 
 
@@ -202,6 +206,7 @@ class ImplementationPlanInput(BaseModel):
     repo_context: str = ""
     existing_patterns: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    strategy: str | None = None
     shadow_baseline: bool | None = None
 
 

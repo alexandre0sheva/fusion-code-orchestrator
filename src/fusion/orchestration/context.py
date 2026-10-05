@@ -20,6 +20,7 @@ from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import CallGateway, RunLedger
 from fusion.orchestration.refine import RefinementResult
 from fusion.orchestration.schemas import PipelineEvals
+from fusion.orchestration.strategy import MODE_SETTINGS, Mode, ModeSettings, PanelMember, Strategy
 from fusion.providers.base import ModelProvider, ModelResponse
 from fusion.routing.budget import BudgetLevel, BudgetTracker
 from fusion.routing.classifier import TaskType
@@ -46,6 +47,7 @@ class PipelineContext:
     changed_files: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     budget: BudgetLevel = BudgetLevel.MEDIUM
+    strategy: str | None = None  # a strategy name wins over ``budget``
     max_models: int | None = None
     shadow_baseline: bool | None = None
 
@@ -79,6 +81,7 @@ class RunState:
     """Everything one run has produced so far. Stages read and write only this."""
 
     ctx: PipelineContext
+    mode: Mode
     started: float
     ledger: RunLedger
     gateway: CallGateway
@@ -92,7 +95,9 @@ class RunState:
     sanitized_snippets: list[str] = field(default_factory=list)
     redaction_count: int = 0
 
+    strategy: Strategy | None = None
     routing: RoutingDecision | None = None
+    members: list[PanelMember] = field(default_factory=list)
     panel_models: list[str] = field(default_factory=list)
     judge_model: str = ""
     synthesizer_model: str = ""
@@ -121,6 +126,10 @@ class RunState:
     def task_type(self) -> TaskType:
         return self.ctx.task_type
 
+    @property
+    def mode_settings(self) -> ModeSettings:
+        return MODE_SETTINGS[self.mode]
+
     def stamp_latency(self, clock: Callable[[], float]) -> None:
         """Record the run's wall time so far (shadow work is measured separately)."""
         self.total_latency_ms = (clock() - self.started) * 1000
@@ -130,18 +139,26 @@ class RunState:
         return self.halt is not None
 
     @classmethod
-    def start(cls, ctx: PipelineContext, deps: PipelineDeps) -> RunState:
+    def start(
+        cls, ctx: PipelineContext, deps: PipelineDeps, mode: Mode = Mode.REAL
+    ) -> RunState:
         warnings: list[str] = []
         ledger = RunLedger(deps.clock)
+        settings = MODE_SETTINGS[mode]
         gateway = CallGateway(
             ledger=ledger,
             models=deps.registry.models,
             providers=deps.providers,
             pricing=deps.pricing,
             warnings=warnings,
+            truncate_prompts=settings.truncate_prompts,
+            temperature=settings.temperature,
+            seed=settings.seed,
         )
         return cls(
             ctx=ctx,
+            mode=mode,
+            strategy=deps.routing.resolve_strategy(ctx.strategy, ctx.budget),
             started=deps.clock(),
             ledger=ledger,
             gateway=gateway,

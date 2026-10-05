@@ -47,10 +47,13 @@ Do **not** call Fusion for:
 | `fusion_compare_claude_runs` | Comparing Claude Code + Opus vs Claude Code + Fusion outputs |
 | `fusion_stats` | Showing cumulative savings and shadow A/B win-rate vs the frontier baseline |
 
-## Budgets, Refinement, and Shadow A/B
+## Strategies, Refinement, and Shadow A/B
 
-- `budget: "high"` adds a mixture-of-agents refinement round (panel models revise
-  after seeing anonymized peer answers) — use it for hard or high-stakes tasks.
+- `strategy` chooses which models run: `solo-cheap` (one cheap model), `panel-cheap` (the default
+  three-model panel), `panel-refine` (adds a mixture-of-agents refinement round where panel models
+  revise after seeing anonymized peer answers — use it for hard or high-stakes tasks),
+  `panel-cheap-strong-synth` (stronger final merge) and `panel-digest` (no merge call: you read the
+  panel's answers and combine them). The older `budget` (`low`/`medium`/`high`) picks one of these.
 - `shadow_baseline: true` on any orchestration tool also runs the real baseline model
   (Opus 5.5 by default) on the same task and records a blind pairwise verdict. Use it when the
   user wants proof that Fusion matches big-model quality; it costs extra API money.

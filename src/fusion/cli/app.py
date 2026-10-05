@@ -36,6 +36,7 @@ from fusion.mcp_server.schemas import (
 )
 from fusion.mcp_server.tools import FusionTools
 from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
+from fusion.orchestration.strategy import load_strategy_book
 from fusion.routing.classifier import TaskType
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.cost import PricingRegistry, UsageSummary, compare_to_baseline
@@ -60,8 +61,10 @@ app = typer.Typer(
 )
 runs_app = typer.Typer(help="Inspect orchestration run history")
 config_app = typer.Typer(help="Validate Fusion configuration")
+strategies_app = typer.Typer(help="Inspect strategies (the panels Fusion can run)")
 app.add_typer(runs_app, name="runs")
 app.add_typer(config_app, name="config")
+app.add_typer(strategies_app, name="strategies")
 app.add_typer(models_app, name="models")
 console = Console()
 
@@ -139,6 +142,9 @@ def review_diff(
     file: Annotated[Path, typer.Option("--file", help="Path to diff file")],
     context: Annotated[str, typer.Option(help="Additional context")] = "",
     goals: Annotated[str, typer.Option(help="Review goals")] = "",
+    strategy: Annotated[
+        str | None, typer.Option(help="Strategy name (see `fusion strategies list`)")
+    ] = None,
     mock: Annotated[bool, typer.Option(help="Use mock provider")] = False,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
@@ -148,7 +154,7 @@ def review_diff(
     result = _run(
         tools,
         tools.fusion_review_diff(
-            ReviewDiffInput(diff=diff_text, context=context, goals=goals)
+            ReviewDiffInput(diff=diff_text, context=context, goals=goals, strategy=strategy)
         )
     )
     _print_json(result)
@@ -161,6 +167,9 @@ def debug(
     ] = None,
     error: Annotated[str, typer.Option(help="Error message text")] = "",
     logs_file: Annotated[Path | None, typer.Option("--logs-file", help="Path to logs file")] = None,
+    strategy: Annotated[
+        str | None, typer.Option(help="Strategy name (see `fusion strategies list`)")
+    ] = None,
     mock: Annotated[bool, typer.Option(help="Use mock provider")] = False,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
@@ -175,7 +184,9 @@ def debug(
     tools = _tools(db_path, mock)
     result = _run(
         tools,
-        tools.fusion_debug_error(DebugErrorInput(error_message=error_message, logs=logs))
+        tools.fusion_debug_error(
+            DebugErrorInput(error_message=error_message, logs=logs, strategy=strategy)
+        )
     )
     _print_json(result)
 
@@ -184,6 +195,9 @@ def debug(
 def decide(
     question: Annotated[str, typer.Option(help="Architecture decision question")],
     constraints: Annotated[str, typer.Option(help="Constraints")] = "",
+    strategy: Annotated[
+        str | None, typer.Option(help="Strategy name (see `fusion strategies list`)")
+    ] = None,
     mock: Annotated[bool, typer.Option(help="Use mock provider")] = False,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
@@ -192,7 +206,9 @@ def decide(
     result = _run(
         tools,
         tools.fusion_decide_architecture(
-            DecideArchitectureInput(question=question, constraints=constraints)
+            DecideArchitectureInput(
+                question=question, constraints=constraints, strategy=strategy
+            )
         )
     )
     _print_json(result)
@@ -202,6 +218,9 @@ def decide(
 def plan(
     feature_file: Annotated[Path, typer.Option("--feature-file", help="Feature description file")],
     constraints: Annotated[str, typer.Option(help="Constraints")] = "",
+    strategy: Annotated[
+        str | None, typer.Option(help="Strategy name (see `fusion strategies list`)")
+    ] = None,
     mock: Annotated[bool, typer.Option(help="Use mock provider")] = False,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
@@ -211,7 +230,9 @@ def plan(
     result = _run(
         tools,
         tools.fusion_plan_feature(
-            PlanFeatureInput(feature_description=feature, constraints=constraints)
+            PlanFeatureInput(
+                feature_description=feature, constraints=constraints, strategy=strategy
+            )
         )
     )
     _print_json(result)
@@ -531,6 +552,41 @@ def config_show(
     console.print(table)
 
 
+@strategies_app.command("list")
+def strategies_list(
+    as_json: Annotated[bool, typer.Option("--json", help="Print raw JSON")] = False,
+) -> None:
+    """List strategies, what each runs, and which budget levels map to them."""
+    book = load_strategy_book()
+    budgets_for: dict[str, list[str]] = {}
+    for budget, name in book.budget_map.items():
+        budgets_for.setdefault(name, []).append(budget)
+    if as_json:
+        rows = [
+            {**book.get(name).model_dump(), "budgets": budgets_for.get(name, [])}
+            for name in book.names()
+        ]
+        typer.echo(json.dumps(rows, indent=2, default=str))
+        return
+    table = Table(title="Strategies")
+    table.add_column("Name", no_wrap=True)
+    for column in ("Kind", "Models", "Rounds", "Aggregator", "Judge", "Budget alias"):
+        table.add_column(column, overflow="fold")
+    for name in book.names():
+        strategy = book.get(name)
+        aggregator = strategy.aggregator_model or strategy.aggregator
+        table.add_row(
+            name,
+            strategy.kind,
+            ", ".join(m.model for m in strategy.members),
+            str(strategy.rounds),
+            "-" if strategy.kind == "solo" else aggregator,
+            strategy.judge,
+            ", ".join(budgets_for.get(name, [])),
+        )
+    console.print(table)
+
+
 @config_app.command("validate")
 def config_validate(
     strict: Annotated[bool, typer.Option(help="Fail on missing provider env vars")] = False,
@@ -554,16 +610,11 @@ def config_validate(
         if entry.enabled and entry.model and entry.model not in models:
             issues.append(f"Baseline {entry.name} references unknown model {entry.model}")
 
-    referenced: set[str] = set()
-    for policy in routing.policies.values():
-        referenced.update(policy.panel_models)
-        referenced.update(policy.high_risk_panel_models)
-        referenced.update([policy.judge_model, policy.synthesizer_model])
-        for budget in policy.budgets.values():
-            referenced.update(budget.panel_models)
-            referenced.update(filter(None, [budget.judge_model, budget.synthesizer_model]))
+    referenced = {policy.judge_model for policy in routing.policies.values()}
+    strategies = load_strategy_book()
+    referenced.update(strategies.referenced_models())
     for alias in sorted(referenced - set(models)):
-        issues.append(f"Routing policy references unknown model {alias}")
+        issues.append(f"Routing policy or strategy references unknown model {alias}")
 
     fanout = routing.fanout
     if fanout.global_timeout_seconds < fanout.per_model_timeout_seconds:
@@ -690,6 +741,9 @@ def run_mock(
     content: Annotated[
         str, typer.Option(help="Primary content")
     ] = "Sample diff content for testing",
+    strategy: Annotated[
+        str | None, typer.Option(help="Strategy name (see `fusion strategies list`)")
+    ] = None,
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
     """Run end-to-end mock pipeline."""
@@ -701,7 +755,7 @@ def run_mock(
 
     _ensure_mock(True)
     pipeline = build_pipeline(Settings(use_mock=True, db_path=db_path))
-    ctx = PipelineContext(task_type=task_type, primary_content=content)
+    ctx = PipelineContext(task_type=task_type, primary_content=content, strategy=strategy)
     result = asyncio.run(pipeline.run(ctx))
 
     console.print(f"\n[bold green]Run ID:[/bold green] {result.run_id}")
@@ -728,7 +782,7 @@ def review(
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
 ) -> None:
     """Run code review pipeline (legacy alias)."""
-    review_diff(file=diff, context=context, mock=False, db_path=db_path)
+    review_diff(file=diff, context=context, goals="", strategy=None, mock=False, db_path=db_path)
 
 
 @app.command()

@@ -9,6 +9,27 @@ from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse, Pr
 from fusion.routing.classifier import TaskType
 
 
+def build_digest(
+    panel_responses: list[tuple[str, str]], disagreement: dict[str, object]
+) -> ModelResponse:
+    """The panel's answers as one document, for Claude Code to aggregate (no model call)."""
+    lines = [
+        f"## Panel digest: {len(panel_responses)} answers, no synthesis model was called",
+        "",
+        "Read the answers below, keep what several of them agree on, and check the points "
+        "where they differ before relying on them.",
+    ]
+    score = disagreement.get("disagreement_score")
+    if isinstance(score, int | float):
+        lines.append(f"\nDisagreement score: {score:.2f} (0 = identical, 1 = opposed).")
+    outliers = disagreement.get("outlier_models")
+    if isinstance(outliers, list) and outliers:
+        lines.append(f"Outlier answers: {', '.join(str(o) for o in outliers)}.")
+    for model_name, content in panel_responses:
+        lines.extend(["", f"### Answer from {model_name}", content.strip()])
+    return ModelResponse(provider="fusion", model="digest", text="\n".join(lines))
+
+
 async def synthesize_responses(
     *,
     synthesizer_model: str,

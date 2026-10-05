@@ -22,8 +22,9 @@ async def judge_panel_responses(
     is_coding_task: bool = False,
     known_files: list[str] | None = None,
     gateway: CallGateway | None = None,
+    use_llm: bool = True,
 ) -> list[ModelResponseEval]:
-    """Evaluate each panel response."""
+    """Evaluate each panel response (with the LLM judge unless ``use_llm`` is false)."""
     evaluations: list[ModelResponseEval] = []
     for model_name, response in responses:
         ev = await eval_engine.evaluate_response(
@@ -35,6 +36,7 @@ async def judge_panel_responses(
             is_coding_task=is_coding_task,
             known_files=known_files,
             gateway=gateway,
+            use_llm=use_llm,
         )
         evaluations.append(ev)
     return evaluations

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from fusion.config.catalog import Catalog, CostTier, ModelEntry, load_catalog
 from fusion.config.layers import (
@@ -34,36 +34,47 @@ __all__ = [
 _CONFIG_DIR = Path(__file__).parent
 _ROUTING_KEYS = frozenset({"policies", "budgets", "fanout", "refinement"})
 
-BudgetLevelName = Literal["low", "medium", "high", "local_only"]
-
-
 class ModelRegistryConfig(BaseModel):
     """Full model registry loaded from YAML."""
 
     models: dict[str, ModelEntry]
 
 
-class BudgetPolicyEntry(BaseModel):
-    """Budget-specific model selection overrides."""
+_STRATEGY_HINT = "the panel and aggregator are set by strategies; see docs/CONFIGURATION.md"
 
-    panel_models: list[str] = Field(default_factory=list)
-    max_panel_size: int = 1
-    judge_model: str | None = None
-    synthesizer_model: str | None = None
+
+def _reject_moved_keys(data: Any, moved: dict[str, str]) -> Any:
+    """Point users of removed v0.1.0 settings at where they live now."""
+    if isinstance(data, dict):
+        found = [f"{key} ({hint})" for key, hint in moved.items() if key in data]
+        if found:
+            msg = f"no longer supported: {', '.join(found)}"
+            raise ValueError(msg)
+    return data
 
 
 class RoutingPolicyEntry(BaseModel):
-    """Routing policy for a task type."""
+    """Per-task settings: which model judges answers and how much context is enough.
+
+    Which models answer and aggregate is chosen by the run's strategy (``strategies`` section).
+    """
 
     task_type: str
-    panel_models: list[str] = Field(default_factory=list)
     judge_model: str = "gemini-flash"
-    synthesizer_model: str = "claude-sonnet"
-    max_panel_size: int = 3
     min_context_score: float = 0.3
-    high_risk_panel_models: list[str] = Field(default_factory=list)
-    high_risk_max_panel_size: int = 4
-    budgets: dict[str, BudgetPolicyEntry] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _moved(cls, data: Any) -> Any:
+        keys = (
+            "panel_models",
+            "max_panel_size",
+            "high_risk_panel_models",
+            "high_risk_max_panel_size",
+            "budgets",
+            "synthesizer_model",
+        )
+        return _reject_moved_keys(data, dict.fromkeys(keys, _STRATEGY_HINT))
 
 
 class BudgetConfig(BaseModel):
@@ -88,14 +99,15 @@ class FanoutConfig(BaseModel):
 class RefinementConfig(BaseModel):
     """Mixture-of-agents refinement round controls."""
 
-    enabled_budgets: list[BudgetLevelName] = Field(default_factory=list)
     per_model_timeout_seconds: float = Field(default=45.0, gt=0)
     global_timeout_seconds: float = Field(default=60.0, gt=0)
     min_panel_size: int = Field(default=2, ge=1)
-    max_rounds: int = Field(default=1, ge=0)
 
-    def enabled_for(self, budget: str) -> bool:
-        return self.max_rounds > 0 and budget in self.enabled_budgets
+    @model_validator(mode="before")
+    @classmethod
+    def _moved(cls, data: Any) -> Any:
+        hint = "refinement rounds are set by a strategy's rounds; see docs/CONFIGURATION.md"
+        return _reject_moved_keys(data, dict.fromkeys(("enabled_budgets", "max_rounds"), hint))
 
 
 class RoutingPoliciesConfig(BaseModel):

@@ -125,6 +125,11 @@ _SYNTHESIS_SCHEMAS: dict[str, dict[str, str]] = {
 }
 
 
+def role_names() -> frozenset[str]:
+    """Names accepted for a panel member's ``role``."""
+    return frozenset(_ROLE_PROMPTS)
+
+
 def get_role_prompt(role: str) -> str:
     """Return the system prompt for a panel role."""
     base = _ROLE_PROMPTS.get(role, _ROLE_PROMPTS["coding_reviewer"])

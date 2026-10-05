@@ -11,6 +11,7 @@ from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import RunLedger, TaskMetrics
 from fusion.orchestration.refine import RefinementResult
 from fusion.orchestration.schemas import PipelineEvals
+from fusion.orchestration.strategy import MODE_SETTINGS, Mode, ModeSettings
 from fusion.routing.policy import RoutingDecision
 from fusion.telemetry.cost import CostComparison, UsageSummary
 from fusion.telemetry.traces import OrchestrationTrace
@@ -59,6 +60,11 @@ class PipelineResult:
     warnings: list[str] = field(default_factory=list)
     evals: PipelineEvals | None = None
     ledger: RunLedger | None = None
+    mode: Mode = Mode.REAL
+
+    @property
+    def mode_settings(self) -> ModeSettings:
+        return MODE_SETTINGS[self.mode]
 
     @property
     def task_metrics(self) -> TaskMetrics | None:

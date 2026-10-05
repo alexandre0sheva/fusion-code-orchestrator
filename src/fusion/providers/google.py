@@ -123,6 +123,8 @@ class GoogleProvider(HttpProvider):
         config: dict[str, Any] = {"maxOutputTokens": request.max_tokens}
         if request.temperature is not None and (entry is None or entry.supports_sampling_params):
             config["temperature"] = request.temperature
+        if request.seed is not None and (entry is None or entry.supports_sampling_params):
+            config["seed"] = request.seed
         effort = self.effective_effort(request, entry)
         if effort is not None:
             config["thinkingConfig"] = {"thinkingLevel": _THINKING_LEVELS.get(effort, "medium")}

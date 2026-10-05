@@ -44,7 +44,17 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 361,
+        "input_tokens": 114,
+        "model_name": "mock-weak",
+        "output_tokens": 5,
+        "provider": "mock",
+        "step_name": "panel:mock-weak"
+      },
+      {
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "cost_usd": 0.0,
+        "input_tokens": 369,
         "model_name": "mock-fast",
         "output_tokens": 52,
         "provider": "mock",
@@ -54,7 +64,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 361,
+        "input_tokens": 369,
         "model_name": "mock-security",
         "output_tokens": 42,
         "provider": "mock",
@@ -64,27 +74,17 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 88,
-        "model_name": "mock-judge",
-        "output_tokens": 22,
+        "input_tokens": 369,
+        "model_name": "mock-weak",
+        "output_tokens": 5,
         "provider": "mock",
-        "step_name": "judge:mock-judge"
+        "step_name": "refine:mock-weak"
       },
       {
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 78,
-        "model_name": "mock-judge",
-        "output_tokens": 22,
-        "provider": "mock",
-        "step_name": "judge:mock-judge"
-      },
-      {
-        "cost_is_estimate": true,
-        "cost_known": true,
-        "cost_usd": 0.0,
-        "input_tokens": 450,
+        "input_tokens": 481,
         "model_name": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
@@ -93,16 +93,15 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 1566,
-    "total_output_tokens": 309,
+    "total_input_tokens": 1930,
+    "total_output_tokens": 275,
     "warnings": [
-      "LLM judge quality check failed; scores may be unreliable",
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
   },
-  "display_markdown": "## Fusion Answer\n\n### Recommendation\n{\"summary\": \"Panel consensus on code quality (mock:<id>)\", \"critical_findings\": [\"Missing error handling around database call\", \"Potential null pointer on diff line\"], \"recommended_changes\": [\"Add guard clause for empty input\", \"Add type hints on return value\", \"Add unit test for edge case\"], \"false_positive_risks\": [\"Type hint suggestion may be stylistic only\"], \"test_plan\": [\"Unit test empty input path\", \"Integration test database error handling\"], \"consensus\": [\"Add error handling\"], \"disagreements\": [\"Severity of null pointer risk\"], \"unique_insights\": [\"Security reviewer flagged SQL injection pattern\"], \"confidence\": 0.72}\n\n### Confidence\n0.70\n\n### Cost & usage\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0000 estimated\n- Estimated extra cost: $0.0000\n- Fusion wall time: <t>\n- Panel: 2 models, 2 succeeded, 0 failed\n- Refinement: 2/2 answers refined\n- Shadow A/B vs Mock Baseline: Mock Baseline won (blind judge: fusion 0.70 vs baseline 0.82)\n- Shadow baseline latency: <t>\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.\n\n### Caveats\n- LLM judge quality check failed; scores may be unreliable",
+  "display_markdown": "## Fusion Answer\n\n### Recommendation\n{\"summary\": \"Panel consensus on code quality (mock:<id>)\", \"critical_findings\": [\"Missing error handling around database call\", \"Potential null pointer on diff line\"], \"recommended_changes\": [\"Add guard clause for empty input\", \"Add type hints on return value\", \"Add unit test for edge case\"], \"false_positive_risks\": [\"Type hint suggestion may be stylistic only\"], \"test_plan\": [\"Unit test empty input path\", \"Integration test database error handling\"], \"consensus\": [\"Add error handling\"], \"disagreements\": [\"Severity of null pointer risk\"], \"unique_insights\": [\"Security reviewer flagged SQL injection pattern\"], \"confidence\": 0.72}\n\n### Confidence\n0.70\n\n### Cost & usage\n- Strategy: panel-refine\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0000 estimated\n- Estimated extra cost: $0.0000\n- Fusion wall time: <t>\n- Panel: 3 models, 3 succeeded, 0 failed\n- Refinement: 3/3 answers refined\n- Shadow A/B vs Mock Baseline: Fusion won (blind judge: fusion 0.82 vs baseline 0.70)\n- Shadow baseline latency: <t>\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.",
   "evals": {
-    "aggregate_score": 0.7,
+    "aggregate_score": 0.61281,
     "context": {
       "missing_items": [
         "No additional context provided",
@@ -113,25 +112,28 @@
       "sufficient": true
     },
     "dimension_scores": {
-      "aggregate_answer_quality": 0.76,
-      "aggregate_consensus_strength": 1.0,
+      "aggregate_answer_quality": 0.700667,
+      "aggregate_consensus_strength": 0.713218,
       "aggregate_context_sufficiency": 0.4,
       "aggregate_final_quality": 0.7,
       "aggregate_high_risk_penalty": 0.03,
       "aggregate_provider_success_rate": 1.0,
-      "aggregate_unsupported_claim_penalty": 0.015,
+      "aggregate_unsupported_claim_penalty": 0.03,
       "confidence": 0.7,
       "context_sufficiency": 0.4,
       "final_quality": 0.7,
-      "judge_quality": 0.79,
-      "mock-fast_overall": 0.76,
-      "mock-security_overall": 0.76
+      "mock-fast_overall": 0.891333,
+      "mock-security_overall": 0.888667,
+      "mock-weak_overall": 0.322
     },
     "disagreement": {
       "consensus": true,
       "consensus_items": [],
-      "contradictions": [],
-      "disagreement_score": 0.0,
+      "contradictions": [
+        "Score divergence between mock-weak and mock-fast, mock-security",
+        "Outlier model: mock-weak"
+      ],
+      "disagreement_score": 0.286782,
       "grouped_findings": [
         {
           "models": [
@@ -168,19 +170,28 @@
             "mock-security"
           ],
           "representative": "secrets may be logged in debug output."
+        },
+        {
+          "models": [
+            "mock-weak"
+          ],
+          "representative": "looks fine to me. (mock:<id>)"
         }
       ],
       "high_risk_recommendations": [
         "mock-security: potential sql injection via string concatenation."
       ],
-      "outlier_models": [],
+      "outlier_models": [
+        "mock-weak"
+      ],
       "unique_insights": [
         "consider adding error handling around the database call.",
         "the function lacks type hints on return value.",
         "missing unit test for edge case when input is empty.",
         "potential sql injection via string concatenation.",
         "missing input validation on user-controlled path.",
-        "secrets may be logged in debug output."
+        "secrets may be logged in debug output.",
+        "looks fine to me. (mock:<id>)"
       ],
       "unsupported_claims": []
     },
@@ -198,41 +209,7 @@
       "residual_risk": 0.3,
       "test_plan_quality": 0.7
     },
-    "judge_quality": {
-      "aggregate_score": 0.79,
-      "deterministic_issues": [
-        "Invalid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
-      ],
-      "deterministic_passed": false,
-      "dimensions": [
-        {
-          "name": "specificity",
-          "reason": "From judge JSON",
-          "score": 0.8
-        },
-        {
-          "name": "groundedness",
-          "reason": "From judge JSON",
-          "score": 0.75
-        },
-        {
-          "name": "actionability",
-          "reason": "From judge JSON",
-          "score": 0.85
-        },
-        {
-          "name": "overall_score",
-          "reason": "From judge JSON",
-          "score": 0.76
-        }
-      ],
-      "llm_judge_failed": true,
-      "llm_judge_used": true,
-      "notes": "Judge self-evaluation complete",
-      "warnings": [
-        "Judge output failed deterministic checks"
-      ]
-    },
+    "judge_quality": null,
     "outcome": {
       "measured": false,
       "notes": "Outcome evaluation not yet implemented",
@@ -240,39 +217,55 @@
     },
     "per_answer": [
       {
-        "actionability": 0.85,
-        "codebase_awareness": 0.7,
-        "correctness_likelihood": 0.7,
+        "actionability": 1.0,
+        "codebase_awareness": 0.5,
+        "correctness_likelihood": 0.713067,
         "deterministic_issues": [],
         "deterministic_passed": true,
-        "groundedness": 0.75,
-        "judge_notes": "mock judge d41b523d",
+        "groundedness": 0.8022,
+        "judge_notes": "LLM judge off; using heuristic scoring",
         "model_name": "mock-fast",
-        "novelty": 0.5,
-        "overall_score": 0.76,
-        "risk_awareness": 0.8,
-        "specificity": 0.8,
-        "unsupported_claims": 0.1
+        "novelty": 0.4,
+        "overall_score": 0.891333,
+        "risk_awareness": 0.6,
+        "specificity": 0.891333,
+        "unsupported_claims": 0.2
       },
       {
-        "actionability": 0.85,
-        "codebase_awareness": 0.7,
-        "correctness_likelihood": 0.7,
+        "actionability": 1.0,
+        "codebase_awareness": 0.5,
+        "correctness_likelihood": 0.710933,
         "deterministic_issues": [],
         "deterministic_passed": true,
-        "groundedness": 0.75,
-        "judge_notes": "mock judge d74ddd60",
+        "groundedness": 0.7998,
+        "judge_notes": "LLM judge off; using heuristic scoring",
         "model_name": "mock-security",
-        "novelty": 0.5,
-        "overall_score": 0.76,
-        "risk_awareness": 0.8,
-        "specificity": 0.8,
-        "unsupported_claims": 0.1
+        "novelty": 0.4,
+        "overall_score": 0.888667,
+        "risk_awareness": 0.6,
+        "specificity": 0.888667,
+        "unsupported_claims": 0.2
+      },
+      {
+        "actionability": 0.4,
+        "codebase_awareness": 0.5,
+        "correctness_likelihood": 0.2576,
+        "deterministic_issues": [
+          "Output too short (33 chars, min 50)",
+          "Missing expected structural markers in response"
+        ],
+        "deterministic_passed": false,
+        "groundedness": 0.2898,
+        "judge_notes": "LLM judge off; using heuristic scoring",
+        "model_name": "mock-weak",
+        "novelty": 0.4,
+        "overall_score": 0.322,
+        "risk_awareness": 0.4,
+        "specificity": 0.322,
+        "unsupported_claims": 0.2
       }
     ],
-    "warnings": [
-      "LLM judge quality check failed; scores may be unreliable"
-    ]
+    "warnings": []
   },
   "raw_outputs": null,
   "result": {
@@ -290,13 +283,15 @@
     "estimated_cost_tier": "low",
     "judge_model": "mock-judge",
     "reasons": [
-      "Applied high budget policy"
+      "Applied strategy panel-refine"
     ],
     "risk": "low",
     "selected_panel": [
       "mock-fast",
-      "mock-security"
+      "mock-security",
+      "mock-weak"
     ],
+    "strategy": "panel-refine",
     "synthesizer_model": "mock-judge",
     "task_type": "default",
     "warnings": []
@@ -352,14 +347,32 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 361,
+        "input_tokens": 114,
+        "model_alias": "mock-weak",
+        "output_tokens": 5,
+        "provider": "mock",
+        "provider_model_id": "mock-weak",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 119
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 369,
         "model_alias": "mock-fast",
         "output_tokens": 52,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 413
+        "total_tokens": 421
       },
       {
         "actual_cost_usd": null,
@@ -370,14 +383,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 361,
+        "input_tokens": 369,
         "model_alias": "mock-security",
         "output_tokens": 42,
         "provider": "mock",
         "provider_model_id": "mock-security",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 403
+        "total_tokens": 411
       },
       {
         "actual_cost_usd": null,
@@ -388,14 +401,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 88,
-        "model_alias": "mock-judge",
-        "output_tokens": 22,
+        "input_tokens": 369,
+        "model_alias": "mock-weak",
+        "output_tokens": 5,
         "provider": "mock",
-        "provider_model_id": "mock-judge",
+        "provider_model_id": "mock-weak",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 110
+        "total_tokens": 374
       },
       {
         "actual_cost_usd": null,
@@ -406,40 +419,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 78,
-        "model_alias": "mock-judge",
-        "output_tokens": 22,
-        "provider": "mock",
-        "provider_model_id": "mock-judge",
-        "reasoning_tokens": null,
-        "success": true,
-        "total_tokens": 100
-      },
-      {
-        "actual_cost_usd": null,
-        "cache_write_tokens": null,
-        "cached_input_tokens": null,
-        "cost_is_estimate": true,
-        "cost_known": true,
-        "error": null,
-        "error_type": null,
-        "estimated_cost_usd": 0.0,
-        "input_tokens": 450,
+        "input_tokens": 481,
         "model_alias": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
         "provider_model_id": "mock-judge",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 527
+        "total_tokens": 558
       }
     ],
     "successful_model_calls": 7,
-    "total_input_tokens": 1566,
-    "total_output_tokens": 309,
-    "total_tokens": 1875
+    "total_input_tokens": 1930,
+    "total_output_tokens": 275,
+    "total_tokens": 2205
   },
-  "warnings": [
-    "LLM judge quality check failed; scores may be unreliable"
-  ]
+  "warnings": []
 }

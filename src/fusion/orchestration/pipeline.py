@@ -11,6 +11,7 @@ from fusion.orchestration.output import ResultPresenter
 from fusion.orchestration.result import PipelineResult
 from fusion.orchestration.schemas import CostLatencyInfo
 from fusion.orchestration.stages import Stage, default_stages
+from fusion.orchestration.strategy import Mode
 from fusion.providers.base import ModelProvider
 from fusion.routing.classifier import TaskType
 from fusion.routing.model_registry import ModelRegistry
@@ -63,9 +64,13 @@ class BasePipeline:
     def _run_store(self) -> RunStore:
         return self.deps.run_store
 
-    async def run(self, ctx: PipelineContext) -> PipelineResult:
-        """Execute every stage; halted runs skip to the stages that must always run."""
-        state = RunState.start(ctx, self.deps)
+    async def run(self, ctx: PipelineContext, *, mode: Mode = Mode.REAL) -> PipelineResult:
+        """Execute every stage; halted runs skip to the stages that must always run.
+
+        The strategy comes from ``ctx.strategy`` (or ``ctx.budget``); ``mode`` says whether the run
+        serves Claude Code (real) or is measured in a study (benchmark).
+        """
+        state = RunState.start(ctx, self.deps, mode)
         for stage in self._stages:
             if state.halted and not stage.always_runs:
                 continue

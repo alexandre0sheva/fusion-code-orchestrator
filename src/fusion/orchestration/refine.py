@@ -11,12 +11,14 @@ from __future__ import annotations
 import asyncio
 import string
 import time
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import ModelEntry, RefinementConfig
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.prompts import build_refinement_prompt, get_system_prompt
+from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.classifier import TaskType
 
@@ -46,6 +48,17 @@ class RefinementResult(BaseModel):
     def refined_count(self) -> int:
         return len([call for call in self.calls if call.refined])
 
+    def merged(self, later: RefinementResult) -> RefinementResult:
+        """Combine two rounds into one result."""
+        return RefinementResult(
+            ran=self.ran or later.ran,
+            calls=[*self.calls, *later.calls],
+            refinement_wall_latency_ms=(
+                self.refinement_wall_latency_ms + later.refinement_wall_latency_ms
+            ),
+            warnings=[*self.warnings, *later.warnings],
+        )
+
 
 async def refine_panel_responses(
     *,
@@ -56,6 +69,7 @@ async def refine_panel_responses(
     original_task: str,
     config: RefinementConfig | None = None,
     gateway: CallGateway | None = None,
+    members: Mapping[str, PanelMember] | None = None,
 ) -> tuple[list[tuple[str, ModelResponse]], RefinementResult]:
     """Run one anonymized peer-review round over successful panel responses.
 
@@ -96,6 +110,7 @@ async def refine_panel_responses(
             max_tokens=entry.max_tokens,
             timeout=refine_config.per_model_timeout_seconds,
             metadata={"task_type": task_type.value, "role": "refine"},
+            **member_overrides((members or {}).get(model_name)),
         )
         response = await gateway.call(
             stage="refine",

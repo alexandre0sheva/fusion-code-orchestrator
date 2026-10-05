@@ -41,6 +41,7 @@ class CodeReviewPipeline(BasePipeline):
             context="\n\n".join(context_parts),
             changed_files=input.changed_files,
             budget=input.budget,
+            strategy=input.strategy,
             max_models=input.max_models,
             shadow_baseline=input.shadow_baseline,
         )
@@ -85,6 +86,7 @@ class FusionAskPipeline(BasePipeline):
             file_snippets=input.file_snippets,
             changed_files=input.changed_files,
             budget=input.budget,
+            strategy=input.strategy,
             max_models=input.max_models,
             shadow_baseline=input.shadow_baseline,
         )
@@ -136,6 +138,7 @@ class DebugPipeline(BasePipeline):
             primary_content=primary,
             context="\n\n".join(context_parts),
             budget=input.budget,
+            strategy=input.strategy,
             shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
@@ -172,6 +175,7 @@ class ArchitectureDecisionPipeline(BasePipeline):
             primary_content=primary,
             context=input.repo_context,
             budget=input.budget,
+            strategy=input.strategy,
             shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
@@ -210,6 +214,7 @@ class ImplementationPlanPipeline(BasePipeline):
             primary_content=primary,
             context=input.repo_context,
             budget=input.budget,
+            strategy=input.strategy,
             shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)

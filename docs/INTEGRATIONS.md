@@ -91,9 +91,11 @@ Not documented yet. One-command installers for Codex, Cursor and Claude Code are
 | `fusion_compare_claude_runs` | Compare Claude Code + Opus vs Claude Code + Fusion outputs |
 | `fusion_stats` | Cumulative spend vs baseline, savings and shadow A/B win-rate |
 
-Orchestration tools accept an optional `budget` (`low`, `medium`, `high`, `local_only`; see
-[CONFIGURATION.md](CONFIGURATION.md#routing-and-budgets)) and `shadow_baseline: true|false` to force
-or suppress a shadow A/B run against the real baseline model for that call.
+Orchestration tools accept an optional `strategy` (for example `solo-cheap`, `panel-cheap`,
+`panel-refine`, `panel-digest`), or the older `budget` (`low`, `medium`, `high`, `local_only`), which
+selects a strategy; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets). They also take
+`shadow_baseline: true|false` to force or suppress a shadow A/B run against the real baseline model
+for that call.
 
 Each tool returns top-level task-specific fields and a consistent envelope:
 
