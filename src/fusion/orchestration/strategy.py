@@ -110,6 +110,9 @@ class Strategy(BaseModel):
     aggregator: Literal["llm", "vote", "best_of", "digest"] = "llm"
     aggregator_model: str | None = None  # llm aggregator; None = the catalog's synthesizer role
     judge: Literal["off", "light", "full"] = "off"
+    # The synthesizer reads the judge's scores, so synthesis waits for the judge. Otherwise the
+    # two run at the same time.
+    judge_feeds_synthesis: bool = False
     max_cost_usd: float | None = Field(default=None, gt=0)
     max_latency_s: float | None = Field(default=None, gt=0)
     cascade: CascadeSpec | None = None
@@ -133,6 +136,10 @@ class Strategy(BaseModel):
                 problems.append("a solo strategy has rounds: 1")
             if self.aggregator_model is not None:
                 problems.append("a solo strategy has no aggregator_model")
+        if self.judge_feeds_synthesis and self.judge == "off":
+            problems.append("judge_feeds_synthesis needs judge: light or full")
+        if self.judge_feeds_synthesis and (self.kind == "solo" or self.aggregator != "llm"):
+            problems.append("judge_feeds_synthesis needs an llm aggregator")
         if self.aggregator == "digest" and self.aggregator_model is not None:
             problems.append("a digest aggregator calls no model, so aggregator_model must be unset")
         if problems:

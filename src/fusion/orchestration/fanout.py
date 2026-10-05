@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import FanoutConfig, ModelEntry
+from fusion.orchestration.claims import panel_answer_schema
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.prompts import build_user_prompt, get_role_prompt, get_system_prompt
 from fusion.orchestration.strategy import PanelMember, member_overrides
@@ -46,6 +47,8 @@ class FanoutResult(BaseModel):
     min_successful_responses: int = 1
     quorum_met: bool = True
     timed_out: bool = False
+    early_return: bool = False  # stopped waiting for stragglers once quorum was in
+    hedged: dict[str, str] = Field(default_factory=dict)  # slow member -> model also asked
     warnings: list[str] = Field(default_factory=list)
 
     @property
@@ -83,58 +86,255 @@ async def fanout_to_panel(
 
     Every call is recorded by ``gateway`` (a throwaway one when the caller has no run ledger).
     ``members`` carries per-model settings (role, temperature, reasoning effort) from a strategy.
+    All calls start at once; ``max_concurrency`` caps in-flight calls per provider, so a slow
+    provider's queue never holds up another's. With ``early_return`` the fan-out stops waiting
+    shortly after quorum; with ``hedge_after_ms`` a slow member is re-asked of another model.
     """
     fanout_config = config or FanoutConfig()
-    gateway = gateway or standalone_gateway(registry_models, providers)
-    started = time.perf_counter()
-    semaphore = asyncio.Semaphore(fanout_config.max_concurrency)
-    min_success = min(fanout_config.min_successful_responses, max(len(panel_models), 1))
-
-    user_prompt = build_user_prompt(
+    panel = _Panel(
+        panel_models=panel_models,
+        registry_models=registry_models,
+        providers=providers,
+        config=fanout_config,
+        gateway=gateway or standalone_gateway(registry_models, providers),
+        members=members or {},
+        user_prompt=build_user_prompt(
+            task_type=task_type,
+            primary_content=primary_content,
+            context=context,
+            file_snippets=file_snippets,
+            changed_files=changed_files,
+        ),
         task_type=task_type,
-        primary_content=primary_content,
-        context=context,
-        file_snippets=file_snippets,
-        changed_files=changed_files,
     )
-    task_prompt = get_system_prompt(task_type)
+    return await panel.run()
 
-    async def _call(model_name: str) -> PanelCallResult:
-        entry = registry_models[model_name]
-        member = (members or {}).get(model_name)
+
+class _Attempt:
+    """One call of one panel member (the original, or a hedge to another model)."""
+
+    def __init__(self, member: str, model: str, task: asyncio.Task[PanelCallResult]) -> None:
+        self.member, self.model, self.task = member, model, task
+        self.started = asyncio.get_running_loop().time()
+        self.result: PanelCallResult | None = None
+
+
+class _Panel:
+    """One fan-out: launches the attempts and decides when to stop waiting for them."""
+
+    def __init__(
+        self,
+        *,
+        panel_models: list[str],
+        registry_models: dict[str, ModelEntry],
+        providers: dict[str, ModelProvider],
+        config: FanoutConfig,
+        gateway: CallGateway,
+        members: Mapping[str, PanelMember],
+        user_prompt: str,
+        task_type: TaskType,
+    ) -> None:
+        self.panel_models = panel_models
+        self.registry_models = registry_models
+        self.providers = providers
+        self.config = config
+        self.gateway = gateway
+        self.members = members
+        self.user_prompt = user_prompt
+        self.task_type = task_type
+        self.system_prompt = get_system_prompt(task_type)
+        self.schema = panel_answer_schema()
+        self.min_success = min(config.min_successful_responses, max(len(panel_models), 1))
+        self._slots: dict[str, asyncio.Semaphore] = {}
+        self._attempts: list[_Attempt] = []
+        self._hedged: dict[str, str] = {}  # slow member -> model that was asked instead
+        self._cancel_message = "Cancelled by global panel timeout"
+
+    # -- one call ---------------------------------------------------------------------------
+
+    def _slot(self, provider: str) -> asyncio.Semaphore:
+        if provider not in self._slots:
+            self._slots[provider] = asyncio.Semaphore(self.config.max_concurrency)
+        return self._slots[provider]
+
+    async def _call(self, alias: str, member: PanelMember | None) -> PanelCallResult:
+        entry = self.registry_models[alias]
         persona = member.role if member and member.role != "auto" else entry.persona
+        timeout = self.config.per_model_timeout_seconds
         request = ModelRequest(
             model_id=entry.model_id,
-            system_prompt=get_role_prompt(persona) if persona else task_prompt,
-            user_prompt=user_prompt,
+            system_prompt=get_role_prompt(persona) if persona else self.system_prompt,
+            user_prompt=self.user_prompt,
             max_tokens=entry.max_tokens,
-            timeout=fanout_config.per_model_timeout_seconds,
-            metadata={"task_type": task_type.value, "role": "panel", "personality": persona},
+            response_schema=self.schema,
+            response_schema_name="panel_answer",
+            timeout=timeout,
+            metadata={"task_type": self.task_type.value, "role": "panel", "personality": persona},
             **member_overrides(member),
         )
-        async with semaphore:  # the per-model timeout starts once a slot is free
-            response = await gateway.call(
-                stage="panel",
-                alias=model_name,
-                request=request,
-                timeout=fanout_config.per_model_timeout_seconds,
+        async with self._slot(entry.provider):  # the timeout starts once a slot is free
+            response = await self.gateway.call(
+                stage="panel", alias=alias, request=request, timeout=timeout
             )
-        return _panel_result(model_name, entry, response, fanout_config)
+        return _panel_result(alias, entry, response, self.config, self._cancel_message)
 
-    tasks = {asyncio.create_task(_call(name)): name for name in panel_models}
-    done, pending = await asyncio.wait(tasks, timeout=fanout_config.global_timeout_seconds)
-    timed_out = bool(pending)
-    if pending and fanout_config.cancel_on_global_timeout:
-        for task in pending:
+    def _launch(self, member: str, model: str) -> None:
+        # A hedge asks another model with its own catalog settings, not the member's overrides.
+        settings = self.members.get(member) if model == member else None
+        task = asyncio.create_task(self._call(model, settings))
+        self._attempts.append(_Attempt(member, model, task))
+
+    # -- the wait ---------------------------------------------------------------------------
+
+    def _settle(self) -> None:
+        for attempt in self._attempts:
+            if attempt.result is None and attempt.task.done() and not attempt.task.cancelled():
+                attempt.result = attempt.task.result()
+                if attempt.result.success:
+                    self._cancel_rivals(attempt)
+
+    def _cancel_rivals(self, winner: _Attempt) -> None:
+        """A member answered: its other attempt (a hedge or the slow original) is not needed."""
+        for other in self._attempts:
+            if other.member == winner.member and other is not winner and not other.task.done():
+                other.task.cancel()
+
+    def _member_answered(self, member: str) -> bool:
+        return any(a.member == member and a.result and a.result.success for a in self._attempts)
+
+    def _successes(self) -> int:
+        return sum(self._member_answered(m) for m in self.panel_models)
+
+    def _live(self) -> set[asyncio.Task[PanelCallResult]]:
+        return {a.task for a in self._attempts if not a.task.done()}
+
+    def _hedge_candidate(self) -> str | None:
+        used = {a.model for a in self._attempts}
+        for alias in self.registry_models:
+            entry = self.registry_models[alias]
+            if (
+                alias not in used
+                and entry.enabled
+                and "panel" in entry.roles
+                and entry.provider in self.providers
+            ):
+                return alias
+        return None
+
+    def _hedge_due(self) -> float | None:
+        """Loop time at which the next slow, unhedged member should be hedged."""
+        after = self.config.hedge_after_ms
+        if after is None:
+            return None
+        waiting = [
+            a.started + after / 1000
+            for a in self._attempts
+            if a.model == a.member and a.member not in self._hedged and not a.task.done()
+        ]
+        return min(waiting) if waiting else None
+
+    def _hedge_slow_members(self, now: float) -> None:
+        due = self._hedge_due()
+        while due is not None and due <= now:
+            slow = next(
+                a
+                for a in self._attempts
+                if a.model == a.member
+                and a.member not in self._hedged
+                and not a.task.done()
+                and a.started + (self.config.hedge_after_ms or 0) / 1000 <= now
+            )
+            candidate = self._hedge_candidate()
+            self._hedged[slow.member] = candidate or ""
+            if candidate:
+                self._launch(slow.member, candidate)
+            due = self._hedge_due()
+
+    async def run(self) -> FanoutResult:
+        started = time.perf_counter()
+        loop = asyncio.get_running_loop()
+        early = self.config.early_return
+        stop_at = max(early.quorum, self.min_success) if early else None
+        for alias in self.panel_models:
+            self._launch(alias, alias)
+        deadline = loop.time() + self.config.global_timeout_seconds
+        quorum_deadline: float | None = None
+        timed_out = early_returned = False
+        while self._live():
+            wake = min(
+                t for t in (deadline, quorum_deadline, self._hedge_due()) if t is not None
+            )
+            await asyncio.wait(
+                self._live(),
+                timeout=max(wake - loop.time(), 0),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            self._settle()
+            now = loop.time()
+            self._hedge_slow_members(now)
+            reached = stop_at is not None and self._successes() >= stop_at
+            if early and reached and quorum_deadline is None:
+                quorum_deadline = now + early.grace_ms / 1000
+            if now >= deadline:
+                timed_out = True
+                break
+            if quorum_deadline is not None and now >= quorum_deadline:
+                early_returned = bool(self._live())
+                break
+        if self._live():
+            await self._stop_stragglers(timed_out, early_returned)
+        return self._summarize(started, timed_out, early_returned)
+
+    async def _stop_stragglers(self, timed_out: bool, early_returned: bool) -> None:
+        if timed_out and not self.config.cancel_on_global_timeout:
+            return
+        if early_returned:
+            self._cancel_message = "Cancelled after quorum (early return)"
+        live = self._live()
+        for task in live:
             task.cancel()
-        await asyncio.wait(pending, timeout=1.0)
+        await asyncio.wait(live, timeout=1.0)
+        self._settle()
 
-    calls = [_collect(task, name, registry_models) for task, name in tasks.items()]
-    return _summarize(calls, started, min_success, timed_out, fanout_config)
+    # -- the outcome ------------------------------------------------------------------------
+
+    def _outcome(self, member: str) -> PanelCallResult:
+        """The member's answer, else its original attempt's failure, else a placeholder."""
+        mine = [a for a in self._attempts if a.member == member]
+        for attempt in mine:
+            if attempt.result and attempt.result.success:
+                return attempt.result
+        original = next(a for a in mine if a.model == member)
+        if original.result is not None:
+            return original.result
+        return _pending_result(member, original.task, self.registry_models, self._cancel_message)
+
+    def _summarize(self, started: float, timed_out: bool, early_returned: bool) -> FanoutResult:
+        calls = [self._outcome(member) for member in self.panel_models]
+        result = _summarize(calls, started, self.min_success, timed_out, self.config)
+        for member, model in self._hedged.items():
+            result.warnings.append(
+                f"Panel model {member} was slow; asked {model} as well"
+                if model
+                else f"Panel model {member} was slow; no other panel model was available to ask"
+            )
+        if early_returned:
+            result.early_return = True
+            stopped = [c.model_name for c in calls if c.status == "cancelled"]
+            result.warnings.append(
+                f"Early return: {self._successes()} answers in; stopped waiting for "
+                f"{', '.join(stopped) or 'stragglers'}"
+            )
+        result.hedged = dict(self._hedged)
+        return result
 
 
 def _panel_result(
-    model_name: str, entry: ModelEntry, response: ModelResponse, config: FanoutConfig
+    model_name: str,
+    entry: ModelEntry,
+    response: ModelResponse,
+    config: FanoutConfig,
+    cancel_message: str = "Cancelled by global panel timeout",
 ) -> PanelCallResult:
     status = call_status(response)
     common = {
@@ -156,7 +356,7 @@ def _panel_result(
     messages = {
         "missing_provider": response.error,
         "timeout": f"Timed out after {config.per_model_timeout_seconds:.1f}s",
-        "cancelled": "Cancelled by global panel timeout",
+        "cancelled": cancel_message,
     }
     common["latency_ms"] = 0 if status == "missing_provider" else common["latency_ms"]
     return PanelCallResult(
@@ -167,12 +367,13 @@ def _panel_result(
     )
 
 
-def _collect(
-    task: asyncio.Task[PanelCallResult], model_name: str, registry_models: dict[str, ModelEntry]
+def _pending_result(
+    model_name: str,
+    task: asyncio.Task[PanelCallResult],
+    registry_models: dict[str, ModelEntry],
+    cancel_message: str,
 ) -> PanelCallResult:
-    """Result of one panel task; a task that never finished is attributed to its own model."""
-    if task.done() and not task.cancelled():
-        return task.result()
+    """Result of a call that never finished, attributed to its own model."""
     entry = registry_models.get(model_name)
     cancelled = task.cancelled()
     return PanelCallResult(
@@ -180,11 +381,7 @@ def _collect(
         provider=entry.provider if entry else "<unknown>",
         provider_model_id=entry.model_id if entry else "<unknown>",
         status="cancelled" if cancelled else "timeout",
-        error=(
-            "Cancelled by global panel timeout"
-            if cancelled
-            else "Still pending after global panel timeout"
-        ),
+        error=cancel_message if cancelled else "Still pending after global panel timeout",
         error_type="CancelledError" if cancelled else "TimeoutError",
     )
 

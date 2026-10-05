@@ -7,6 +7,7 @@ from typing import Any
 
 from fusion.benchmark.shadow import ShadowComparison
 from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelResponseEval
+from fusion.orchestration.claims import AgreementReport, ClaimCluster
 from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import RunLedger, TaskMetrics
 from fusion.orchestration.refine import RefinementResult
@@ -61,6 +62,8 @@ class PipelineResult:
     evals: PipelineEvals | None = None
     ledger: RunLedger | None = None
     mode: Mode = Mode.REAL
+    claims: list[ClaimCluster] = field(default_factory=list)
+    agreement: AgreementReport | None = None
 
     @property
     def mode_settings(self) -> ModeSettings:

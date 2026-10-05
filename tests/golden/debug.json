@@ -1,8 +1,269 @@
 {
-  "confidence": 0.68,
+  "agreement": {
+    "confidence": 0.3,
+    "consensus": [],
+    "contradicted": [],
+    "coverage": 1.0,
+    "evidence_rate": 0.333333,
+    "low_information": false,
+    "n_clusters": 9,
+    "n_models": 3,
+    "n_requested": 3,
+    "outliers": [],
+    "score": 0.0,
+    "structured_share": 1.0,
+    "unique": [
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8",
+      "C9"
+    ]
+  },
+  "claims": [
+    {
+      "file": null,
+      "id": "C1",
+      "kind": "hypothesis",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": "timeout in acquire()",
+            "file": null,
+            "id": "c1",
+            "kind": "hypothesis",
+            "line": null,
+            "severity": "high",
+            "text": "Connection pool exhaustion under load"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "high",
+      "status": "unique",
+      "text": "Connection pool exhaustion under load"
+    },
+    {
+      "file": null,
+      "id": "C2",
+      "kind": "hypothesis",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c2",
+            "kind": "hypothesis",
+            "line": null,
+            "severity": "med",
+            "text": "A connection leaks when a finally block is missing"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "A connection leaks when a finally block is missing"
+    },
+    {
+      "file": null,
+      "id": "C3",
+      "kind": "recommendation",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "recommendation",
+            "line": null,
+            "severity": null,
+            "text": "Increase the pool size and log acquire timeouts"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Increase the pool size and log acquire timeouts"
+    },
+    {
+      "file": null,
+      "id": "C4",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Check pool metrics under load"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Check pool metrics under load"
+    },
+    {
+      "file": null,
+      "id": "C5",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": "cursor.execute",
+            "file": null,
+            "id": "c1",
+            "kind": "finding",
+            "line": null,
+            "severity": "high",
+            "text": "Missing error handling around the database call"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "high",
+      "status": "unique",
+      "text": "Missing error handling around the database call"
+    },
+    {
+      "file": null,
+      "id": "C6",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": "f-string",
+            "file": null,
+            "id": "c2",
+            "kind": "finding",
+            "line": null,
+            "severity": "critical",
+            "text": "SQL injection through a string-formatted query"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "critical",
+      "status": "unique",
+      "text": "SQL injection through a string-formatted query"
+    },
+    {
+      "file": null,
+      "id": "C7",
+      "kind": "risk",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "risk",
+            "line": null,
+            "severity": "med",
+            "text": "Secrets may be logged in debug output"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "Secrets may be logged in debug output"
+    },
+    {
+      "file": null,
+      "id": "C8",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Add a regression test for the injection payload"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a regression test for the injection payload"
+    },
+    {
+      "file": null,
+      "id": "C9",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c1",
+            "kind": "finding",
+            "line": null,
+            "severity": "low",
+            "text": "Looks fine to me"
+          },
+          "model": "mock-weak"
+        }
+      ],
+      "models": [
+        "mock-weak"
+      ],
+      "severity": "low",
+      "status": "unique",
+      "text": "Looks fine to me"
+    }
+  ],
+  "confidence": 0.3,
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.00624,
+    "baseline_estimated_cost_usd": 0.010368,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -13,7 +274,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.00624
+    "savings_usd": 0.010368
   },
   "cost_latency": {
     "steps": [
@@ -21,9 +282,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 132,
+        "input_tokens": 260,
         "model_name": "mock-fast",
-        "output_tokens": 39,
+        "output_tokens": 90,
         "provider": "mock",
         "step_name": "panel:mock-fast"
       },
@@ -31,9 +292,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 129,
+        "input_tokens": 257,
         "model_name": "mock-security",
-        "output_tokens": 42,
+        "output_tokens": 90,
         "provider": "mock",
         "step_name": "panel:mock-security"
       },
@@ -41,9 +302,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 134,
+        "input_tokens": 262,
         "model_name": "mock-weak",
-        "output_tokens": 5,
+        "output_tokens": 26,
         "provider": "mock",
         "step_name": "panel:mock-weak"
       },
@@ -51,7 +312,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 445,
+        "input_tokens": 493,
         "model_name": "mock-judge",
         "output_tokens": 58,
         "provider": "mock",
@@ -60,15 +321,15 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 840,
-    "total_output_tokens": 144,
+    "total_input_tokens": 1272,
+    "total_output_tokens": 264,
     "warnings": [
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
   },
-  "display_markdown": "## Fusion Debug\n\n### Recommendation\n{\"most_likely_causes\": [\"Connection pool exhaustion under load\"], \"ranked_hypotheses\": [{\"hypothesis\": \"Pool size too small\", \"confidence\": 0.8, \"evidence\": \"timeout in acquire()\"}, {\"hypothesis\": \"Connection leak\", \"confidence\": 0.5, \"evidence\": \"missing finally block\"}], \"verification_steps\": [\"Check pool metrics under load\", \"Audit connection return paths\"], \"minimal_fix_strategy\": \"Increase pool size and add connection timeout logging\", \"what_not_to_do\": [\"Do not restart production without checking pool metrics first\"], \"confidence\": 0.68}\n\n### Confidence\n0.70\n\n### Cost & usage\n- Strategy: panel-cheap\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0062 estimated\n- Estimated savings: $0.0062 / 100.0%\n- Fusion wall time: <t>\n- Panel: 3 models, 3 succeeded, 0 failed\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.",
+  "display_markdown": "## Fusion Debug\n\n### Answer\nIncrease pool size and add connection timeout logging\n\n### Key claims\n- [critical] SQL injection through a string-formatted query, finding, mock-security (1/3, unique)\n- [high] Connection pool exhaustion under load, hypothesis, mock-fast (1/3, unique)\n- [high] Missing error handling around the database call, finding, mock-security (1/3, unique)\n- [med] A connection leaks when a finally block is missing, hypothesis, mock-fast (1/3, unique)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- 4 more (detail: full)\n\n### Confidence\n0.30 (agreement 0.00 across 3 of 3 models, evidence 33%)\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 0.0s \u00b7 panel-cheap, 4 calls",
   "evals": {
-    "aggregate_score": 0.653155,
+    "aggregate_score": 0.2775,
     "context": {
       "missing_items": [
         "No file snippets provided"
@@ -78,102 +339,122 @@
       "sufficient": true
     },
     "dimension_scores": {
-      "aggregate_answer_quality": 0.692444,
-      "aggregate_consensus_strength": 0.725219,
+      "aggregate_answer_quality": 0.25,
+      "aggregate_consensus_strength": 0.0,
       "aggregate_context_sufficiency": 0.7,
-      "aggregate_final_quality": 0.62,
-      "aggregate_high_risk_penalty": 0.03,
+      "aggregate_final_quality": 0.26,
+      "aggregate_high_risk_penalty": 0.09,
       "aggregate_provider_success_rate": 1.0,
-      "aggregate_unsupported_claim_penalty": 0.03,
-      "confidence": 0.7,
+      "aggregate_unsupported_claim_penalty": 0.0,
+      "confidence": 0.3,
       "context_sufficiency": 0.7,
-      "final_quality": 0.62,
-      "mock-fast_overall": 0.866667,
-      "mock-security_overall": 0.888667,
-      "mock-weak_overall": 0.322
+      "final_quality": 0.26,
+      "mock-fast_overall": 0.333333,
+      "mock-security_overall": 0.416667,
+      "mock-weak_overall": 0.0
     },
     "disagreement": {
-      "consensus": true,
+      "agreement_score": 0.0,
+      "consensus": false,
       "consensus_items": [],
-      "contradictions": [
-        "Score divergence between mock-weak and mock-fast, mock-security",
-        "Outlier model: mock-weak"
-      ],
-      "disagreement_score": 0.274781,
+      "contradictions": [],
+      "disagreement_score": 1.0,
       "grouped_findings": [
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "increase pool size configuration."
+          "representative": "Connection pool exhaustion under load",
+          "status": "unique"
         },
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "add connection timeout logging."
+          "representative": "A connection leaks when a finally block is missing",
+          "status": "unique"
         },
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "verify connections are returned in finally blocks."
+          "representative": "Increase the pool size and log acquire timeouts",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "Check pool metrics under load",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "potential sql injection via string concatenation."
+          "representative": "Missing error handling around the database call",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "missing input validation on user-controlled path."
+          "representative": "SQL injection through a string-formatted query",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "secrets may be logged in debug output."
+          "representative": "Secrets may be logged in debug output",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-security"
+          ],
+          "representative": "Add a regression test for the injection payload",
+          "status": "unique"
         },
         {
           "models": [
             "mock-weak"
           ],
-          "representative": "looks fine to me. (mock:<id>)"
+          "representative": "Looks fine to me",
+          "status": "unique"
         }
       ],
       "high_risk_recommendations": [
-        "mock-security: potential sql injection via string concatenation."
+        "mock-fast: Connection pool exhaustion under load",
+        "mock-security: Missing error handling around the database call",
+        "mock-security: SQL injection through a string-formatted query"
       ],
-      "outlier_models": [
-        "mock-weak"
-      ],
+      "low_information": false,
+      "outlier_models": [],
       "unique_insights": [
-        "increase pool size configuration.",
-        "add connection timeout logging.",
-        "verify connections are returned in finally blocks.",
-        "potential sql injection via string concatenation.",
-        "missing input validation on user-controlled path.",
-        "secrets may be logged in debug output.",
-        "looks fine to me. (mock:<id>)"
+        "Connection pool exhaustion under load",
+        "A connection leaks when a finally block is missing",
+        "Increase the pool size and log acquire timeouts",
+        "Check pool metrics under load",
+        "Missing error handling around the database call",
+        "SQL injection through a string-formatted query",
+        "Secrets may be logged in debug output",
+        "Add a regression test for the injection payload",
+        "Looks fine to me"
       ],
       "unsupported_claims": []
     },
     "final": {
-      "claude_code_usefulness": 0.75,
-      "confidence": 0.7,
-      "deterministic_issues": [
-        "Missing expected structural markers in response"
-      ],
-      "deterministic_passed": false,
-      "final_answer_quality": 0.7,
-      "implementation_readiness": 0.65,
-      "notes": "Heuristic final evaluation",
-      "overall_score": 0.62,
-      "residual_risk": 0.3,
-      "test_plan_quality": 0.3
+      "claude_code_usefulness": 0.333333,
+      "confidence": 0.3,
+      "deterministic_issues": [],
+      "deterministic_passed": true,
+      "final_answer_quality": 0.166667,
+      "implementation_readiness": 0.0,
+      "notes": "Measured from 9 claim clusters across 3 model(s): agreement 0.00, evidence 0.33",
+      "overall_score": 0.26,
+      "residual_risk": 0.9,
+      "test_plan_quality": 0.5
     },
     "judge_quality": null,
     "outcome": {
@@ -183,52 +464,49 @@
     },
     "per_answer": [
       {
-        "actionability": 1.0,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.693333,
+        "actionability": 0.5,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
         "deterministic_issues": [],
         "deterministic_passed": true,
-        "groundedness": 0.78,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "groundedness": 0.25,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-fast",
-        "novelty": 0.4,
-        "overall_score": 0.866667,
-        "risk_awareness": 0.4,
-        "specificity": 0.866667,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.333333,
+        "risk_awareness": 0.5,
+        "specificity": 0.25,
+        "unsupported_claims": 0.0
       },
       {
-        "actionability": 1.0,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.710933,
+        "actionability": 0.25,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
         "deterministic_issues": [],
         "deterministic_passed": true,
-        "groundedness": 0.7998,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "groundedness": 0.5,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-security",
-        "novelty": 0.4,
-        "overall_score": 0.888667,
-        "risk_awareness": 0.6,
-        "specificity": 0.888667,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.416667,
+        "risk_awareness": 0.75,
+        "specificity": 0.5,
+        "unsupported_claims": 0.0
       },
       {
-        "actionability": 0.4,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.2576,
-        "deterministic_issues": [
-          "Output too short (33 chars, min 50)",
-          "Missing expected structural markers in response"
-        ],
-        "deterministic_passed": false,
-        "groundedness": 0.2898,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "actionability": 0.0,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
+        "deterministic_issues": [],
+        "deterministic_passed": true,
+        "groundedness": 0.0,
+        "judge_notes": "LLM judge off; Structural scores from 1 claims",
         "model_name": "mock-weak",
-        "novelty": 0.4,
-        "overall_score": 0.322,
-        "risk_awareness": 0.4,
-        "specificity": 0.322,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.0,
+        "risk_awareness": 1.0,
+        "specificity": 0.0,
+        "unsupported_claims": 0.0
       }
     ],
     "warnings": []
@@ -250,7 +528,7 @@
     }
   ],
   "result": {
-    "confidence": 0.68,
+    "confidence": 0.3,
     "minimal_fix_strategy": "Increase pool size and add connection timeout logging",
     "most_likely_causes": [
       "Connection pool exhaustion under load"
@@ -305,14 +583,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 132,
+        "input_tokens": 260,
         "model_alias": "mock-fast",
-        "output_tokens": 39,
+        "output_tokens": 90,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 171
+        "total_tokens": 350
       },
       {
         "actual_cost_usd": null,
@@ -323,14 +601,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 129,
+        "input_tokens": 257,
         "model_alias": "mock-security",
-        "output_tokens": 42,
+        "output_tokens": 90,
         "provider": "mock",
         "provider_model_id": "mock-security",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 171
+        "total_tokens": 347
       },
       {
         "actual_cost_usd": null,
@@ -341,14 +619,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 134,
+        "input_tokens": 262,
         "model_alias": "mock-weak",
-        "output_tokens": 5,
+        "output_tokens": 26,
         "provider": "mock",
         "provider_model_id": "mock-weak",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 139
+        "total_tokens": 288
       },
       {
         "actual_cost_usd": null,
@@ -359,20 +637,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 445,
+        "input_tokens": 493,
         "model_alias": "mock-judge",
         "output_tokens": 58,
         "provider": "mock",
         "provider_model_id": "mock-judge",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 503
+        "total_tokens": 551
       }
     ],
     "successful_model_calls": 4,
-    "total_input_tokens": 840,
-    "total_output_tokens": 144,
-    "total_tokens": 984
+    "total_input_tokens": 1272,
+    "total_output_tokens": 264,
+    "total_tokens": 1536
   },
   "verification_steps": [
     "Check pool metrics under load",

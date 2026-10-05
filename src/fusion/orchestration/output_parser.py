@@ -1,11 +1,15 @@
-"""Parse synthesizer output into task-specific structured fields."""
+"""Turn the final answer into the task-specific fields tool outputs expose.
+
+A synthesizer's JSON maps straight onto the fields. Without it (a solo run, a digest, or a
+synthesis that was not JSON) the fields are built from the panel's claim clusters.
+"""
 
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
+from fusion.orchestration.claims import ClaimCluster, top_clusters
 from fusion.routing.classifier import TaskType, canonical_task_key
 
 
@@ -32,44 +36,35 @@ def _as_str_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def _extract_numbered_items(content: str) -> list[str]:
-    items: list[str] = []
-    for line in content.splitlines():
-        match = re.match(r"^\s*(?:\d+[\.\)]|\*|\-)\s+(.+)", line)
-        if match:
-            items.append(match.group(1).strip())
-    return items
-
-
-def _extract_section(content: str, header: str) -> str:
-    pattern = rf"(?i)##?\s*{re.escape(header)}[^\n]*\n(.*?)(?=\n##|\Z)"
-    match = re.search(pattern, content, re.DOTALL)
-    return match.group(1).strip() if match else ""
-
-
 def parse_structured_output(
     task_type: TaskType,
     content: str,
     *,
     disagreement: dict[str, Any] | None = None,
     confidence: float = 0.5,
+    clusters: list[ClaimCluster] | None = None,
+    summary: str = "",
+    score: float | None = None,
 ) -> dict[str, Any]:
-    """Parse synthesis content into task-specific structured fields."""
+    """Task-specific fields from synthesizer JSON, else from the claim clusters.
+
+    ``confidence`` is the calibrated value and always wins over a model's own estimate.
+    """
     parsed = _extract_json(content)
     key = canonical_task_key(task_type)
     disagreement = disagreement or {}
-
     if parsed:
-        return _from_json(key, parsed, disagreement, confidence)
-
-    return _from_markdown(key, content, disagreement, confidence)
+        result = _from_json(key, parsed, disagreement)
+    else:
+        result = _from_claims(key, clusters or [], disagreement, summary or content, score)
+    result["confidence"] = confidence
+    return result
 
 
 def _from_json(
     key: str,
     data: dict[str, Any],
     disagreement: dict[str, Any],
-    confidence: float,
 ) -> dict[str, Any]:
     parsers = {
         "code_review": _parse_code_review_json,
@@ -80,8 +75,6 @@ def _from_json(
     }
     parser = parsers.get(key, _parse_generic_json)
     result = parser(data)
-    if "confidence" not in result or result.get("confidence") is None:
-        result["confidence"] = float(data.get("confidence", confidence))
     if key == "code_review":
         result.setdefault("consensus", _as_str_list(disagreement.get("consensus_items")))
         result.setdefault("disagreements", _as_str_list(disagreement.get("contradictions")))
@@ -176,75 +169,83 @@ def _parse_generic_json(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _from_markdown(
-    key: str,
-    content: str,
-    disagreement: dict[str, Any],
-    confidence: float,
-) -> dict[str, Any]:
-    items = _extract_numbered_items(content)
-    summary = _extract_section(content, "Final Recommendation") or content[:500]
+def _texts(clusters: list[ClaimCluster], kind: str) -> list[str]:
+    return [c.text for c in top_clusters((c for c in clusters if c.kind == kind), limit=1000)]
 
+
+def _from_claims(
+    key: str,
+    clusters: list[ClaimCluster],
+    disagreement: dict[str, Any],
+    summary: str,
+    score: float | None,
+) -> dict[str, Any]:
+    """Fill a task's fields from claims of the matching kind, most important first."""
+    findings, recs = _texts(clusters, "finding"), _texts(clusters, "recommendation")
+    tests, risks = _texts(clusters, "test"), _texts(clusters, "risk")
+    hypotheses = top_clusters((c for c in clusters if c.kind == "hypothesis"), limit=1000)
+    n = max((len(c.models) for c in clusters), default=1)
     if key == "code_review":
         return {
             "summary": summary,
-            "critical_findings": items[:3] or ["See synthesis for details"],
-            "recommended_changes": items[3:6] if len(items) > 3 else items,
+            "critical_findings": findings,
+            "recommended_changes": recs,
             "false_positive_risks": [],
-            "test_plan": [i for i in items if "test" in i.lower()],
+            "test_plan": tests,
             "consensus": _as_str_list(disagreement.get("consensus_items")),
             "disagreements": _as_str_list(disagreement.get("contradictions")),
             "unique_insights": _as_str_list(disagreement.get("unique_insights")),
-            "confidence": confidence,
         }
     if key == "debugging":
         return {
-            "most_likely_causes": items[:2] or ["See synthesis"],
-            "ranked_hypotheses": [{"hypothesis": i, "confidence": 0.5} for i in items],
-            "verification_steps": items,
-            "minimal_fix_strategy": summary,
+            "most_likely_causes": [c.text for c in hypotheses[:3]],
+            "ranked_hypotheses": [
+                {
+                    "hypothesis": c.text,
+                    "confidence": round(c.support / n, 2),
+                    "evidence": next((m.claim.evidence for m in c.members if m.claim.evidence), ""),
+                }
+                for c in hypotheses
+            ],
+            "verification_steps": tests,
+            "minimal_fix_strategy": recs[0] if recs else "",
             "what_not_to_do": [],
-            "confidence": confidence,
         }
     if key == "architecture_decision":
         return {
-            "recommended_option": summary.split("\n")[0] if summary else "",
-            "tradeoffs": items,
+            "recommended_option": recs[0] if recs else summary,
+            "tradeoffs": findings,
             "rejected_options": [],
-            "risks": [i for i in items if "risk" in i.lower()],
+            "risks": risks,
             "reversibility": "",
-            "migration_plan": items,
-            "test_strategy": [i for i in items if "test" in i.lower()],
-            "confidence": confidence,
+            "migration_plan": recs[1:],
+            "test_strategy": tests,
         }
     if key == "implementation_plan":
         return {
-            "implementation_sequence": items,
+            "implementation_sequence": recs,
             "affected_modules": [],
             "data_model_changes": [],
             "api_changes": [],
             "ui_changes": [],
-            "tests_to_add": [i for i in items if "test" in i.lower()],
-            "risks": [],
+            "tests_to_add": tests,
+            "risks": risks,
             "open_questions": [],
-            "confidence": confidence,
         }
     if key == "answer_eval":
         return {
-            "score": confidence,
-            "strengths": items[:2],
-            "weaknesses": items[2:4] if len(items) > 2 else [],
-            "unsupported_claims": [],
-            "missing_points": [],
-            "safer_answer": summary,
-            "confidence": confidence,
+            "score": score if score is not None else 0.0,
+            "strengths": [],
+            "weaknesses": findings,
+            "unsupported_claims": _as_str_list(disagreement.get("unsupported_claims")),
+            "missing_points": recs,
+            "safer_answer": "",
         }
     return {
-        "answer": content,
+        "answer": summary,
         "summary": summary,
-        "suggested_actions": items,
-        "tests_to_run": [i for i in items if "test" in i.lower()],
-        "risks": [i for i in items if "risk" in i.lower()],
-        "assumptions": [],
-        "confidence": confidence,
+        "suggested_actions": recs,
+        "tests_to_run": tests,
+        "risks": risks,
+        "assumptions": [c.text for c in hypotheses],
     }

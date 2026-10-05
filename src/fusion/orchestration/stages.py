@@ -1,15 +1,34 @@
 """Pipeline stages. Each reads and writes only ``RunState``; nothing else is shared.
 
-Order: Redact -> Route -> ContextEval -> Panel -> Refine -> Judge -> Aggregate -> FinalEval ->
-Shadow -> Persist. A stage may halt the run (``state.halt``); every later stage is then skipped
-except those marked ``always_runs`` (Persist), which still stores a diagnostic result.
+Order: Redact -> Route -> ContextEval -> ShadowStart -> Panel -> Refine -> Claims ->
+(Judge | Aggregate) -> FinalEval -> Shadow -> Persist. Judge and Aggregate run at the same time
+unless the strategy's synthesis needs the judge's scores; the shadow baseline runs alongside the
+panel and is collected by Shadow. A stage may halt the run (``state.halt``); every later stage is
+then skipped except those marked ``always_runs`` (Persist), which still stores a diagnostic
+result.
 """
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol
 
-from fusion.benchmark.shadow import run_shadow_comparison, should_run_shadow
+from fusion.benchmark.shadow import (
+    call_shadow_baseline,
+    finish_shadow_comparison,
+    should_run_shadow,
+)
+from fusion.orchestration.claims import (
+    AgreementReport,
+    ClaimCluster,
+    PanelAnswer,
+    agreement_score,
+    cluster_claims,
+    parse_panel_answer,
+    render_panel_answer,
+)
 from fusion.orchestration.context import Halt, PipelineDeps, RunState
 from fusion.orchestration.disagreement import analyze_disagreement
 from fusion.orchestration.fanout import fanout_to_panel
@@ -18,10 +37,11 @@ from fusion.orchestration.ledger import CallRecord
 from fusion.orchestration.output import step_name
 from fusion.orchestration.output_parser import parse_structured_output
 from fusion.orchestration.prompts import build_user_prompt, get_system_prompt
-from fusion.orchestration.refine import refine_panel_responses
+from fusion.orchestration.refine import RefinementResult, refine_panel_responses
 from fusion.orchestration.result import PanelResult, PipelineResult, build_usage_summary
 from fusion.orchestration.strategy import PanelMember
 from fusion.orchestration.synthesize import build_digest, synthesize_responses
+from fusion.routing.classifier import canonical_task_key
 from fusion.security.redaction import redact_secrets
 from fusion.storage.run_store import ShadowComparisonRecord
 from fusion.telemetry.cost import CostComparison, compare_to_baseline
@@ -157,7 +177,13 @@ class ContextEvalStage(_Stage):
             "Insufficient context provided.",
             is_coding_task=engine.is_coding_task(state.task_type),
         )
-        state.disagreement = {"disagreement_score": 0.0, "consensus": True, "outlier_models": []}
+        state.disagreement = {
+            "disagreement_score": 0.0,
+            "agreement_score": 0.0,
+            "low_information": True,
+            "consensus": True,
+            "outlier_models": [],
+        }
         state.evals = self.deps.presenter.build_evals(
             state.context_eval, [], {}, state.final_eval, None, state.warnings
         )
@@ -211,6 +237,8 @@ class PanelStage(_Stage):
         )
         state.disagreement = {
             "disagreement_score": 0.0,
+            "agreement_score": 0.0,
+            "low_information": True,
             "consensus": False,
             "outlier_models": [],
             "quorum_met": False,
@@ -238,6 +266,8 @@ class RefineStage(_Stage):
     """Mixture-of-agents rounds: panelists revise after seeing anonymized peers.
 
     A strategy's ``rounds`` is the number of answer rounds, so ``rounds - 1`` refinements run.
+    Every refinement call of a round starts together once all round-1 answers exist, and a round
+    is skipped when the panel already agrees (``refinement.skip_above_agreement``).
     """
 
     async def run(self, state: RunState) -> RunState:
@@ -245,6 +275,8 @@ class RefineStage(_Stage):
         config = self.deps.routing.budgets.refinement
         members = {m.model: m for m in state.members}
         for _ in range(state.strategy.rounds - 1):
+            if self._already_agrees(state, config.skip_above_agreement):
+                break
             state.successful, round_result = await refine_panel_responses(
                 responses=state.successful,
                 registry_models=self.deps.registry.models,
@@ -263,6 +295,84 @@ class RefineStage(_Stage):
             if not round_result.ran:
                 break
         return state
+
+    @staticmethod
+    def _already_agrees(state: RunState, threshold: float | None) -> bool:
+        if threshold is None or len(state.successful) < 2:
+            return False
+        report = measure_claims(state).report
+        if report.score < threshold:
+            return False
+        message = (
+            f"Refinement skipped: panel agreement {report.score:.2f} is at least {threshold:.2f}"
+        )
+        state.warnings.append(message)
+        state.refinement = state.refinement or RefinementResult(warnings=[message])
+        return True
+
+
+# --------------------------------------------------------------------------------------- claims
+
+
+@dataclass
+class Measured:
+    """The panel's answers read as claims, clustered, with the agreement between them."""
+
+    answers: dict[str, PanelAnswer]
+    structured: dict[str, bool]
+    clusters: list[ClaimCluster]
+    report: AgreementReport
+
+
+def measure_claims(state: RunState) -> Measured:
+    """Parse the current panel answers, cluster their claims and score the agreement."""
+    key = canonical_task_key(state.task_type)
+    answers: dict[str, PanelAnswer] = {}
+    structured: dict[str, bool] = {}
+    for model, response in state.successful:
+        answers[model], structured[model] = parse_panel_answer(
+            response.content, response.parsed_json, task_key=key
+        )
+    clusters = cluster_claims(answers)
+    report = agreement_score(
+        clusters,
+        len(answers),
+        n_requested=len(state.panel_models),
+        n_structured=sum(structured.values()),
+    )
+    return Measured(answers, structured, clusters, report)
+
+
+class ClaimsStage(_Stage):
+    """Read each answer as claims, group them across models, and measure the agreement."""
+
+    async def run(self, state: RunState) -> RunState:
+        measured = measure_claims(state)
+        state.answers, state.answer_structured = measured.answers, measured.structured
+        state.clusters, state.agreement = measured.clusters, measured.report
+        state.disagreement = analyze_disagreement(
+            state.clusters, measured.report, known_files=state.ctx.changed_files or None
+        )
+        state.warnings.extend(_claims_warnings(state))
+        return state
+
+
+def _claims_warnings(state: RunState) -> list[str]:
+    report = state.agreement
+    assert report is not None
+    found: list[str] = []
+    prose = [m for m, ok in state.answer_structured.items() if not ok]
+    if prose:
+        found.append(
+            f"{len(prose)} of {len(state.answers)} panel answers were not valid claims JSON "
+            f"({', '.join(prose)}); their claims were read from list items"
+        )
+    if report.low_information:
+        found.append(
+            f"Confidence is low-information: {report.n_models} panel answer(s), so there was no "
+            "agreement to measure (confidence is capped at 0.50)"
+        )
+    return found
 
 
 # ---------------------------------------------------------------------------------------- judge
@@ -289,6 +399,8 @@ class JudgeStage(_Stage):
             known_files=state.ctx.changed_files or None,
             gateway=state.gateway,
             use_llm=judge != "off",
+            answers=state.answers,
+            structured=state.answer_structured,
         )
         if state.evaluations and engine.use_llm_judge and judge == "full":
             await self._check_judge_quality(state)
@@ -339,33 +451,56 @@ class JudgeStage(_Stage):
 
 
 class AggregateStage(_Stage):
-    """Analyse agreement, then produce the final answer the way the strategy says.
+    """Produce the final answer the way the strategy says.
 
     ``solo`` returns the one member's answer; a ``digest`` aggregator returns the panel's answers
-    for Claude Code to merge; ``llm`` makes one synthesizer call.
+    and claim clusters for Claude Code to merge; ``llm`` makes one synthesizer call that sees the
+    clusters as well as the answers.
     """
 
     async def run(self, state: RunState) -> RunState:
-        assert state.strategy is not None
+        assert state.strategy is not None and state.agreement is not None
         strategy = state.strategy
-        panel_texts = [(m, r.content) for m, r in state.successful]
-        state.disagreement = analyze_disagreement(state.evaluations, panel_contents=panel_texts)
+        readable = _readable_answers(state)
         if strategy.kind == "solo":
-            state.synth_response = state.successful[0][1]
+            response = state.successful[0][1]
+            state.synth_response = response.model_copy(update={"text": readable[0][1]})
         elif strategy.aggregator == "digest":
-            state.synth_response = build_digest(panel_texts, state.disagreement)
+            state.synth_response = build_digest(readable, state.clusters, state.agreement)
         else:
             state.synth_response = await synthesize_responses(
                 synthesizer_model=state.synthesizer_model,
                 registry_models=self.deps.registry.models,
                 providers=self.deps.providers,
                 task_type=state.task_type,
-                panel_responses=panel_texts,
-                disagreement_analysis=state.disagreement,
+                panel_responses=readable,
+                disagreement_analysis=_agreement_summary(state),
                 original_task=state.sanitized_primary,
                 gateway=state.gateway,
+                clusters=state.clusters,
             )
         return state
+
+
+def _readable_answers(state: RunState) -> list[tuple[str, str]]:
+    """Each panelist's answer as text: claims rendered as Markdown, prose left as it came."""
+    return [
+        (m, render_panel_answer(state.answers[m]) if state.answer_structured[m] else r.content)
+        for m, r in state.successful
+    ]
+
+
+def _agreement_summary(state: RunState) -> dict[str, object]:
+    keys = ("agreement_score", "low_information", "outlier_models", "contradictions")
+    summary: dict[str, object] = {
+        k: state.disagreement[k] for k in keys if k in state.disagreement
+    }
+    assert state.strategy is not None
+    if state.strategy.judge_feeds_synthesis and state.evaluations:
+        summary["judge_scores"] = {
+            e.model_name: round(e.overall_score, 2) for e in state.evaluations
+        }
+    return summary
 
 
 # ----------------------------------------------------------------------------------- final eval
@@ -383,12 +518,17 @@ class FinalEvalStage(_Stage):
             synth.content,
             is_coding_task=engine.is_coding_task(state.task_type),
             known_files=state.ctx.changed_files or None,
+            clusters=state.clusters,
+            report=state.agreement,
         )
         state.structured = parse_structured_output(
             state.task_type,
             synth.content,
             disagreement=state.disagreement,
             confidence=state.final_eval.confidence,
+            clusters=state.clusters,
+            summary=_headline(state),
+            score=_mean_score(state),
         )
         state.evals = self.deps.presenter.build_evals(
             state.context_eval,
@@ -407,6 +547,19 @@ class FinalEvalStage(_Stage):
         state.stamp_latency(self.deps.clock)
         state.warnings.extend(_cap_warnings(state))
         return state
+
+
+def _headline(state: RunState) -> str:
+    """Summary for fields built from claims: the panelists' own summaries."""
+    summaries = [(m, a.summary.strip()) for m, a in state.answers.items() if a.summary.strip()]
+    if len(summaries) == 1:
+        return summaries[0][1]
+    return "\n".join(f"{m}: {s}" for m, s in summaries)
+
+
+def _mean_score(state: RunState) -> float | None:
+    scores = [a.score for a in state.answers.values() if a.score is not None]
+    return sum(scores) / len(scores) if scores else None
 
 
 def _cap_warnings(state: RunState) -> list[str]:
@@ -437,24 +590,53 @@ def _score(disagreement: dict[str, object]) -> float:
 # ---------------------------------------------------------------------------------------- shadow
 
 
-class ShadowStage(_Stage):
-    """Optional blind A/B against the real frontier baseline (measurement, not Fusion cost)."""
+def _shadow_prompt(state: RunState) -> str:
+    ctx = state.ctx
+    return build_user_prompt(
+        task_type=state.task_type,
+        primary_content=state.sanitized_primary,
+        context=state.sanitized_context,
+        file_snippets=state.sanitized_snippets,
+        changed_files=ctx.changed_files,
+        claims=False,
+    )
+
+
+class ShadowStartStage(_Stage):
+    """Start the shadow baseline call now, alongside the panel (it needs only the task prompt)."""
 
     async def run(self, state: RunState) -> RunState:
         if not state.mode_settings.shadow or not should_run_shadow(state.ctx.shadow_baseline):
             return state
+        state.shadow_task = asyncio.create_task(
+            call_shadow_baseline(
+                task_prompt=_shadow_prompt(state),
+                system_prompt=get_system_prompt(state.task_type),
+                providers=self.deps.providers,
+                baseline=self.deps.shadow_baseline,
+                gateway=state.gateway,
+            )
+        )
+        return state
+
+
+class ShadowStage(_Stage):
+    """Collect the baseline's answer and judge it blind against Fusion's (measurement only).
+
+    Shadow calls are never counted as Fusion cost, and Fusion's wall time was stamped before
+    waiting for them.
+    """
+
+    async def run(self, state: RunState) -> RunState:
+        task = state.shadow_task
+        if task is None:
+            return state
         assert state.synth_response is not None
+        baseline_call = await task
         fusion_cost = state.ledger.total_cost()
-        ctx = state.ctx
-        shadow = await run_shadow_comparison(
-            task_prompt=build_user_prompt(
-                task_type=state.task_type,
-                primary_content=state.sanitized_primary,
-                context=state.sanitized_context,
-                file_snippets=state.sanitized_snippets,
-                changed_files=ctx.changed_files,
-            ),
-            system_prompt=get_system_prompt(state.task_type),
+        shadow = await finish_shadow_comparison(
+            baseline_call=baseline_call,
+            task_prompt=_shadow_prompt(state),
             fusion_answer=state.synth_response.content,
             fusion_cost_usd=fusion_cost.usd if fusion_cost.known else None,
             fusion_latency_ms=state.total_latency_ms,
@@ -462,7 +644,6 @@ class ShadowStage(_Stage):
             providers=self.deps.providers,
             judge_model_alias=state.judge_model,
             pricing=self.deps.pricing,
-            baseline=self.deps.shadow_baseline,
             gateway=state.gateway,
         )
         state.shadow = shadow
@@ -563,6 +744,8 @@ class PersistStage(_Stage):
             evals=state.evals,
             ledger=state.ledger,
             mode=state.mode,
+            claims=state.clusters,
+            agreement=state.agreement,
         )
 
 
@@ -619,15 +802,56 @@ def _with_shadow_actuals(
     )
 
 
+class ConcurrentStages:
+    """Run independent stages at the same time over the one ``RunState``.
+
+    The stages must write different parts of the state. ``sequential_if`` names the case where
+    one needs another's output, and they then run in order. If one fails, the others are
+    cancelled and its exception is raised as it was.
+    """
+
+    always_runs = False
+
+    def __init__(
+        self, *stages: Stage, sequential_if: Callable[[RunState], bool] = lambda _state: False
+    ) -> None:
+        self.stages = stages
+        self._sequential_if = sequential_if
+
+    async def run(self, state: RunState) -> RunState:
+        if state.halted:
+            return state
+        if self._sequential_if(state):
+            for stage in self.stages:
+                state = await stage.run(state)
+            return state
+        tasks = [asyncio.ensure_future(stage.run(state)) for stage in self.stages]
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        return state
+
+
+def _judge_feeds_synthesis(state: RunState) -> bool:
+    return state.strategy is not None and state.strategy.judge_feeds_synthesis
+
+
 def default_stages(deps: PipelineDeps) -> list[Stage]:
     return [
         RedactStage(deps),
         RouteStage(deps),
         ContextEvalStage(deps),
+        ShadowStartStage(deps),
         PanelStage(deps),
         RefineStage(deps),
-        JudgeStage(deps),
-        AggregateStage(deps),
+        ClaimsStage(deps),
+        ConcurrentStages(
+            JudgeStage(deps), AggregateStage(deps), sequential_if=_judge_feeds_synthesis
+        ),
         FinalEvalStage(deps),
         ShadowStage(deps),
         PersistStage(deps),

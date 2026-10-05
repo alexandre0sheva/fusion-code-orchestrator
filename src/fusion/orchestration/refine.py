@@ -16,11 +16,12 @@ from collections.abc import Mapping
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import ModelEntry, RefinementConfig
+from fusion.orchestration.claims import panel_answer_schema, parse_panel_answer, render_panel_answer
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.prompts import build_refinement_prompt, get_system_prompt
 from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
-from fusion.routing.classifier import TaskType
+from fusion.routing.classifier import TaskType, canonical_task_key
 
 
 class RefineCallResult(BaseModel):
@@ -94,7 +95,7 @@ async def refine_panel_responses(
     async def _refine(index: int, model_name: str, own: ModelResponse) -> RefineCallResult:
         entry = registry_models[model_name]
         peers = [
-            (labels[i % len(labels)], peer_response.content)
+            (labels[i % len(labels)], _readable(peer_response, task_type))
             for i, (_, peer_response) in enumerate(responses)
             if i != index
         ]
@@ -108,6 +109,8 @@ async def refine_panel_responses(
                 peer_answers=peers,
             ),
             max_tokens=entry.max_tokens,
+            response_schema=panel_answer_schema(),
+            response_schema_name="panel_answer",
             timeout=refine_config.per_model_timeout_seconds,
             metadata={"task_type": task_type.value, "role": "refine"},
             **member_overrides((members or {}).get(model_name)),
@@ -164,6 +167,14 @@ async def refine_panel_responses(
 
     result.refinement_wall_latency_ms = round((time.perf_counter() - started) * 1000)
     return refined, result
+
+
+def _readable(response: ModelResponse, task_type: TaskType) -> str:
+    """A peer's answer as Markdown (claims JSON is hard for a model to weigh as raw text)."""
+    answer, structured = parse_panel_answer(
+        response.content, response.parsed_json, task_key=canonical_task_key(task_type)
+    )
+    return render_panel_answer(answer) if structured else response.content
 
 
 def _refine_result(

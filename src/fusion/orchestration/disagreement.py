@@ -1,119 +1,74 @@
-"""Disagreement analysis for panel responses."""
+"""Agreement between panel answers, in the shape the synthesizer and tool outputs expect.
+
+The numbers come from ``claims.agreement_score`` (claims grouped across models); this module
+only phrases them. No keyword matching and no word-overlap heuristics.
+"""
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from fusion.evals.disagreement_eval import compute_disagreement_score, identify_outliers
-from fusion.evals.schemas import ModelResponseEval
+from fusion.orchestration.claims import AgreementReport, ClaimCluster
+
+_HIGH = {"high", "critical"}
 
 
-def _extract_findings(content: str) -> list[str]:
-    findings: list[str] = []
-    for line in content.splitlines():
-        match = re.match(r"^\s*(?:\d+[\.\)]|\*|\-)\s+(.+)", line)
-        if match:
-            findings.append(match.group(1).strip().lower())
-    if not findings and content.strip():
-        findings.append(content.strip()[:200].lower())
-    return findings
+def _where(cluster: ClaimCluster) -> str:
+    if not cluster.file:
+        return ""
+    return f" ({cluster.file}:{cluster.line})" if cluster.line else f" ({cluster.file})"
 
 
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text.lower().strip())
+def _dispute(cluster: ClaimCluster) -> str:
+    rated = ", ".join(
+        f"{m.model}: {m.claim.severity}" for m in cluster.members if m.claim.severity
+    )
+    return f"Severity disputed{_where(cluster)}: {cluster.text} [{rated}]"
 
 
-def _similar(a: str, b: str, threshold: float = 0.5) -> bool:
-    words_a = set(a.split())
-    words_b = set(b.split())
-    if not words_a or not words_b:
-        return False
-    overlap = len(words_a & words_b) / max(len(words_a), len(words_b))
-    return overlap >= threshold
-
-
-def _group_similar_findings(all_findings: list[tuple[str, str]]) -> list[dict[str, Any]]:
-    """Group similar findings across models."""
-    groups: list[dict[str, Any]] = []
-    for model, finding in all_findings:
-        placed = False
-        for group in groups:
-            if _similar(group["representative"], finding):
-                group["models"].append(model)
-                group["findings"].append(finding)
-                placed = True
-                break
-        if not placed:
-            groups.append(
-                {
-                    "representative": finding,
-                    "models": [model],
-                    "findings": [finding],
-                }
-            )
-    return groups
+def _unsupported(clusters: list[ClaimCluster], known_files: list[str] | None) -> list[str]:
+    if not known_files:
+        return []
+    known = {f.lower().lstrip("./") for f in known_files}
+    found = []
+    for cluster in clusters:
+        for member in cluster.members:
+            file = member.claim.file
+            if file and file.lower().lstrip("./") not in known:
+                found.append(f"{member.model}: cites {file}, which is not among the provided files")
+    return found
 
 
 def analyze_disagreement(
-    evaluations: list[ModelResponseEval],
+    clusters: list[ClaimCluster],
+    report: AgreementReport,
     *,
-    panel_contents: list[tuple[str, str]] | None = None,
+    known_files: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Analyze consensus, contradictions, and unique insights among panel responses."""
-    score = compute_disagreement_score(evaluations)
-    outliers = identify_outliers(evaluations)
+    """Consensus, contradictions and unique insights among the panel's claims.
 
-    all_findings: list[tuple[str, str]] = []
-    high_risk: list[str] = []
-    unsupported: list[str] = []
-
-    for ev in evaluations:
-        if ev.unsupported_claims > 0.5:
-            unsupported.append(f"{ev.model_name}: high unsupported claims score")
-        if ev.risk_awareness < 0.4:
-            high_risk.append(f"{ev.model_name}: low risk awareness")
-
-    contents = panel_contents or []
-    for model_name, content in contents:
-        for finding in _extract_findings(content):
-            all_findings.append((model_name, finding))
-            if any(kw in finding for kw in ("high risk", "critical", "exploit", "injection")):
-                high_risk.append(f"{model_name}: {finding[:120]}")
-
-    groups = _group_similar_findings(all_findings)
-    consensus_items = [
-        g["representative"]
-        for g in groups
-        if len(set(g["models"])) >= max(2, len(evaluations) // 2)
-    ]
-    unique_insights = [
-        g["representative"]
-        for g in groups
-        if len(g["models"]) == 1
-    ]
-
-    contradictions: list[str] = []
-    weak_models = {e.model_name for e in evaluations if e.overall_score < 0.4}
-    strong_models = {e.model_name for e in evaluations if e.overall_score >= 0.7}
-    if weak_models and strong_models:
-        contradictions.append(
-            f"Score divergence between {', '.join(sorted(weak_models))} "
-            f"and {', '.join(sorted(strong_models))}"
-        )
-    for outlier in outliers:
-        contradictions.append(f"Outlier model: {outlier}")
-
+    ``disagreement_score`` is ``1 - agreement`` and 0 when fewer than two models answered
+    (``low_information`` says so; there is nothing to compare).
+    """
+    by_id = {c.id: c for c in clusters}
+    disagreement = 0.0 if report.low_information else round(1.0 - report.score, 4)
     return {
-        "disagreement_score": score,
-        "consensus": score < 0.3,
-        "outlier_models": outliers,
-        "consensus_items": consensus_items,
-        "contradictions": contradictions,
-        "unique_insights": unique_insights,
+        "disagreement_score": disagreement,
+        "agreement_score": report.score,
+        "low_information": report.low_information,
+        "consensus": (
+            not report.low_information and report.score >= 0.5 and not report.contradicted
+        ),
+        "outlier_models": report.outliers,
+        "consensus_items": [by_id[i].text for i in report.consensus],
+        "contradictions": [_dispute(by_id[i]) for i in report.contradicted]
+        + [f"Outlier model: {m}" for m in report.outliers],
+        "unique_insights": [by_id[i].text for i in report.unique],
         "grouped_findings": [
-            {"representative": g["representative"], "models": g["models"]} for g in groups
+            {"representative": c.text, "models": c.models, "status": c.status} for c in clusters
         ],
-        "unsupported_claims": unsupported,
-        "high_risk_recommendations": high_risk,
+        "unsupported_claims": _unsupported(clusters, known_files),
+        "high_risk_recommendations": [
+            f"{', '.join(c.models)}: {c.text}" for c in clusters if c.severity in _HIGH
+        ],
     }

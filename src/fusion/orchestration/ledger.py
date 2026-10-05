@@ -205,6 +205,20 @@ class RunLedger:
             critical_path_ms=max((r.started_at_ms + r.latency_ms for r in chosen), default=0.0),
         )
 
+    def timeline(self) -> list[dict[str, object]]:
+        """Every call as a (start, end) span in milliseconds since the run began, earliest first."""
+        spans = [
+            {
+                "stage": r.stage,
+                "model": r.model_alias,
+                "start_ms": r.started_at_ms,
+                "end_ms": r.started_at_ms + r.latency_ms,
+                "status": r.status,
+            }
+            for r in self.records
+        ]
+        return sorted(spans, key=lambda s: (float(str(s["start_ms"])), str(s["model"])))
+
     def summary(self) -> dict[str, object]:
         """JSON-friendly view stored with the run."""
         return {

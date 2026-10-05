@@ -146,19 +146,23 @@ async def test_judge_stage_runs_alone_on_a_prepared_state(
 
 
 def test_default_stage_order() -> None:
-    names = [type(s).__name__ for s in default_stages(object())]  # type: ignore[arg-type]
+    stages = default_stages(object())  # type: ignore[arg-type]
+    names = [type(s).__name__ for s in stages]
     assert names == [
         "RedactStage",
         "RouteStage",
         "ContextEvalStage",
+        "ShadowStartStage",
         "PanelStage",
         "RefineStage",
-        "JudgeStage",
-        "AggregateStage",
+        "ClaimsStage",
+        "ConcurrentStages",
         "FinalEvalStage",
         "ShadowStage",
         "PersistStage",
     ]
+    concurrent = stages[names.index("ConcurrentStages")]
+    assert [type(s).__name__ for s in concurrent.stages] == ["JudgeStage", "AggregateStage"]
 
 
 # -------------------------------------------------------------------------- C2: judge cost counts

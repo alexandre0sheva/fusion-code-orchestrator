@@ -1,8 +1,269 @@
 {
-  "confidence": 0.7,
+  "agreement": {
+    "confidence": 0.2667,
+    "consensus": [],
+    "contradicted": [],
+    "coverage": 1.0,
+    "evidence_rate": 0.222222,
+    "low_information": false,
+    "n_clusters": 9,
+    "n_models": 3,
+    "n_requested": 3,
+    "outliers": [],
+    "score": 0.0,
+    "structured_share": 1.0,
+    "unique": [
+      "C1",
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8",
+      "C9"
+    ]
+  },
+  "claims": [
+    {
+      "file": null,
+      "id": "C1",
+      "kind": "recommendation",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c1",
+            "kind": "recommendation",
+            "line": null,
+            "severity": null,
+            "text": "Use an event-driven design with a message queue"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Use an event-driven design with a message queue"
+    },
+    {
+      "file": null,
+      "id": "C2",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c2",
+            "kind": "finding",
+            "line": null,
+            "severity": "med",
+            "text": "A queue adds operational complexity"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "A queue adds operational complexity"
+    },
+    {
+      "file": null,
+      "id": "C3",
+      "kind": "risk",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "risk",
+            "line": null,
+            "severity": "med",
+            "text": "Message ordering is harder to guarantee"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "Message ordering is harder to guarantee"
+    },
+    {
+      "file": null,
+      "id": "C4",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Add contract tests between the services"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add contract tests between the services"
+    },
+    {
+      "file": null,
+      "id": "C5",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": "cursor.execute",
+            "file": null,
+            "id": "c1",
+            "kind": "finding",
+            "line": null,
+            "severity": "high",
+            "text": "Missing error handling around the database call"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "high",
+      "status": "unique",
+      "text": "Missing error handling around the database call"
+    },
+    {
+      "file": null,
+      "id": "C6",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": "f-string",
+            "file": null,
+            "id": "c2",
+            "kind": "finding",
+            "line": null,
+            "severity": "critical",
+            "text": "SQL injection through a string-formatted query"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "critical",
+      "status": "unique",
+      "text": "SQL injection through a string-formatted query"
+    },
+    {
+      "file": null,
+      "id": "C7",
+      "kind": "risk",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "risk",
+            "line": null,
+            "severity": "med",
+            "text": "Secrets may be logged in debug output"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "Secrets may be logged in debug output"
+    },
+    {
+      "file": null,
+      "id": "C8",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Add a regression test for the injection payload"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a regression test for the injection payload"
+    },
+    {
+      "file": null,
+      "id": "C9",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c1",
+            "kind": "finding",
+            "line": null,
+            "severity": "low",
+            "text": "Looks fine to me"
+          },
+          "model": "mock-weak"
+        }
+      ],
+      "models": [
+        "mock-weak"
+      ],
+      "severity": "low",
+      "status": "unique",
+      "text": "Looks fine to me"
+    }
+  ],
+  "confidence": 0.2667,
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.005944,
+    "baseline_estimated_cost_usd": 0.010188,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -13,7 +274,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.005944
+    "savings_usd": 0.010188
   },
   "cost_latency": {
     "steps": [
@@ -21,9 +282,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 120,
+        "input_tokens": 248,
         "model_name": "mock-fast",
-        "output_tokens": 30,
+        "output_tokens": 86,
         "provider": "mock",
         "step_name": "panel:mock-fast"
       },
@@ -31,9 +292,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 119,
+        "input_tokens": 247,
         "model_name": "mock-security",
-        "output_tokens": 42,
+        "output_tokens": 90,
         "provider": "mock",
         "step_name": "panel:mock-security"
       },
@@ -41,9 +302,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 124,
+        "input_tokens": 252,
         "model_name": "mock-weak",
-        "output_tokens": 5,
+        "output_tokens": 26,
         "provider": "mock",
         "step_name": "panel:mock-weak"
       },
@@ -51,7 +312,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 438,
+        "input_tokens": 490,
         "model_name": "mock-judge",
         "output_tokens": 60,
         "provider": "mock",
@@ -60,15 +321,15 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 801,
-    "total_output_tokens": 137,
+    "total_input_tokens": 1237,
+    "total_output_tokens": 262,
     "warnings": [
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
   },
-  "display_markdown": "## Fusion Architecture Decision\n\n### Recommendation\n{\"recommended_option\": \"Event-driven pattern with message queue\", \"tradeoffs\": [\"Added operational complexity\", \"Better service isolation\"], \"rejected_options\": [\"Direct HTTP calls \\u2014 too tightly coupled\"], \"risks\": [\"Queue operational overhead\", \"Message ordering complexity\"], \"reversibility\": \"Medium \\u2014 can migrate back with adapter layer\", \"migration_plan\": [\"Phase 1: Add queue alongside existing HTTP\", \"Phase 2: Migrate writers\"], \"test_strategy\": [\"Contract tests between services\", \"Chaos test queue failures\"], \"confidence\": 0.7}\n\n### Confidence\n0.70\n\n### Cost & usage\n- Strategy: panel-cheap\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0059 estimated\n- Estimated savings: $0.0059 / 100.0%\n- Fusion wall time: <t>\n- Panel: 3 models, 3 succeeded, 0 failed\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.",
+  "display_markdown": "## Fusion Architecture Decision\n\n### Answer\nEvent-driven pattern with message queue\n\n### Key claims\n- [critical] SQL injection through a string-formatted query, finding, mock-security (1/3, unique)\n- [high] Missing error handling around the database call, finding, mock-security (1/3, unique)\n- [med] A queue adds operational complexity, finding, mock-fast (1/3, unique)\n- [med] Message ordering is harder to guarantee, risk, mock-fast (1/3, unique)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- 4 more (detail: full)\n\n### Confidence\n0.27 (agreement 0.00 across 3 of 3 models, evidence 22%)\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 0.0s \u00b7 panel-cheap, 4 calls",
   "evals": {
-    "aggregate_score": 0.607754,
+    "aggregate_score": 0.224168,
     "context": {
       "missing_items": [
         "No additional context provided",
@@ -79,90 +340,121 @@
       "sufficient": true
     },
     "dimension_scores": {
-      "aggregate_answer_quality": 0.624667,
-      "aggregate_consensus_strength": 0.782936,
+      "aggregate_answer_quality": 0.194444,
+      "aggregate_consensus_strength": 0.0,
       "aggregate_context_sufficiency": 0.4,
-      "aggregate_final_quality": 0.7,
-      "aggregate_high_risk_penalty": 0.03,
+      "aggregate_final_quality": 0.342229,
+      "aggregate_high_risk_penalty": 0.09,
       "aggregate_provider_success_rate": 1.0,
-      "aggregate_unsupported_claim_penalty": 0.03,
-      "confidence": 0.7,
+      "aggregate_unsupported_claim_penalty": 0.0,
+      "confidence": 0.2667,
       "context_sufficiency": 0.4,
-      "final_quality": 0.7,
-      "mock-fast_overall": 0.663333,
-      "mock-security_overall": 0.888667,
-      "mock-weak_overall": 0.322
+      "final_quality": 0.342229,
+      "mock-fast_overall": 0.166667,
+      "mock-security_overall": 0.416667,
+      "mock-weak_overall": 0.0
     },
     "disagreement": {
-      "consensus": true,
+      "agreement_score": 0.0,
+      "consensus": false,
       "consensus_items": [],
-      "contradictions": [
-        "Score divergence between mock-weak and mock-security",
-        "Outlier model: mock-security",
-        "Outlier model: mock-weak"
-      ],
-      "disagreement_score": 0.217064,
+      "contradictions": [],
+      "disagreement_score": 1.0,
       "grouped_findings": [
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "## architecture decision (mock:<id>)\n\n**recommendation:** use event-driven pattern with message queue.\n**rationale:** decouples services, improves scalability.\n**trade-offs:** added operational co"
+          "representative": "Use an event-driven design with a message queue",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "A queue adds operational complexity",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "Message ordering is harder to guarantee",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "Add contract tests between the services",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "potential sql injection via string concatenation."
+          "representative": "Missing error handling around the database call",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "missing input validation on user-controlled path."
+          "representative": "SQL injection through a string-formatted query",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "secrets may be logged in debug output."
+          "representative": "Secrets may be logged in debug output",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-security"
+          ],
+          "representative": "Add a regression test for the injection payload",
+          "status": "unique"
         },
         {
           "models": [
             "mock-weak"
           ],
-          "representative": "looks fine to me. (mock:<id>)"
+          "representative": "Looks fine to me",
+          "status": "unique"
         }
       ],
       "high_risk_recommendations": [
-        "mock-security: potential sql injection via string concatenation."
+        "mock-security: Missing error handling around the database call",
+        "mock-security: SQL injection through a string-formatted query"
       ],
-      "outlier_models": [
-        "mock-security",
-        "mock-weak"
-      ],
+      "low_information": false,
+      "outlier_models": [],
       "unique_insights": [
-        "## architecture decision (mock:<id>)\n\n**recommendation:** use event-driven pattern with message queue.\n**rationale:** decouples services, improves scalability.\n**trade-offs:** added operational co",
-        "potential sql injection via string concatenation.",
-        "missing input validation on user-controlled path.",
-        "secrets may be logged in debug output.",
-        "looks fine to me. (mock:<id>)"
+        "Use an event-driven design with a message queue",
+        "A queue adds operational complexity",
+        "Message ordering is harder to guarantee",
+        "Add contract tests between the services",
+        "Missing error handling around the database call",
+        "SQL injection through a string-formatted query",
+        "Secrets may be logged in debug output",
+        "Add a regression test for the injection payload",
+        "Looks fine to me"
       ],
       "unsupported_claims": []
     },
     "final": {
-      "claude_code_usefulness": 0.75,
-      "confidence": 0.7,
-      "deterministic_issues": [
-        "Missing expected structural markers in response"
-      ],
-      "deterministic_passed": false,
-      "final_answer_quality": 0.7,
-      "implementation_readiness": 0.65,
-      "notes": "Heuristic final evaluation",
-      "overall_score": 0.7,
-      "residual_risk": 0.3,
-      "test_plan_quality": 0.7
+      "claude_code_usefulness": 0.333333,
+      "confidence": 0.2667,
+      "deterministic_issues": [],
+      "deterministic_passed": true,
+      "final_answer_quality": 0.111111,
+      "implementation_readiness": 0.0,
+      "notes": "Measured from 9 claim clusters across 3 model(s): agreement 0.00, evidence 0.22",
+      "overall_score": 0.342229,
+      "residual_risk": 0.9,
+      "test_plan_quality": 1.0
     },
     "judge_quality": null,
     "outcome": {
@@ -172,57 +464,51 @@
     },
     "per_answer": [
       {
-        "actionability": 0.4,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.530667,
-        "deterministic_issues": [
-          "Missing test plan or test mentions for coding output"
-        ],
-        "deterministic_passed": false,
-        "groundedness": 0.597,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "actionability": 0.5,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
+        "deterministic_issues": [],
+        "deterministic_passed": true,
+        "groundedness": 0.0,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-fast",
-        "novelty": 0.4,
-        "overall_score": 0.663333,
-        "risk_awareness": 0.4,
-        "specificity": 0.663333,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.166667,
+        "risk_awareness": 0.5,
+        "specificity": 0.0,
+        "unsupported_claims": 0.0
       },
       {
-        "actionability": 1.0,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.710933,
-        "deterministic_issues": [
-          "Missing test plan or test mentions for coding output"
-        ],
-        "deterministic_passed": false,
-        "groundedness": 0.7998,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "actionability": 0.25,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
+        "deterministic_issues": [],
+        "deterministic_passed": true,
+        "groundedness": 0.5,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-security",
-        "novelty": 0.4,
-        "overall_score": 0.888667,
-        "risk_awareness": 0.6,
-        "specificity": 0.888667,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.416667,
+        "risk_awareness": 0.75,
+        "specificity": 0.5,
+        "unsupported_claims": 0.0
       },
       {
-        "actionability": 0.4,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.2576,
+        "actionability": 0.0,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
         "deterministic_issues": [
-          "Output too short (33 chars, min 50)",
-          "Missing expected structural markers in response",
-          "Missing test plan or test mentions for coding output"
+          "No test claim in a coding answer"
         ],
         "deterministic_passed": false,
-        "groundedness": 0.2898,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "groundedness": 0.0,
+        "judge_notes": "LLM judge off; Structural scores from 1 claims",
         "model_name": "mock-weak",
-        "novelty": 0.4,
-        "overall_score": 0.322,
-        "risk_awareness": 0.4,
-        "specificity": 0.322,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.0,
+        "risk_awareness": 1.0,
+        "specificity": 0.0,
+        "unsupported_claims": 0.0
       }
     ],
     "warnings": []
@@ -236,7 +522,7 @@
     "Direct HTTP calls \u2014 too tightly coupled"
   ],
   "result": {
-    "confidence": 0.7,
+    "confidence": 0.2667,
     "migration_plan": [
       "Phase 1: Add queue alongside existing HTTP",
       "Phase 2: Migrate writers"
@@ -302,14 +588,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 120,
+        "input_tokens": 248,
         "model_alias": "mock-fast",
-        "output_tokens": 30,
+        "output_tokens": 86,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 150
+        "total_tokens": 334
       },
       {
         "actual_cost_usd": null,
@@ -320,14 +606,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 119,
+        "input_tokens": 247,
         "model_alias": "mock-security",
-        "output_tokens": 42,
+        "output_tokens": 90,
         "provider": "mock",
         "provider_model_id": "mock-security",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 161
+        "total_tokens": 337
       },
       {
         "actual_cost_usd": null,
@@ -338,14 +624,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 124,
+        "input_tokens": 252,
         "model_alias": "mock-weak",
-        "output_tokens": 5,
+        "output_tokens": 26,
         "provider": "mock",
         "provider_model_id": "mock-weak",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 129
+        "total_tokens": 278
       },
       {
         "actual_cost_usd": null,
@@ -356,20 +642,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 438,
+        "input_tokens": 490,
         "model_alias": "mock-judge",
         "output_tokens": 60,
         "provider": "mock",
         "provider_model_id": "mock-judge",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 498
+        "total_tokens": 550
       }
     ],
     "successful_model_calls": 4,
-    "total_input_tokens": 801,
-    "total_output_tokens": 137,
-    "total_tokens": 938
+    "total_input_tokens": 1237,
+    "total_output_tokens": 262,
+    "total_tokens": 1499
   },
   "warnings": []
 }

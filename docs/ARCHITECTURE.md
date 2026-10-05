@@ -12,13 +12,17 @@ Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
    RedactStage       redact secrets, open the run record
    RouteStage        apply the strategy: panel/aggregator/judge models, fall back by catalog role
    ContextEvalStage  score the context            -- halts: "insufficient context"
+   ShadowStartStage  start the shadow baseline call now, if a shadow run is wanted
    PanelStage        concurrent fan-out           -- halts: quorum not met
-   RefineStage       the strategy's extra peer-review rounds (rounds - 1; none for rounds: 1)
-   JudgeStage        deterministic checks per answer; LLM judge when the strategy's judge is on
-   AggregateStage    disagreement analysis + final answer (solo: the answer itself; llm:
-                     one synthesizer call; digest: the panel's answers, no call)
+   RefineStage       the strategy's extra peer-review rounds (rounds - 1; none for rounds: 1),
+                     skipped when the panel already agrees
+   ClaimsStage       read answers as claims, cluster them across models, measure agreement
+   ConcurrentStages  at the same time:
+     JudgeStage        safety checks and claim-derived scores per answer; LLM judge if on
+     AggregateStage    final answer (solo: the answer itself; llm: one synthesizer call;
+                       digest: the panel's answers and clusters, no call)
    FinalEvalStage    final eval, structured output, budget warnings
-   ShadowStage       optional blind A/B against the real baseline
+   ShadowStage       collect the baseline answer and judge it blind against Fusion's
    PersistStage      build the result from the ledger, store the run (always runs)
 ```
 
@@ -160,24 +164,48 @@ strategy into:
 catalog, `src/fusion/config/catalog.yaml`; per-task judge and context thresholds and fan-out settings
 in `src/fusion/config/routing_policies.yaml`; strategies in `src/fusion/config/strategies.yaml`.
 
-### Fanout
+### Concurrency and latency
 
-`src/fusion/orchestration/fanout.py` starts panel calls concurrently with `asyncio`.
+A run's wall time is its critical path, not the sum of its calls. What overlaps:
 
-It tracks:
+```text
+t0 ─┬─ panel member A ──────────┐
+    ├─ panel member B ────┐     │  (every member starts at once; stragglers may be cut off or hedged)
+    ├─ panel member C ───────┐  │
+    └─ shadow baseline ─────────────────────────┐   (started at t0, collected at the end)
+                             └──┴─ refine A/B/C ─┐ (all start once every round-1 answer exists;
+                                                 │  skipped if the panel already agrees)
+                                                 ├─ judge x N ──────┐  (concurrent with each other
+                                                 └─ synthesis ──────┴─ final eval ─ shadow judge
+                                                                       and with synthesis)
+```
 
-- per-model timeout;
-- global panel timeout;
-- concurrency limit;
-- minimum successful responses;
-- partial results;
-- structured failure status;
-- panel wall latency, max model latency, and summed model-call latency.
+- **Panel** (`fanout.py`): every call starts at once. `max_concurrency` caps in-flight calls *per
+  provider*, so a provider that is slow or rate limited cannot hold up the others; the provider's own
+  limiter (`provider_limits`) enforces its quota inside the provider. The per-model timeout starts
+  once the call has a fan-out slot. Optional `early_return` stops waiting `grace_ms` after
+  `quorum` answers (never fewer than `min_successful_responses`) and cancels the stragglers; optional
+  `hedge_after_ms` asks another panel-role model when a member is still silent, and whichever answers
+  first stands in for that member. A cancelled call is recorded in the ledger with its cost
+  unknown, because the provider may still bill it.
+- **Refinement**: each member's revision needs every peer's round-1 answer, so a round starts when
+  the slowest member is in, and then all revisions run together. A round is skipped when the
+  panel's agreement already reaches `refinement.skip_above_agreement`.
+- **Judge and synthesis**: per-answer judge calls run together, and the whole judge stage runs
+  alongside synthesis (`ConcurrentStages`) unless the strategy sets `judge_feeds_synthesis`, in
+  which case synthesis waits and receives the judge's scores. If one stage fails, the other is
+  cancelled and the original exception is raised.
+- **Shadow baseline**: it needs only the task prompt, so `ShadowStartStage` starts it right after
+  the context check and `ShadowStage` collects it after Fusion's answer is final. Fusion's wall time
+  is stamped before the wait and shadow calls are excluded from Fusion's cost and critical path.
+  A run that halts or fails cancels the baseline call.
+- **Timeline**: every `CallRecord` has `started_at_ms` on the run's clock, and
+  `RunLedger.timeline()` returns each call as a start and end span, so overlap can be read (and
+  tested) from the ledger.
 
 Config keys and failure semantics are in [CONFIGURATION.md](CONFIGURATION.md#fan-out). A panel call
-that is still pending when the global timeout hits is attributed to its own model. Synthesis runs
-after fanout and disagreement analysis. The MCP request is still a normal blocking request from
-Claude Code's perspective.
+that is still pending when the global timeout hits is attributed to its own model. The MCP request
+is still a normal blocking request from Claude Code's perspective.
 
 ### Refinement (mixture-of-agents)
 
@@ -206,29 +234,73 @@ overhead and are never counted as Fusion cost. All shadow failures degrade to wa
 estimates, per-task-type breakdown, and shadow win/tie/loss counts. Rendering lives in
 `src/fusion/telemetry/stats_format.py`, surfaced through the `fusion stats` CLI command,
 the `fusion_stats` MCP tool, and a one-line lifetime footer on every real-mode run's
-`display_markdown` (benchmark mode omits it).
+`display_markdown` at `detail: full` (benchmark mode omits it).
+
+### Claims and agreement
+
+Panelists do not write free text. Every panel and refinement call carries the JSON Schema of
+`PanelAnswer` (`orchestration/claims.py`) as its `response_schema`, so providers that enforce
+structured output return a `summary`, a `confidence` and a list of atomic `Claim`s; providers that
+cannot are given the schema in the prompt. A claim has a `kind` (finding, hypothesis,
+recommendation, risk, test), an optional `severity` (low, med, high, critical), `file`, `line` and
+`evidence`. A reply that is not valid claims JSON is read from its list items, flagged in the run's
+warnings, and counts against coverage.
+
+`ClaimsStage` then works without any model call:
+
+1. `cluster_claims` groups claims across models. Two claims are the same point when they have the
+   same `kind` and either cite the same file within 3 lines, or their normalized wording (lowercased,
+   stop words dropped, light stemming) has Jaccard similarity of at least 0.5 (0.34 when they cite
+   the same file). A cluster holds at most one claim per model, and models are visited in name
+   order, so the result does not depend on arrival order.
+2. `agreement_score` sorts the clusters into **consensus** (backed by at least two models and half
+   the panel), **unique** (one model), **contradicted** (backed by several, with severities two or
+   more levels apart) and partial. `score` is the mean over clusters of `(support - 1) / (n - 1)`,
+   halved for contradicted ones, and 0 for fewer than two models. A model that shares nothing while
+   the others share something is reported as an outlier (three or more models).
+3. `calibrated_confidence` is `0.5 * agreement + 0.3 * evidence + 0.2 * coverage`, minus
+   `0.15 * (contradicted clusters / clusters)`, clamped to [0, 0.95]. *Evidence* is the share of
+   claims with a quoted `evidence` or a file and line; *coverage* is models that answered divided by
+   models asked, times the share of answers that were valid claims JSON. With fewer than two answers
+   there is nothing to agree with: the report is marked `low_information`, confidence is capped at
+   0.50, and the run carries a warning saying so. A model's own `confidence` is reported but never
+   used.
+
+The synthesizer prompt receives the clusters (with status and who backs each) and the answers
+rendered as Markdown, not raw JSON. For a `solo` run or a `digest` aggregator, and whenever the
+synthesis is not JSON, the task fields (`critical_findings`, `ranked_hypotheses`, ...) are filled
+from the clusters by kind, most severe and most agreed first (`output_parser.py`). The calibrated
+confidence always replaces whatever confidence the synthesizer wrote.
 
 ### Evals
 
-`src/fusion/evals/engine.py` coordinates hybrid evals:
+`src/fusion/evals/engine.py` coordinates the checks and scores:
 
-- deterministic checks always run;
+- safety checks always run on every answer: secret leakage, dangerous shell commands, cited files
+  that are not among the provided ones, and a missing `test` claim in a coding answer;
 - the LLM judge runs only when the strategy's `judge` is `light` or `full` and a judge model is
   available (the default, `off`, makes no judge call);
-- heuristic fallback scoring replaces the judge when it is off or its calls fail;
-- final aggregate confidence combines context sufficiency, consensus, answer quality,
-  final quality, provider success rate, unsupported-claim penalty, and residual risk.
+- without a judge (or when its call fails) per-answer scores are measured from the claims
+  (`evals/structural.py`): the share of claims that cite a file, carry evidence, propose an action
+  or are rated for severity. Dimensions that need a judge or a reference stay at a neutral 0.5, and
+  an answer that was not valid claims JSON scores neutral throughout;
+- the final evaluation (`evals/final_eval.py`) takes `confidence` from the agreement report and
+  derives usefulness (share of recommendation and test clusters), readiness (share with file and
+  line), test plan (a test cluster exists, for coding tasks) and residual risk (the highest
+  severity found) from the clusters. With no claims, as in a halted run, they are all 0.
 
-Eval data affects warnings, confidence, and the final MCP output.
+No score depends on the wording of an answer. The aggregate score in `evals` is a weighted blend of
+these measures (context, agreement, answer quality, final quality, provider success rate) less
+penalties for unsupported claims and residual risk.
 
 ### Synthesis
 
-Panel outputs are scored and checked for disagreement. The synthesizer prompt receives:
+For an `llm` aggregator the synthesizer prompt receives:
 
-- original task;
-- panel responses;
-- disagreement analysis;
-- requested JSON schema.
+- the original task;
+- the claim clusters and a short agreement summary;
+- each panel answer rendered as Markdown;
+- the requested JSON schema for the task's fields.
 
 Raw panel outputs are not included in MCP responses unless `include_raw_outputs=true`.
 

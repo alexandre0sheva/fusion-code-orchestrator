@@ -1,10 +1,136 @@
 {
-  "answer": "## Code Review (mock:<id>)\n\n**Findings:**\n1. Consider adding error handling around the database call.\n2. The function lacks type hints on return value.\n3. Missing unit test for edge case when input is empty.\n\n**Risk:** Medium \u2014 null pointer possible on line referenced in diff.\n**Recommendation:** Add guard clause and test coverage.",
+  "agreement": {
+    "confidence": 0.275,
+    "consensus": [],
+    "contradicted": [],
+    "coverage": 1.0,
+    "evidence_rate": 0.25,
+    "low_information": true,
+    "n_clusters": 4,
+    "n_models": 1,
+    "n_requested": 1,
+    "outliers": [],
+    "score": 0.0,
+    "structured_share": 1.0,
+    "unique": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+    ]
+  },
+  "answer": "Code review summary (mock:<id>)",
   "assumptions": [],
-  "confidence": 0.7,
+  "claims": [
+    {
+      "file": null,
+      "id": "C1",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": "cursor.execute",
+            "file": null,
+            "id": "c1",
+            "kind": "finding",
+            "line": null,
+            "severity": "med",
+            "text": "Missing error handling around the database call"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "Missing error handling around the database call"
+    },
+    {
+      "file": null,
+      "id": "C2",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c2",
+            "kind": "finding",
+            "line": null,
+            "severity": "low",
+            "text": "The function lacks type hints on its return value"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "low",
+      "status": "unique",
+      "text": "The function lacks type hints on its return value"
+    },
+    {
+      "file": null,
+      "id": "C3",
+      "kind": "recommendation",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "recommendation",
+            "line": null,
+            "severity": null,
+            "text": "Add a guard clause for empty input"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a guard clause for empty input"
+    },
+    {
+      "file": null,
+      "id": "C4",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Add a unit test for the empty input edge case"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a unit test for the empty input edge case"
+    }
+  ],
+  "confidence": 0.275,
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.001516,
+    "baseline_estimated_cost_usd": 0.002888,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -15,7 +141,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.001516
+    "savings_usd": 0.002888
   },
   "cost_latency": {
     "steps": [
@@ -23,24 +149,25 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 119,
+        "input_tokens": 247,
         "model_name": "mock-fast",
-        "output_tokens": 52,
+        "output_tokens": 95,
         "provider": "mock",
         "step_name": "panel:mock-fast"
       }
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 119,
-    "total_output_tokens": 52,
+    "total_input_tokens": 247,
+    "total_output_tokens": 95,
     "warnings": [
+      "Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)",
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
   },
-  "display_markdown": "## Fusion Answer\n\n### Recommendation\n## Code Review (mock:<id>)\n\n**Findings:**\n1. Consider adding error handling around the database call.\n2. The function lacks type hints on return value.\n3. Missing unit test for edge case when input is empty.\n\n**Risk:** Medium \u2014 null pointer possible on line referenced in diff.\n**Recommendation:** Add guard clause and test coverage.\n\n### Confidence\n0.70\n\n### Cost & usage\n- Strategy: solo-cheap\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0015 estimated\n- Estimated savings: $0.0015 / 100.0%\n- Fusion wall time: <t>\n- Panel: 1 models, 1 succeeded, 0 failed\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.",
+  "display_markdown": "## Fusion Answer\n\n### Answer\nCode review summary (mock:<id>)\n\n### Key claims\n- [med] Missing error handling around the database call, finding, mock-fast (1/1, unique)\n- [low] The function lacks type hints on its return value, finding, mock-fast (1/1, unique)\n- Add a guard clause for empty input, recommendation, mock-fast (1/1, unique)\n- Add a unit test for the empty input edge case, test, mock-fast (1/1, unique)\n\n### Confidence\n0.28, low information: 1 model answered, so agreement could not be measured\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 0.0s \u00b7 solo-cheap, 1 call\n\n### Caveats\n- Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)",
   "evals": {
-    "aggregate_score": 0.717833,
+    "aggregate_score": 0.293333,
     "context": {
       "missing_items": [
         "No additional context provided",
@@ -51,20 +178,21 @@
       "sufficient": true
     },
     "dimension_scores": {
-      "aggregate_answer_quality": 0.891333,
-      "aggregate_consensus_strength": 1.0,
+      "aggregate_answer_quality": 0.333333,
+      "aggregate_consensus_strength": 0.0,
       "aggregate_context_sufficiency": 0.4,
-      "aggregate_final_quality": 0.7,
-      "aggregate_high_risk_penalty": 0.03,
+      "aggregate_final_quality": 0.28,
+      "aggregate_high_risk_penalty": 0.04,
       "aggregate_provider_success_rate": 1.0,
-      "aggregate_unsupported_claim_penalty": 0.03,
-      "confidence": 0.7,
+      "aggregate_unsupported_claim_penalty": 0.0,
+      "confidence": 0.275,
       "context_sufficiency": 0.4,
-      "final_quality": 0.7,
-      "mock-fast_overall": 0.891333
+      "final_quality": 0.28,
+      "mock-fast_overall": 0.333333
     },
     "disagreement": {
-      "consensus": true,
+      "agreement_score": 0.0,
+      "consensus": false,
       "consensus_items": [],
       "contradictions": [],
       "disagreement_score": 0.0,
@@ -73,41 +201,53 @@
           "models": [
             "mock-fast"
           ],
-          "representative": "consider adding error handling around the database call."
+          "representative": "Missing error handling around the database call",
+          "status": "unique"
         },
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "the function lacks type hints on return value."
+          "representative": "The function lacks type hints on its return value",
+          "status": "unique"
         },
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "missing unit test for edge case when input is empty."
+          "representative": "Add a guard clause for empty input",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "Add a unit test for the empty input edge case",
+          "status": "unique"
         }
       ],
       "high_risk_recommendations": [],
+      "low_information": true,
       "outlier_models": [],
       "unique_insights": [
-        "consider adding error handling around the database call.",
-        "the function lacks type hints on return value.",
-        "missing unit test for edge case when input is empty."
+        "Missing error handling around the database call",
+        "The function lacks type hints on its return value",
+        "Add a guard clause for empty input",
+        "Add a unit test for the empty input edge case"
       ],
       "unsupported_claims": []
     },
     "final": {
-      "claude_code_usefulness": 0.75,
-      "confidence": 0.7,
+      "claude_code_usefulness": 0.5,
+      "confidence": 0.275,
       "deterministic_issues": [],
       "deterministic_passed": true,
-      "final_answer_quality": 0.7,
-      "implementation_readiness": 0.65,
-      "notes": "Heuristic final evaluation",
-      "overall_score": 0.7,
-      "residual_risk": 0.3,
-      "test_plan_quality": 0.7
+      "final_answer_quality": 0.125,
+      "implementation_readiness": 0.0,
+      "notes": "Measured from 4 claim clusters across 1 model(s): agreement 0.00, evidence 0.25; low information (fewer than two models)",
+      "overall_score": 0.28,
+      "residual_risk": 0.4,
+      "test_plan_quality": 0.5
     },
     "judge_quality": null,
     "outcome": {
@@ -117,37 +257,37 @@
     },
     "per_answer": [
       {
-        "actionability": 1.0,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.713067,
+        "actionability": 0.5,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
         "deterministic_issues": [],
         "deterministic_passed": true,
-        "groundedness": 0.8022,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "groundedness": 0.25,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-fast",
-        "novelty": 0.4,
-        "overall_score": 0.891333,
-        "risk_awareness": 0.6,
-        "specificity": 0.891333,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.333333,
+        "risk_awareness": 0.5,
+        "specificity": 0.25,
+        "unsupported_claims": 0.0
       }
     ],
-    "warnings": []
+    "warnings": [
+      "Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)"
+    ]
   },
   "raw_outputs": null,
   "result": {
-    "answer": "## Code Review (mock:<id>)\n\n**Findings:**\n1. Consider adding error handling around the database call.\n2. The function lacks type hints on return value.\n3. Missing unit test for edge case when input is empty.\n\n**Risk:** Medium \u2014 null pointer possible on line referenced in diff.\n**Recommendation:** Add guard clause and test coverage.",
+    "answer": "Code review summary (mock:<id>)",
     "assumptions": [],
-    "confidence": 0.7,
+    "confidence": 0.275,
     "risks": [],
     "suggested_actions": [
-      "Consider adding error handling around the database call.",
-      "The function lacks type hints on return value.",
-      "Missing unit test for edge case when input is empty."
+      "Add a guard clause for empty input"
     ],
-    "summary": "## Code Review (mock:<id>)\n\n**Findings:**\n1. Consider adding error handling around the database call.\n2. The function lacks type hints on return value.\n3. Missing unit test for edge case when input is empty.\n\n**Risk:** Medium \u2014 null pointer possible on line referenced in diff.\n**Recommendation:** Add guard clause and test coverage.",
+    "summary": "Code review summary (mock:<id>)",
     "tests_to_run": [
-      "Missing unit test for edge case when input is empty."
+      "Add a unit test for the empty input edge case"
     ]
   },
   "risks": [],
@@ -168,13 +308,11 @@
     "warnings": []
   },
   "suggested_actions": [
-    "Consider adding error handling around the database call.",
-    "The function lacks type hints on return value.",
-    "Missing unit test for edge case when input is empty."
+    "Add a guard clause for empty input"
   ],
-  "summary": "## Code Review (mock:<id>)\n\n**Findings:**\n1. Consider adding error handling around the database call.\n2. The function lacks type hints on return value.\n3. Missing unit test for edge case when input is empty.\n\n**Risk:** Medium \u2014 null pointer possible on line referenced in diff.\n**Recommendation:** Add guard clause and test coverage.",
+  "summary": "Code review summary (mock:<id>)",
   "tests_to_run": [
-    "Missing unit test for edge case when input is empty."
+    "Add a unit test for the empty input edge case"
   ],
   "usage": {
     "failed_model_calls": 0,
@@ -188,20 +326,22 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 119,
+        "input_tokens": 247,
         "model_alias": "mock-fast",
-        "output_tokens": 52,
+        "output_tokens": 95,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 171
+        "total_tokens": 342
       }
     ],
     "successful_model_calls": 1,
-    "total_input_tokens": 119,
-    "total_output_tokens": 52,
-    "total_tokens": 171
+    "total_input_tokens": 247,
+    "total_output_tokens": 95,
+    "total_tokens": 342
   },
-  "warnings": []
+  "warnings": [
+    "Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)"
+  ]
 }

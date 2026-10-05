@@ -1,7 +1,9 @@
 {
   "disagreement": {
+    "agreement_score": 0.0,
     "consensus": true,
     "disagreement_score": 0.0,
+    "low_information": true,
     "outlier_models": []
   },
   "final_answer": "Insufficient context for analysis.",

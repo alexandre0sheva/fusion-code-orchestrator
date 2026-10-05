@@ -12,9 +12,10 @@ from fusion.evals.schemas import (
     ModelResponseEval,
     OutcomeEvalResult,
 )
+from fusion.orchestration.claims import cluster_line, top_clusters
 from fusion.orchestration.ledger import CallRecord
 from fusion.orchestration.result import PipelineResult, build_usage_summary
-from fusion.orchestration.schemas import CostLatencyInfo, PipelineEvals, StepUsage
+from fusion.orchestration.schemas import CostLatencyInfo, Detail, PipelineEvals, StepUsage
 from fusion.storage.run_store import RunStepRecord, RunStore
 from fusion.telemetry.cost import (
     CostComparison,
@@ -28,6 +29,40 @@ def _format_cost(amount: float | None, known: bool) -> str:
     if amount is None or not known:
         return "unknown"
     return f"${amount:.4f} estimated"
+
+
+_HEADLINE_KEYS = (
+    "answer",
+    "summary",
+    "recommended_option",
+    "minimal_fix_strategy",
+    "safer_answer",
+)
+
+
+def _headline(result: PipelineResult) -> str:
+    """The answer in words: a structured headline field, else the whole final answer."""
+    for key in _HEADLINE_KEYS:
+        value = result.structured_output.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return result.final_answer.strip()
+
+
+def _confidence_line(result: PipelineResult) -> str:
+    confidence = f"{result.final_eval.confidence:.2f}"
+    report = result.agreement
+    if report is None:
+        return confidence
+    if report.low_information:
+        return (
+            f"{confidence}, low information: {report.n_models} model answered, "
+            "so agreement could not be measured"
+        )
+    return (
+        f"{confidence} (agreement {report.score:.2f} across {report.n_models} of "
+        f"{report.n_requested} models, evidence {report.evidence_rate:.0%})"
+    )
 
 
 def step_name(record: CallRecord) -> str:
@@ -162,14 +197,22 @@ class ResultPresenter:
             pricing=self._pricing,
         )
 
-    def common_output_fields(self, result: PipelineResult, title: str) -> dict[str, Any]:
+    def common_output_fields(
+        self, result: PipelineResult, title: str, detail: Detail = "compact"
+    ) -> dict[str, Any]:
         usage = self.usage_for(result)
         cost_comparison = self.comparison_for(result, usage)
         return {
             "display_markdown": self.display_markdown(
-                title=title, result=result, usage=usage, cost_comparison=cost_comparison
+                title=title,
+                result=result,
+                usage=usage,
+                cost_comparison=cost_comparison,
+                detail=detail,
             ),
             "result": result.structured_output,
+            "claims": result.claims,
+            "agreement": result.agreement,
             "usage": usage,
             "cost_comparison": cost_comparison,
             "warnings": result.warnings,
@@ -184,9 +227,32 @@ class ResultPresenter:
         result: PipelineResult,
         usage: UsageSummary,
         cost_comparison: CostComparison,
+        detail: Detail = "compact",
     ) -> str:
-        lines = [f"## {title}", "", "### Recommendation", result.final_answer.strip()[:1200]]
-        lines.extend(["", "### Confidence", f"{result.final_eval.confidence:.2f}"])
+        """Compact: the answer, the top claims, confidence and one cost line. Full: everything."""
+        if detail == "full":
+            return self._full_markdown(title, result, usage, cost_comparison)
+        lines = [f"## {title}", "", "### Answer", _headline(result)]
+        lines.extend(self._claim_lines(result, "Key claims", limit=5))
+        lines.extend(["", "### Confidence", _confidence_line(result)])
+        lines.extend(["", "### Cost", self._compact_cost(result, usage, cost_comparison)])
+        if result.warnings:
+            lines.extend(["", "### Caveats"])
+            lines.extend(f"- {warning}" for warning in result.warnings[:3])
+            if len(result.warnings) > 3:
+                lines.append(f"- {len(result.warnings) - 3} more in `warnings` (detail: full)")
+        return "\n".join(lines)
+
+    def _full_markdown(
+        self,
+        title: str,
+        result: PipelineResult,
+        usage: UsageSummary,
+        cost_comparison: CostComparison,
+    ) -> str:
+        lines = [f"## {title}", "", "### Recommendation", result.final_answer.strip()]
+        lines.extend(self._claim_lines(result, "Claims", limit=1000))
+        lines.extend(["", "### Confidence", _confidence_line(result)])
         lines.extend(["", "### Cost & usage"])
         lines.extend(self._cost_lines(result, usage, cost_comparison))
         lines.extend(self._shadow_lines(result))
@@ -199,8 +265,38 @@ class ResultPresenter:
             lines.append(footer)
         if result.warnings:
             lines.extend(["", "### Caveats"])
-            lines.extend(f"- {warning}" for warning in result.warnings[:5])
+            lines.extend(f"- {warning}" for warning in result.warnings)
         return "\n".join(lines)
+
+    @staticmethod
+    def _claim_lines(result: PipelineResult, heading: str, *, limit: int) -> list[str]:
+        shown = top_clusters(result.claims, limit)
+        if not shown:
+            return []
+        n = result.agreement.n_models if result.agreement else 1
+        lines = ["", f"### {heading}"]
+        for cluster in shown:
+            lines.append(f"- {cluster_line(cluster)} ({cluster.support}/{n}, {cluster.status})")
+        if len(result.claims) > len(shown):
+            lines.append(f"- {len(result.claims) - len(shown)} more (detail: full)")
+        return lines
+
+    @staticmethod
+    def _compact_cost(
+        result: PipelineResult, usage: UsageSummary, cost_comparison: CostComparison
+    ) -> str:
+        parts = [
+            _format_cost(cost_comparison.fusion_total_cost_usd, cost_comparison.fusion_cost_known)
+        ]
+        if cost_comparison.savings_percent is not None and cost_comparison.fusion_is_cheaper:
+            parts.append(
+                f"{cost_comparison.savings_percent:.0f}% below the "
+                f"{cost_comparison.baseline_name} baseline estimate"
+            )
+        parts.append(f"{usage.fusion_wall_latency_ms / 1000:.1f}s")
+        calls = usage.successful_model_calls
+        parts.append(f"{result.routing.strategy}, {calls} call{'' if calls == 1 else 's'}")
+        return " · ".join(parts)
 
     @staticmethod
     def _cost_lines(
@@ -333,6 +429,9 @@ class ResultPresenter:
                 result=result,
                 usage=usage,
                 cost_comparison=self.comparison_for(result, usage),
+                detail="full",
             ),
+            "claims": [c.model_dump() for c in result.claims],
+            "agreement": result.agreement.model_dump() if result.agreement else {},
             "warnings": result.warnings,
         }

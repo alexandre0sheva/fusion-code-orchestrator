@@ -25,6 +25,60 @@ MOCK_PERSONALITIES = frozenset(
 )
 
 
+_CLAIM_ROLES = frozenset({"panel", "refine"})
+# kind, severity, text, line, evidence. Claims with a line get the first changed file, if any.
+_CLAIMS: dict[str, list[tuple[str, str | None, str, int | None, str | None]]] = {
+    "coding_reviewer": [
+        ("finding", "med", "Missing error handling around the database call", 10, "cursor.execute"),
+        ("finding", "low", "The function lacks type hints on its return value", 30, None),
+        ("recommendation", None, "Add a guard clause for empty input", None, None),
+        ("test", None, "Add a unit test for the empty input edge case", None, None),
+    ],
+    "security_reviewer": [
+        (
+            "finding",
+            "high",
+            "Missing error handling around the database call",
+            11,
+            "cursor.execute",
+        ),
+        ("finding", "critical", "SQL injection through a string-formatted query", 20, "f-string"),
+        ("risk", "med", "Secrets may be logged in debug output", None, None),
+        ("test", None, "Add a regression test for the injection payload", None, None),
+    ],
+    "debugging_hypothesis": [
+        ("hypothesis", "high", "Connection pool exhaustion under load", 10, "timeout in acquire()"),
+        ("hypothesis", "med", "A connection leaks when a finally block is missing", 30, None),
+        ("recommendation", None, "Increase the pool size and log acquire timeouts", None, None),
+        ("test", None, "Check pool metrics under load", None, None),
+    ],
+    "architecture_advisor": [
+        ("recommendation", None, "Use an event-driven design with a message queue", None, None),
+        ("finding", "med", "A queue adds operational complexity", None, None),
+        ("risk", "med", "Message ordering is harder to guarantee", None, None),
+        ("test", None, "Add contract tests between the services", None, None),
+    ],
+    "weak_model": [
+        ("finding", "low", "Looks fine to me", None, None),
+    ],
+}
+_SUMMARIES = {
+    "coding_reviewer": "Code review summary",
+    "security_reviewer": "Security review summary",
+    "debugging_hypothesis": "Debugging summary",
+    "architecture_advisor": "Architecture summary",
+    "weak_model": "Looks fine",
+}
+
+
+def _first_changed_file(prompt: str) -> str | None:
+    marker = "## Changed Files\n"
+    if marker not in prompt:
+        return None
+    first = prompt.split(marker, 1)[1].splitlines()[0]
+    return first.removeprefix("- ").strip() or None
+
+
 class MockProvider(ModelProvider):
     """Deterministic mock provider with configurable personalities."""
 
@@ -96,6 +150,8 @@ class MockProvider(ModelProvider):
 
     def _generate_content(self, request: ModelRequest, personality: str) -> str:
         seed = self._seed(request)
+        if request.response_schema is not None and request.metadata.get("role") in _CLAIM_ROLES:
+            return self._panel_answer(request, personality, seed)
         if personality == "synthesizer":
             return self._synthesizer(seed, request)
         generators: dict[str, Callable[[str], str]] = {
@@ -111,8 +167,42 @@ class MockProvider(ModelProvider):
         generator = generators.get(personality, self._coding_reviewer)
         return generator(seed)
 
+    def _panel_answer(self, request: ModelRequest, personality: str, seed: str) -> str:
+        """A claims-JSON answer, so offline runs exercise the same path as live structured output.
+
+        Reviewers and the security reviewer share one claim at nearby lines; each also raises
+        points of its own, and the weak model adds almost nothing.
+        """
+        task = str(request.metadata.get("task_type", "code_review"))
+        family = personality if personality in _CLAIMS else "coding_reviewer"
+        file = _first_changed_file(request.user_prompt)
+        claims = []
+        for index, (kind, severity, text, line, evidence) in enumerate(_CLAIMS[family], 1):
+            claims.append(
+                {
+                    "id": f"c{index}",
+                    "text": text,
+                    "kind": kind,
+                    "severity": severity,
+                    "file": file if line is not None else None,
+                    "line": line if file else None,
+                    "evidence": evidence,
+                }
+            )
+        scored = task in {"answer_eval", "evaluation"}
+        return json.dumps(
+            {
+                "summary": f"{_SUMMARIES.get(family, _SUMMARIES['coding_reviewer'])} (mock:{seed})",
+                "claims": claims,
+                "confidence": 0.3 if family == "weak_model" else 0.7,
+                "score": 0.76 if scored else None,
+            }
+        )
+
     def _maybe_parse_json(self, text: str, personality: str) -> dict[str, Any] | None:
-        if personality not in {"judge", "shadow_judge", "synthesizer"}:
+        if personality not in {"judge", "shadow_judge", "synthesizer"} and not text.startswith(
+            '{"summary"'
+        ):
             return None
         try:
             return cast(dict[str, Any], json.loads(text))

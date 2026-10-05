@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -44,7 +43,7 @@ async def judge_response(
     )
     completion = await (call or provider.safe_complete)(request)
     if completion.error:
-        return heuristic_judge_scores(response_content, notes=completion.error)
+        return {"failed": True, "notes": f"Judge call failed: {completion.error}"}
     if completion.parsed_json:
         return _merge_judge_defaults(completion.parsed_json)
     return _parse_judge_scores(completion.text)
@@ -58,16 +57,14 @@ def _merge_judge_defaults(parsed: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_judge_scores(content: str) -> dict[str, Any]:
     """Parse judge JSON from response content."""
-    defaults = _default_judge_scores()
+    start, end = content.find("{"), content.rfind("}") + 1
     try:
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start >= 0 and end > start:
-            parsed = json.loads(content[start:end])
-            defaults.update(parsed)
+        parsed = json.loads(content[start:end]) if start >= 0 and end > start else None
     except (json.JSONDecodeError, ValueError):
-        defaults["notes"] = "Failed to parse judge JSON; using defaults"
-    return defaults
+        parsed = None
+    if not isinstance(parsed, dict):
+        return {"failed": True, "notes": "Failed to parse judge JSON"}
+    return {**_default_judge_scores(), **parsed}
 
 
 def _default_judge_scores() -> dict[str, Any]:
@@ -82,24 +79,4 @@ def _default_judge_scores() -> dict[str, Any]:
         "novelty": 0.5,
         "overall_score": 0.5,
         "notes": "",
-    }
-
-
-def heuristic_judge_scores(content: str, notes: str = "Heuristic scoring") -> dict[str, Any]:
-    """Fallback heuristic scoring when no LLM judge is available."""
-    length_score = min(1.0, len(content) / 500.0)
-    has_structure = 1.0 if "##" in content or "**" in content else 0.5
-    has_action = 1.0 if re.search(r"\d+\.", content) else 0.4
-    base = (length_score + has_structure + has_action) / 3.0
-    return {
-        "specificity": base,
-        "groundedness": base * 0.9,
-        "actionability": has_action,
-        "correctness_likelihood": base * 0.8,
-        "risk_awareness": 0.6 if "risk" in content.lower() else 0.4,
-        "unsupported_claims": 0.2,
-        "codebase_awareness": 0.5,
-        "novelty": 0.4,
-        "overall_score": base,
-        "notes": notes,
     }

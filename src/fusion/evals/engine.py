@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING, Any
 from fusion.evals.answer_eval import build_model_response_eval
 from fusion.evals.context_eval import evaluate_context
 from fusion.evals.deterministic import run_deterministic_checks
-from fusion.evals.disagreement_eval import compute_disagreement_score, identify_outliers
 from fusion.evals.final_eval import evaluate_final_answer
-from fusion.evals.llm_judge import heuristic_judge_scores, judge_response
+from fusion.evals.llm_judge import judge_response
 from fusion.evals.outcome_eval import evaluate_outcome
 from fusion.evals.schemas import (
     ContextEvalResult,
@@ -20,11 +19,13 @@ from fusion.evals.schemas import (
     ModelResponseEval,
     OutcomeEvalResult,
 )
+from fusion.evals.structural import structural_scores
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.classifier import TaskType, canonical_task_key
 from fusion.routing.model_registry import ModelRegistry
 
 if TYPE_CHECKING:
+    from fusion.orchestration.claims import AgreementReport, ClaimCluster, PanelAnswer
     from fusion.orchestration.ledger import CallGateway
 
 
@@ -71,6 +72,8 @@ class EvalEngine:
         is_coding_task: bool = False,
         gateway: CallGateway | None = None,
         use_llm: bool = True,
+        answer: PanelAnswer | None = None,
+        structured: bool = False,
     ) -> ModelResponseEval:
         """Score one answer. ``use_llm=False`` (a strategy with the judge off) skips the judge."""
         judge_scores: dict[str, float | str] | None = None
@@ -93,19 +96,14 @@ class EvalEngine:
                         else None
                     ),
                 )
-                notes = judge_scores.get("notes", "")
-                if isinstance(notes, str) and notes.startswith("Failed"):
-                    judge_failed = True
+                if judge_scores.get("failed"):
+                    judge_failed, judge_scores = True, None
             else:
                 judge_failed = True
         if judge_scores is None:
-            judge_scores = heuristic_judge_scores(
-                content,
-                notes=(
-                    "LLM judge unavailable; using heuristic scoring"
-                    if llm_judge
-                    else "LLM judge off; using heuristic scoring"
-                ),
+            why = "LLM judge unavailable" if llm_judge else "LLM judge off"
+            judge_scores = structural_scores(
+                answer, structured=structured, known_files=known_files, notes=f"{why};"
             )
 
         is_coding = is_coding_task or task_type in {
@@ -119,6 +117,8 @@ class EvalEngine:
             judge_scores=judge_scores,
             is_coding_task=is_coding,
             known_files=known_files,
+            answer=answer,
+            structured=structured,
         )
         if judge_failed:
             eval_result.judge_notes = f"{eval_result.judge_notes}; LLM judge fallback active".strip(
@@ -186,17 +186,17 @@ class EvalEngine:
         *,
         is_coding_task: bool = False,
         known_files: list[str] | None = None,
+        clusters: list[ClaimCluster] | None = None,
+        report: AgreementReport | None = None,
     ) -> FinalEvalResult:
+        """Safety checks on the final text, and quality measures derived from the claims."""
         return evaluate_final_answer(
             content,
             is_coding_task=is_coding_task,
             known_files=known_files,
+            clusters=clusters,
+            report=report,
         )
-
-    def evaluate_disagreement(
-        self, evaluations: list[ModelResponseEval]
-    ) -> tuple[float, list[str]]:
-        return compute_disagreement_score(evaluations), identify_outliers(evaluations)
 
     def evaluate_outcome(self, run_id: str) -> OutcomeEvalResult:
         return evaluate_outcome(run_id=run_id)
@@ -230,7 +230,12 @@ class EvalEngine:
         )
         context_score = context.score if context else 0.0
         final_score = final.overall_score if final else 0.0
-        consensus_strength = 1.0 - float(disagreement.get("disagreement_score", 0.0) or 0.0)
+        consensus_strength = float(
+            disagreement.get(
+                "agreement_score", 1.0 - float(disagreement.get("disagreement_score", 0.0) or 0.0)
+            )
+            or 0.0
+        )
         provider_failures = len(
             [w for w in warning_list if "Panel model" in w or "quorum" in w.lower()]
         )

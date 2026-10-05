@@ -53,7 +53,7 @@ class CodeReviewPipeline(BasePipeline):
                 {"model": p.model_name, "content": p.content, "eval": p.evaluation.model_dump()}
                 for p in result.panel_results
             ]
-        common = self._common_output_fields(result, "Fusion Review")
+        common = self._common_output_fields(result, "Fusion Review", input.detail)
         return CodeReviewOutput(
             summary=str(structured.get("summary", result.final_answer[:500])),
             critical_findings=list(structured.get("critical_findings", [])),
@@ -98,7 +98,7 @@ class FusionAskPipeline(BasePipeline):
                 {"model": p.model_name, "content": p.content, "eval": p.evaluation.model_dump()}
                 for p in result.panel_results
             ]
-        common = self._common_output_fields(result, "Fusion Answer")
+        common = self._common_output_fields(result, "Fusion Answer", input.detail)
         answer = str(s.get("answer") or result.final_answer)
         return FusionAskOutput(
             answer=answer,
@@ -143,7 +143,7 @@ class DebugPipeline(BasePipeline):
         )
         result = await self.run(ctx)
         s = result.structured_output
-        common = self._common_output_fields(result, "Fusion Debug")
+        common = self._common_output_fields(result, "Fusion Debug", input.detail)
         return DebugOutput(
             most_likely_causes=list(s.get("most_likely_causes", [])),
             ranked_hypotheses=list(s.get("ranked_hypotheses", [])),
@@ -180,7 +180,7 @@ class ArchitectureDecisionPipeline(BasePipeline):
         )
         result = await self.run(ctx)
         s = result.structured_output
-        common = self._common_output_fields(result, "Fusion Architecture Decision")
+        common = self._common_output_fields(result, "Fusion Architecture Decision", input.detail)
         return ArchitectureDecisionOutput(
             recommended_option=str(s.get("recommended_option", "")),
             tradeoffs=list(s.get("tradeoffs", [])),
@@ -219,7 +219,7 @@ class ImplementationPlanPipeline(BasePipeline):
         )
         result = await self.run(ctx)
         s = result.structured_output
-        common = self._common_output_fields(result, "Fusion Implementation Plan")
+        common = self._common_output_fields(result, "Fusion Implementation Plan", input.detail)
         return ImplementationPlanOutput(
             implementation_sequence=list(s.get("implementation_sequence", [])),
             affected_modules=list(s.get("affected_modules", [])),

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,13 @@ class ReviewDiffInput(BaseModel):
         description=(
             "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
             "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
+    detail: Literal["compact", "full"] = Field(
+        default="compact",
+        description=(
+            "compact: the answer, top claims, confidence and one cost line. "
+            "full: every claim, the cost breakdown and all warnings"
         ),
     )
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
@@ -51,6 +58,13 @@ class FusionAskInput(BaseModel):
         description=(
             "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
             "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
+    detail: Literal["compact", "full"] = Field(
+        default="compact",
+        description=(
+            "compact: the answer, top claims, confidence and one cost line. "
+            "full: every claim, the cost breakdown and all warnings"
         ),
     )
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
@@ -83,6 +97,13 @@ class DebugErrorInput(BaseModel):
             "overrides budget. Run `fusion strategies list` to see them"
         ),
     )
+    detail: Literal["compact", "full"] = Field(
+        default="compact",
+        description=(
+            "compact: the answer, top claims, confidence and one cost line. "
+            "full: every claim, the cost breakdown and all warnings"
+        ),
+    )
     shadow_baseline: bool | None = Field(
         default=None,
         description=(
@@ -108,6 +129,13 @@ class DecideArchitectureInput(BaseModel):
             "overrides budget. Run `fusion strategies list` to see them"
         ),
     )
+    detail: Literal["compact", "full"] = Field(
+        default="compact",
+        description=(
+            "compact: the answer, top claims, confidence and one cost line. "
+            "full: every claim, the cost breakdown and all warnings"
+        ),
+    )
     shadow_baseline: bool | None = Field(
         default=None,
         description=(
@@ -131,6 +159,13 @@ class PlanFeatureInput(BaseModel):
         description=(
             "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
             "overrides budget. Run `fusion strategies list` to see them"
+        ),
+    )
+    detail: Literal["compact", "full"] = Field(
+        default="compact",
+        description=(
+            "compact: the answer, top claims, confidence and one cost line. "
+            "full: every claim, the cost breakdown and all warnings"
         ),
     )
     shadow_baseline: bool | None = Field(

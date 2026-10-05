@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 
 
 def check_response_completeness(content: str, min_length: int = 50) -> tuple[bool, list[str]]:
@@ -81,34 +82,13 @@ def check_unsupported_file_references(
     return len(issues) == 0, issues
 
 
-def check_includes_test_plan(
-    content: str, *, is_coding_task: bool = False
+def check_claims_include_tests(
+    kinds: Iterable[str], *, is_coding_task: bool
 ) -> tuple[bool, list[str]]:
-    """Check coding outputs mention tests."""
-    if not is_coding_task:
+    """A coding answer should carry at least one claim of kind ``test``."""
+    if not is_coding_task or "test" in set(kinds):
         return True, []
-    if re.search(r"\btest", content, re.IGNORECASE):
-        return True, []
-    return False, ["Missing test plan or test mentions for coding output"]
-
-
-def check_includes_uncertainty(content: str) -> tuple[bool, list[str]]:
-    """Check output includes uncertainty or caveats."""
-    markers = [
-        "uncertain",
-        "assumption",
-        "caveat",
-        "may",
-        "might",
-        "risk",
-        "confidence",
-        "if ",
-        "depends",
-    ]
-    lower = content.lower()
-    if any(m in lower for m in markers):
-        return True, []
-    return False, ["Missing uncertainty markers or caveats"]
+    return False, ["No test claim in a coding answer"]
 
 
 def check_structured_sections(
@@ -153,14 +133,19 @@ def run_deterministic_checks(
     content: str,
     *,
     is_judge: bool = False,
-    is_coding_task: bool = False,
-    require_uncertainty: bool = False,
+    structured: bool = False,
     min_length: int = 50,
     max_length: int = 50_000,
     known_files: list[str] | None = None,
+    claim_files: list[str] | None = None,
     required_json_keys: list[str] | None = None,
 ) -> tuple[bool, list[str]]:
-    """Run all applicable deterministic checks."""
+    """Run all applicable safety and structure checks.
+
+    ``structured`` marks a claims-JSON answer, which has no Markdown layout to check; its cited
+    files come in as ``claim_files`` and are checked against ``known_files`` instead of scraping
+    paths out of the text.
+    """
     all_issues: list[str] = []
     passed = True
 
@@ -179,7 +164,8 @@ def run_deterministic_checks(
                 all_issues.extend(issues)
 
     if known_files:
-        ok, issues = check_unsupported_file_references(content, known_files)
+        cited = " ".join(claim_files or []) if structured else content
+        ok, issues = check_unsupported_file_references(cited, known_files)
         if not ok:
             passed = False
             all_issues.extend(issues)
@@ -202,20 +188,10 @@ def run_deterministic_checks(
                             all_issues.extend(issues)
             except json.JSONDecodeError:
                 pass
-    else:
+    elif not structured:
         ok, issues = check_structured_sections(content)
         if not ok:
             passed = False
             all_issues.extend(issues)
-        if is_coding_task:
-            ok, issues = check_includes_test_plan(content, is_coding_task=True)
-            if not ok:
-                passed = False
-                all_issues.extend(issues)
-        if require_uncertainty:
-            ok, issues = check_includes_uncertainty(content)
-            if not ok:
-                passed = False
-                all_issues.extend(issues)
 
     return passed, all_issues

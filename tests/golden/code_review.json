@@ -1,11 +1,261 @@
 {
-  "confidence": 0.72,
+  "agreement": {
+    "confidence": 0.3646,
+    "consensus": [
+      "C1"
+    ],
+    "contradicted": [],
+    "coverage": 1.0,
+    "evidence_rate": 0.444444,
+    "low_information": false,
+    "n_clusters": 8,
+    "n_models": 3,
+    "n_requested": 3,
+    "outliers": [
+      "mock-weak"
+    ],
+    "score": 0.0625,
+    "structured_share": 1.0,
+    "unique": [
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8"
+    ]
+  },
+  "claims": [
+    {
+      "file": "app/db.py",
+      "id": "C1",
+      "kind": "finding",
+      "line": 11,
+      "members": [
+        {
+          "claim": {
+            "evidence": "cursor.execute",
+            "file": "app/db.py",
+            "id": "c1",
+            "kind": "finding",
+            "line": 10,
+            "severity": "med",
+            "text": "Missing error handling around the database call"
+          },
+          "model": "mock-fast"
+        },
+        {
+          "claim": {
+            "evidence": "cursor.execute",
+            "file": "app/db.py",
+            "id": "c1",
+            "kind": "finding",
+            "line": 11,
+            "severity": "high",
+            "text": "Missing error handling around the database call"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-fast",
+        "mock-security"
+      ],
+      "severity": "high",
+      "status": "consensus",
+      "text": "Missing error handling around the database call"
+    },
+    {
+      "file": "app/db.py",
+      "id": "C2",
+      "kind": "finding",
+      "line": 30,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": "app/db.py",
+            "id": "c2",
+            "kind": "finding",
+            "line": 30,
+            "severity": "low",
+            "text": "The function lacks type hints on its return value"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": "low",
+      "status": "unique",
+      "text": "The function lacks type hints on its return value"
+    },
+    {
+      "file": null,
+      "id": "C3",
+      "kind": "recommendation",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "recommendation",
+            "line": null,
+            "severity": null,
+            "text": "Add a guard clause for empty input"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a guard clause for empty input"
+    },
+    {
+      "file": null,
+      "id": "C4",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Add a unit test for the empty input edge case"
+          },
+          "model": "mock-fast"
+        }
+      ],
+      "models": [
+        "mock-fast"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a unit test for the empty input edge case"
+    },
+    {
+      "file": "app/db.py",
+      "id": "C5",
+      "kind": "finding",
+      "line": 20,
+      "members": [
+        {
+          "claim": {
+            "evidence": "f-string",
+            "file": "app/db.py",
+            "id": "c2",
+            "kind": "finding",
+            "line": 20,
+            "severity": "critical",
+            "text": "SQL injection through a string-formatted query"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "critical",
+      "status": "unique",
+      "text": "SQL injection through a string-formatted query"
+    },
+    {
+      "file": null,
+      "id": "C6",
+      "kind": "risk",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c3",
+            "kind": "risk",
+            "line": null,
+            "severity": "med",
+            "text": "Secrets may be logged in debug output"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": "med",
+      "status": "unique",
+      "text": "Secrets may be logged in debug output"
+    },
+    {
+      "file": null,
+      "id": "C7",
+      "kind": "test",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c4",
+            "kind": "test",
+            "line": null,
+            "severity": null,
+            "text": "Add a regression test for the injection payload"
+          },
+          "model": "mock-security"
+        }
+      ],
+      "models": [
+        "mock-security"
+      ],
+      "severity": null,
+      "status": "unique",
+      "text": "Add a regression test for the injection payload"
+    },
+    {
+      "file": null,
+      "id": "C8",
+      "kind": "finding",
+      "line": null,
+      "members": [
+        {
+          "claim": {
+            "evidence": null,
+            "file": null,
+            "id": "c1",
+            "kind": "finding",
+            "line": null,
+            "severity": "low",
+            "text": "Looks fine to me"
+          },
+          "model": "mock-weak"
+        }
+      ],
+      "models": [
+        "mock-weak"
+      ],
+      "severity": "low",
+      "status": "unique",
+      "text": "Looks fine to me"
+    }
+  ],
+  "confidence": 0.3646,
   "consensus": [
     "Add error handling"
   ],
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.0072,
+    "baseline_estimated_cost_usd": 0.01106,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -16,7 +266,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.0072
+    "savings_usd": 0.01106
   },
   "cost_latency": {
     "steps": [
@@ -24,9 +274,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 144,
+        "input_tokens": 272,
         "model_name": "mock-fast",
-        "output_tokens": 52,
+        "output_tokens": 95,
         "provider": "mock",
         "step_name": "panel:mock-fast"
       },
@@ -34,9 +284,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 139,
+        "input_tokens": 267,
         "model_name": "mock-security",
-        "output_tokens": 42,
+        "output_tokens": 90,
         "provider": "mock",
         "step_name": "panel:mock-security"
       },
@@ -44,9 +294,9 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 144,
+        "input_tokens": 272,
         "model_name": "mock-weak",
-        "output_tokens": 5,
+        "output_tokens": 26,
         "provider": "mock",
         "step_name": "panel:mock-weak"
       },
@@ -54,7 +304,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 493,
+        "input_tokens": 514,
         "model_name": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
@@ -63,8 +313,8 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 920,
-    "total_output_tokens": 176,
+    "total_input_tokens": 1325,
+    "total_output_tokens": 288,
     "warnings": [
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
     ]
@@ -76,9 +326,9 @@
   "disagreements": [
     "Severity of null pointer risk"
   ],
-  "display_markdown": "## Fusion Review\n\n### Recommendation\n{\"summary\": \"Panel consensus on code quality (mock:<id>)\", \"critical_findings\": [\"Missing error handling around database call\", \"Potential null pointer on diff line\"], \"recommended_changes\": [\"Add guard clause for empty input\", \"Add type hints on return value\", \"Add unit test for edge case\"], \"false_positive_risks\": [\"Type hint suggestion may be stylistic only\"], \"test_plan\": [\"Unit test empty input path\", \"Integration test database error handling\"], \"consensus\": [\"Add error handling\"], \"disagreements\": [\"Severity of null pointer risk\"], \"unique_insights\": [\"Security reviewer flagged SQL injection pattern\"], \"confidence\": 0.72}\n\n### Confidence\n0.70\n\n### Cost & usage\n- Strategy: panel-cheap\n- Fusion cost: $0.0000 estimated\n- Opus 5.5 baseline estimate: $0.0072 estimated\n- Estimated savings: $0.0072 / 100.0%\n- Fusion wall time: <t>\n- Panel: 3 models, 3 succeeded, 0 failed\n- Note: Baseline cost is estimated using the same input/output token assumptions; baseline latency is unknown unless the baseline is actually called.",
+  "display_markdown": "## Fusion Review\n\n### Answer\nPanel consensus on code quality (mock:<id>)\n\n### Key claims\n- [critical] SQL injection through a string-formatted query (app/db.py:20), finding, mock-security (1/3, unique)\n- [high] Missing error handling around the database call (app/db.py:11), finding, mock-fast, mock-security (2/3, consensus)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- [low] The function lacks type hints on its return value (app/db.py:30), finding, mock-fast (1/3, unique)\n- [low] Looks fine to me, finding, mock-weak (1/3, unique)\n- 3 more (detail: full)\n\n### Confidence\n0.36 (agreement 0.06 across 3 of 3 models, evidence 44%)\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 0.0s \u00b7 panel-cheap, 4 calls",
   "evals": {
-    "aggregate_score": 0.67281,
+    "aggregate_score": 0.357292,
     "context": {
       "missing_items": [
         "No file snippets provided"
@@ -88,102 +338,119 @@
       "sufficient": true
     },
     "dimension_scores": {
-      "aggregate_answer_quality": 0.700667,
-      "aggregate_consensus_strength": 0.713218,
+      "aggregate_answer_quality": 0.305556,
+      "aggregate_consensus_strength": 0.0625,
       "aggregate_context_sufficiency": 0.7,
-      "aggregate_final_quality": 0.7,
-      "aggregate_high_risk_penalty": 0.03,
+      "aggregate_final_quality": 0.473614,
+      "aggregate_high_risk_penalty": 0.09,
       "aggregate_provider_success_rate": 1.0,
-      "aggregate_unsupported_claim_penalty": 0.03,
-      "confidence": 0.7,
+      "aggregate_unsupported_claim_penalty": 0.0,
+      "confidence": 0.3646,
       "context_sufficiency": 0.7,
-      "final_quality": 0.7,
-      "mock-fast_overall": 0.891333,
-      "mock-security_overall": 0.888667,
-      "mock-weak_overall": 0.322
+      "final_quality": 0.473614,
+      "mock-fast_overall": 0.5,
+      "mock-security_overall": 0.416667,
+      "mock-weak_overall": 0.0
     },
     "disagreement": {
-      "consensus": true,
-      "consensus_items": [],
+      "agreement_score": 0.0625,
+      "consensus": false,
+      "consensus_items": [
+        "Missing error handling around the database call"
+      ],
       "contradictions": [
-        "Score divergence between mock-weak and mock-fast, mock-security",
         "Outlier model: mock-weak"
       ],
-      "disagreement_score": 0.286782,
+      "disagreement_score": 0.9375,
       "grouped_findings": [
         {
           "models": [
-            "mock-fast"
+            "mock-fast",
+            "mock-security"
           ],
-          "representative": "consider adding error handling around the database call."
-        },
-        {
-          "models": [
-            "mock-fast"
-          ],
-          "representative": "the function lacks type hints on return value."
+          "representative": "Missing error handling around the database call",
+          "status": "consensus"
         },
         {
           "models": [
             "mock-fast"
           ],
-          "representative": "missing unit test for edge case when input is empty."
+          "representative": "The function lacks type hints on its return value",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "Add a guard clause for empty input",
+          "status": "unique"
+        },
+        {
+          "models": [
+            "mock-fast"
+          ],
+          "representative": "Add a unit test for the empty input edge case",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "potential sql injection via string concatenation."
+          "representative": "SQL injection through a string-formatted query",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "missing input validation on user-controlled path."
+          "representative": "Secrets may be logged in debug output",
+          "status": "unique"
         },
         {
           "models": [
             "mock-security"
           ],
-          "representative": "secrets may be logged in debug output."
+          "representative": "Add a regression test for the injection payload",
+          "status": "unique"
         },
         {
           "models": [
             "mock-weak"
           ],
-          "representative": "looks fine to me. (mock:<id>)"
+          "representative": "Looks fine to me",
+          "status": "unique"
         }
       ],
       "high_risk_recommendations": [
-        "mock-security: potential sql injection via string concatenation."
+        "mock-fast, mock-security: Missing error handling around the database call",
+        "mock-security: SQL injection through a string-formatted query"
       ],
+      "low_information": false,
       "outlier_models": [
         "mock-weak"
       ],
       "unique_insights": [
-        "consider adding error handling around the database call.",
-        "the function lacks type hints on return value.",
-        "missing unit test for edge case when input is empty.",
-        "potential sql injection via string concatenation.",
-        "missing input validation on user-controlled path.",
-        "secrets may be logged in debug output.",
-        "looks fine to me. (mock:<id>)"
+        "The function lacks type hints on its return value",
+        "Add a guard clause for empty input",
+        "Add a unit test for the empty input edge case",
+        "SQL injection through a string-formatted query",
+        "Secrets may be logged in debug output",
+        "Add a regression test for the injection payload",
+        "Looks fine to me"
       ],
       "unsupported_claims": []
     },
     "final": {
-      "claude_code_usefulness": 0.75,
-      "confidence": 0.7,
-      "deterministic_issues": [
-        "Missing expected structural markers in response"
-      ],
-      "deterministic_passed": false,
-      "final_answer_quality": 0.7,
-      "implementation_readiness": 0.65,
-      "notes": "Heuristic final evaluation",
-      "overall_score": 0.7,
-      "residual_risk": 0.3,
-      "test_plan_quality": 0.7
+      "claude_code_usefulness": 0.375,
+      "confidence": 0.3646,
+      "deterministic_issues": [],
+      "deterministic_passed": true,
+      "final_answer_quality": 0.253472,
+      "implementation_readiness": 0.375,
+      "notes": "Measured from 8 claim clusters across 3 model(s): agreement 0.06, evidence 0.44",
+      "overall_score": 0.473614,
+      "residual_risk": 0.9,
+      "test_plan_quality": 1.0
     },
     "judge_quality": null,
     "outcome": {
@@ -193,55 +460,51 @@
     },
     "per_answer": [
       {
-        "actionability": 1.0,
+        "actionability": 0.5,
         "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.713067,
+        "correctness_likelihood": 0.5,
         "deterministic_issues": [],
         "deterministic_passed": true,
-        "groundedness": 0.8022,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "groundedness": 0.5,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-fast",
-        "novelty": 0.4,
-        "overall_score": 0.891333,
-        "risk_awareness": 0.6,
-        "specificity": 0.891333,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.5,
+        "risk_awareness": 0.5,
+        "specificity": 0.5,
+        "unsupported_claims": 0.0
       },
       {
-        "actionability": 1.0,
+        "actionability": 0.25,
         "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.710933,
-        "deterministic_issues": [
-          "Missing test plan or test mentions for coding output"
-        ],
-        "deterministic_passed": false,
-        "groundedness": 0.7998,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "correctness_likelihood": 0.5,
+        "deterministic_issues": [],
+        "deterministic_passed": true,
+        "groundedness": 0.5,
+        "judge_notes": "LLM judge off; Structural scores from 4 claims",
         "model_name": "mock-security",
-        "novelty": 0.4,
-        "overall_score": 0.888667,
-        "risk_awareness": 0.6,
-        "specificity": 0.888667,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.416667,
+        "risk_awareness": 0.75,
+        "specificity": 0.5,
+        "unsupported_claims": 0.0
       },
       {
-        "actionability": 0.4,
-        "codebase_awareness": 0.5,
-        "correctness_likelihood": 0.2576,
+        "actionability": 0.0,
+        "codebase_awareness": 0.0,
+        "correctness_likelihood": 0.5,
         "deterministic_issues": [
-          "Output too short (33 chars, min 50)",
-          "Missing expected structural markers in response",
-          "Missing test plan or test mentions for coding output"
+          "No test claim in a coding answer"
         ],
         "deterministic_passed": false,
-        "groundedness": 0.2898,
-        "judge_notes": "LLM judge off; using heuristic scoring",
+        "groundedness": 0.0,
+        "judge_notes": "LLM judge off; Structural scores from 1 claims",
         "model_name": "mock-weak",
-        "novelty": 0.4,
-        "overall_score": 0.322,
-        "risk_awareness": 0.4,
-        "specificity": 0.322,
-        "unsupported_claims": 0.2
+        "novelty": 0.5,
+        "overall_score": 0.0,
+        "risk_awareness": 1.0,
+        "specificity": 0.0,
+        "unsupported_claims": 0.0
       }
     ],
     "warnings": []
@@ -256,7 +519,7 @@
     "Add unit test for edge case"
   ],
   "result": {
-    "confidence": 0.72,
+    "confidence": 0.3646,
     "consensus": [
       "Add error handling"
     ],
@@ -322,14 +585,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 144,
+        "input_tokens": 272,
         "model_alias": "mock-fast",
-        "output_tokens": 52,
+        "output_tokens": 95,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 196
+        "total_tokens": 367
       },
       {
         "actual_cost_usd": null,
@@ -340,14 +603,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 139,
+        "input_tokens": 267,
         "model_alias": "mock-security",
-        "output_tokens": 42,
+        "output_tokens": 90,
         "provider": "mock",
         "provider_model_id": "mock-security",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 181
+        "total_tokens": 357
       },
       {
         "actual_cost_usd": null,
@@ -358,14 +621,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 144,
+        "input_tokens": 272,
         "model_alias": "mock-weak",
-        "output_tokens": 5,
+        "output_tokens": 26,
         "provider": "mock",
         "provider_model_id": "mock-weak",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 149
+        "total_tokens": 298
       },
       {
         "actual_cost_usd": null,
@@ -376,20 +639,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 493,
+        "input_tokens": 514,
         "model_alias": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
         "provider_model_id": "mock-judge",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 570
+        "total_tokens": 591
       }
     ],
     "successful_model_calls": 4,
-    "total_input_tokens": 920,
-    "total_output_tokens": 176,
-    "total_tokens": 1096
+    "total_input_tokens": 1325,
+    "total_output_tokens": 288,
+    "total_tokens": 1613
   },
   "warnings": []
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fusion.config.loader import ModelEntry
+from fusion.orchestration.claims import AgreementReport, ClaimCluster, cluster_line, top_clusters
 from fusion.orchestration.ledger import CallGateway, standalone_gateway
 from fusion.orchestration.prompts import build_synthesis_prompt, get_role_prompt
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse, ProviderError
@@ -10,21 +11,33 @@ from fusion.routing.classifier import TaskType
 
 
 def build_digest(
-    panel_responses: list[tuple[str, str]], disagreement: dict[str, object]
+    panel_responses: list[tuple[str, str]],
+    clusters: list[ClaimCluster],
+    report: AgreementReport,
 ) -> ModelResponse:
-    """The panel's answers as one document, for Claude Code to aggregate (no model call)."""
+    """The panel's answers and claim clusters as one document, for Claude Code to aggregate."""
     lines = [
         f"## Panel digest: {len(panel_responses)} answers, no synthesis model was called",
         "",
         "Read the answers below, keep what several of them agree on, and check the points "
         "where they differ before relying on them.",
     ]
-    score = disagreement.get("disagreement_score")
-    if isinstance(score, int | float):
-        lines.append(f"\nDisagreement score: {score:.2f} (0 = identical, 1 = opposed).")
-    outliers = disagreement.get("outlier_models")
-    if isinstance(outliers, list) and outliers:
-        lines.append(f"Outlier answers: {', '.join(str(o) for o in outliers)}.")
+    if report.low_information:
+        lines.append("\nOnly one answer arrived, so there is no agreement to measure.")
+    else:
+        lines.append(f"\nAgreement {report.score:.2f} across {report.n_models} models.")
+    sections = (
+        ("Shared by most models", report.consensus),
+        ("Severity disputed", report.contradicted),
+        ("Raised by one model", report.unique),
+    )
+    by_id = {c.id: c for c in clusters}
+    for title, ids in sections:
+        if not ids:
+            continue
+        lines.extend(["", f"### {title}"])
+        for cluster in top_clusters((by_id[i] for i in ids), limit=1000):
+            lines.append(f"- {cluster_line(cluster)}")
     for model_name, content in panel_responses:
         lines.extend(["", f"### Answer from {model_name}", content.strip()])
     return ModelResponse(provider="fusion", model="digest", text="\n".join(lines))
@@ -40,6 +53,7 @@ async def synthesize_responses(
     disagreement_analysis: dict[str, object],
     original_task: str = "",
     gateway: CallGateway | None = None,
+    clusters: list[ClaimCluster] | None = None,
 ) -> ModelResponse:
     """Call synthesizer model to merge panel responses into structured JSON."""
     entry = registry_models[synthesizer_model]
@@ -50,6 +64,7 @@ async def synthesize_responses(
         panel_responses=panel_responses,
         disagreement_analysis=disagreement_analysis,
         original_task=original_task,
+        clusters=clusters,
     )
     request = ModelRequest(
         model_id=entry.model_id,

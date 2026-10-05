@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from fusion.routing.classifier import TaskType, canonical_task_key
+
+if TYPE_CHECKING:
+    from fusion.orchestration.claims import ClaimCluster
 
 _STRUCTURED_OUTPUT_RULES = """
 Rules for your response:
@@ -14,6 +18,22 @@ Rules for your response:
 - Identify uncertainty and caveats; do not overstate confidence.
 - For coding tasks, include a test strategy and risk notes.
 - Return valid JSON matching the requested schema exactly.
+"""
+
+_CLAIM_RULES = """
+## Output Format
+Answer with one JSON object: a short `summary` and a list of `claims`. A claim is ONE atomic
+statement; do not bundle several points into one claim.
+- `kind`: finding (something wrong or notable in the input), hypothesis (a possible cause),
+  recommendation (something to do), risk (something that could go wrong), test (something to
+  verify).
+- `severity`: low, med, high or critical for findings, hypotheses and risks; null otherwise.
+- `file` and `line`: where it applies, copied from the input; null when you do not know. Never
+  invent a path or line number.
+- `evidence`: a short quote or observation from the input that supports the claim; null if none.
+- `confidence`: how sure you are of the whole answer, 0 to 1.
+Include at least one `test` claim for coding tasks. Put every point in `claims`, not only in
+`summary`.
 """
 
 _ROLE_PROMPTS: dict[str, str] = {
@@ -152,8 +172,13 @@ def build_user_prompt(
     context: str = "",
     file_snippets: list[str] | None = None,
     changed_files: list[str] | None = None,
+    claims: bool = True,
 ) -> str:
-    """Build the user prompt from input components."""
+    """Build the user prompt from input components.
+
+    ``claims`` asks for the panel's claim format; the shadow baseline gets the task alone, in free
+    form, so its answer can be compared as plain text.
+    """
     parts = [f"## Task: {canonical_task_key(task_type)}\n", primary_content]
     if context:
         parts.append(f"\n## Additional Context\n{context}")
@@ -166,7 +191,9 @@ def build_user_prompt(
         for i, snippet in enumerate(snippets, 1):
             parts.append(f"\n### Snippet {i}\n{snippet}")
     parts.append(
-        "\n## Output Format\nRespond with structured analysis. "
+        _CLAIM_RULES
+        if claims
+        else "\n## Output Format\nRespond with structured analysis. "
         "Include test strategy and risk notes for coding tasks."
     )
     return "\n".join(parts)
@@ -178,22 +205,43 @@ def build_synthesis_prompt(
     panel_responses: list[tuple[str, str]],
     disagreement_analysis: dict[str, object],
     original_task: str = "",
+    clusters: list[ClaimCluster] | None = None,
 ) -> str:
-    """Build prompt for synthesizing panel responses into structured JSON."""
+    """Build prompt for synthesizing panel responses into structured JSON.
+
+    ``clusters`` (the panel's claims grouped across models) tell the synthesizer which points are
+    shared, which stand alone and which are disputed; the full answers follow for detail.
+    """
     key = canonical_task_key(task_type)
     schema = _SYNTHESIS_SCHEMAS.get(key, {"summary": "string", "confidence": "float 0-1"})
-    parts = [
-        f"Synthesize the following {key} panel responses into a single JSON object.\n",
-        f"Disagreement analysis: {json.dumps(disagreement_analysis, default=str)}\n",
-    ]
+    parts = [f"Synthesize the following {key} panel responses into a single JSON object.\n"]
+    if clusters:
+        parts.append(_render_clusters(clusters))
+    parts.append(f"Agreement summary: {json.dumps(disagreement_analysis, default=str)}\n")
     if original_task:
         parts.append(f"\n## Original Task\n{original_task}\n")
     for model_name, content in panel_responses:
         parts.append(f"\n## Response from {model_name}\n{content}")
     parts.append(f"\n## Required JSON Schema\n{json.dumps(schema, indent=2)}")
     parts.append(_STRUCTURED_OUTPUT_RULES)
-    parts.append("\nReturn ONLY valid JSON matching the schema above.")
+    parts.append(
+        "\nFavor claims several models share; keep a point only one model raised when it is "
+        "specific and supported, and say so; state disputed points as disputed. "
+        "Return ONLY valid JSON matching the schema above."
+    )
     return "\n".join(parts)
+
+
+def _render_clusters(clusters: list[ClaimCluster]) -> str:
+    lines = ["## Claim clusters (the same point, grouped across models)"]
+    for cluster in clusters:
+        where = f" {cluster.file}:{cluster.line}" if cluster.file and cluster.line else ""
+        severity = f" {cluster.severity}" if cluster.severity else ""
+        lines.append(
+            f"- [{cluster.id}] {cluster.status}, {cluster.support} model(s) "
+            f"({', '.join(cluster.models)}), {cluster.kind}{severity}{where}: {cluster.text}"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def build_refinement_prompt(
@@ -224,7 +272,8 @@ def build_refinement_prompt(
         "- Keep everything correct from your answer; integrate insights you missed.\n"
         "- Drop claims a peer convincingly contradicts unless you have strong evidence.\n"
         "- Do not mention the other responses or this refinement process.\n"
-        "- Return the complete improved answer in the same structured format as before."
+        "- Return the complete improved answer as the same JSON object as before "
+        "(summary and claims)."
     )
     parts.append(_STRUCTURED_OUTPUT_RULES)
     return "\n".join(parts)

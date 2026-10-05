@@ -16,12 +16,13 @@ import json
 import os
 import random
 import time
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import BaselineEntry, ModelEntry, load_baseline
-from fusion.providers.base import ModelProvider, ModelRequest
+from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.telemetry.cost import PricingRegistry
 
 if TYPE_CHECKING:
@@ -108,43 +109,35 @@ def _parse_judge_verdict(content: str) -> dict[str, Any] | None:
     return None
 
 
-async def run_shadow_comparison(
+@dataclass
+class BaselineCall:
+    """The shadow baseline's own answer, obtained before there is anything to compare it with."""
+
+    entry: BaselineEntry
+    response: ModelResponse | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
+async def call_shadow_baseline(
     *,
     task_prompt: str,
     system_prompt: str,
-    fusion_answer: str,
-    fusion_cost_usd: float | None,
-    fusion_latency_ms: float | None,
-    registry_models: dict[str, ModelEntry],
     providers: dict[str, ModelProvider],
-    judge_model_alias: str,
-    pricing: PricingRegistry | None = None,
     baseline: BaselineEntry | None = None,
     timeout_seconds: float = 90.0,
-    rng: random.Random | None = None,
     gateway: CallGateway | None = None,
-) -> ShadowComparison:
-    """Call the real baseline on the same task and judge both answers blind."""
-    baseline_entry = baseline or load_baseline().baseline
-    pricing_registry = pricing or PricingRegistry()
-    result = ShadowComparison(
-        baseline_model=baseline_entry.model_id or "",
-        baseline_name=baseline_entry.name,
-        judge_model=judge_model_alias,
-        fusion_cost_usd=fusion_cost_usd,
-        fusion_latency_ms=fusion_latency_ms,
-    )
-
-    provider = providers.get(baseline_entry.provider)
-    if provider is None or not baseline_entry.model_id:
-        result.warnings.append(
-            f"Shadow baseline skipped: provider '{baseline_entry.provider}' unavailable"
-        )
-        return result
-
-    baseline_start = time.perf_counter()
-    baseline_request = ModelRequest(
-        model_id=baseline_entry.model_id,
+) -> BaselineCall:
+    """Ask the real baseline the task. It needs only the prompt, so a pipeline can start it at
+    the same moment as the panel and collect it when Fusion's answer is ready."""
+    entry = baseline or load_baseline().baseline
+    call = BaselineCall(entry=entry)
+    provider = providers.get(entry.provider)
+    if provider is None or not entry.model_id:
+        call.warnings.append(f"Shadow baseline skipped: provider '{entry.provider}' unavailable")
+        return call
+    started = time.perf_counter()
+    request = ModelRequest(
+        model_id=entry.model_id,
         system_prompt=system_prompt,
         user_prompt=task_prompt,
         max_tokens=8192,
@@ -152,26 +145,56 @@ async def run_shadow_comparison(
         metadata={"role": "shadow_baseline"},
     )
     if gateway is not None:
-        baseline_response = await gateway.call(
+        response = await gateway.call(
             stage="shadow_baseline",
-            alias=baseline_entry.model or baseline_entry.model_id,
-            request=baseline_request,
-            provider_name=baseline_entry.provider,
+            alias=entry.model or entry.model_id,
+            request=request,
+            provider_name=entry.provider,
         )
     else:
-        baseline_response = await provider.safe_complete(baseline_request)
-    if baseline_response.latency_ms <= 0:
-        baseline_response.latency_ms = (time.perf_counter() - baseline_start) * 1000
-    if baseline_response.error or not baseline_response.content.strip():
-        result.warnings.append(
-            f"Shadow baseline call failed: {baseline_response.error or 'empty response'}"
-        )
+        response = await provider.safe_complete(request)
+    if response.latency_ms <= 0:
+        response.latency_ms = (time.perf_counter() - started) * 1000
+    if response.error or not response.content.strip():
+        call.warnings.append(f"Shadow baseline call failed: {response.error or 'empty response'}")
+        return call
+    call.response = response
+    return call
+
+
+async def finish_shadow_comparison(
+    *,
+    baseline_call: BaselineCall,
+    task_prompt: str,
+    fusion_answer: str,
+    fusion_cost_usd: float | None,
+    fusion_latency_ms: float | None,
+    registry_models: dict[str, ModelEntry],
+    providers: dict[str, ModelProvider],
+    judge_model_alias: str,
+    pricing: PricingRegistry | None = None,
+    timeout_seconds: float = 90.0,
+    rng: random.Random | None = None,
+    gateway: CallGateway | None = None,
+) -> ShadowComparison:
+    """Judge Fusion's answer against the baseline's, blind, and build the comparison."""
+    entry = baseline_call.entry
+    result = ShadowComparison(
+        baseline_model=entry.model_id or "",
+        baseline_name=entry.name,
+        judge_model=judge_model_alias,
+        fusion_cost_usd=fusion_cost_usd,
+        fusion_latency_ms=fusion_latency_ms,
+        warnings=list(baseline_call.warnings),
+    )
+    baseline_response = baseline_call.response
+    if baseline_response is None:
         return result
 
     result.ran = True
     result.baseline_answer = baseline_response.content
     result.baseline_latency_ms = baseline_response.latency_ms
-    baseline_cost = pricing_registry.estimate_response_cost(baseline_response)
+    baseline_cost = (pricing or PricingRegistry()).estimate_response_cost(baseline_response)
     result.baseline_cost_usd = baseline_cost.amount_usd
     result.baseline_cost_known = baseline_cost.known
 
@@ -234,3 +257,48 @@ async def run_shadow_comparison(
     result.baseline_score = score_2 if fusion_first else score_1
     result.judge_reason = str(verdict.get("reason", ""))
     return result
+
+
+async def run_shadow_comparison(
+    *,
+    task_prompt: str,
+    system_prompt: str,
+    fusion_answer: str,
+    fusion_cost_usd: float | None,
+    fusion_latency_ms: float | None,
+    registry_models: dict[str, ModelEntry],
+    providers: dict[str, ModelProvider],
+    judge_model_alias: str,
+    pricing: PricingRegistry | None = None,
+    baseline: BaselineEntry | None = None,
+    timeout_seconds: float = 90.0,
+    rng: random.Random | None = None,
+    gateway: CallGateway | None = None,
+) -> ShadowComparison:
+    """Call the real baseline on the same task and judge both answers blind (one after the other).
+
+    Pipelines use ``call_shadow_baseline`` and ``finish_shadow_comparison`` separately so the
+    baseline call overlaps the panel; this is the two steps in sequence.
+    """
+    baseline_call = await call_shadow_baseline(
+        task_prompt=task_prompt,
+        system_prompt=system_prompt,
+        providers=providers,
+        baseline=baseline,
+        timeout_seconds=timeout_seconds,
+        gateway=gateway,
+    )
+    return await finish_shadow_comparison(
+        baseline_call=baseline_call,
+        task_prompt=task_prompt,
+        fusion_answer=fusion_answer,
+        fusion_cost_usd=fusion_cost_usd,
+        fusion_latency_ms=fusion_latency_ms,
+        registry_models=registry_models,
+        providers=providers,
+        judge_model_alias=judge_model_alias,
+        pricing=pricing,
+        timeout_seconds=timeout_seconds,
+        rng=rng,
+        gateway=gateway,
+    )

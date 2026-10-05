@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from fusion.benchmark.shadow import ShadowComparison
+from fusion.benchmark.shadow import BaselineCall, ShadowComparison
 from fusion.config.loader import BaselineEntry
 from fusion.evals.engine import EvalEngine
 from fusion.evals.schemas import (
@@ -16,6 +17,7 @@ from fusion.evals.schemas import (
     HybridEvalResult,
     ModelResponseEval,
 )
+from fusion.orchestration.claims import AgreementReport, ClaimCluster, PanelAnswer
 from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import CallGateway, RunLedger
 from fusion.orchestration.refine import RefinementResult
@@ -106,6 +108,10 @@ class RunState:
     fanout: FanoutResult | None = None
     successful: list[tuple[str, ModelResponse]] = field(default_factory=list)
     refinement: RefinementResult | None = None
+    answers: dict[str, PanelAnswer] = field(default_factory=dict)
+    answer_structured: dict[str, bool] = field(default_factory=dict)
+    clusters: list[ClaimCluster] = field(default_factory=list)
+    agreement: AgreementReport | None = None
     evaluations: list[ModelResponseEval] = field(default_factory=list)
     judge_quality: HybridEvalResult | None = None
     panel_results: list[PanelResult] = field(default_factory=list)
@@ -117,6 +123,7 @@ class RunState:
     final_eval: FinalEvalResult | None = None
     evals: PipelineEvals | None = None
     shadow: ShadowComparison | None = None
+    shadow_task: asyncio.Task[BaselineCall] | None = None
 
     halt: Halt | None = None
     total_latency_ms: float = 0.0

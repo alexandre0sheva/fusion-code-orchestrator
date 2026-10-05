@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fusion.config.loader import BaselineEntry
@@ -9,7 +10,7 @@ from fusion.evals.engine import EvalEngine
 from fusion.orchestration.context import PipelineContext, PipelineDeps, RunState
 from fusion.orchestration.output import ResultPresenter
 from fusion.orchestration.result import PipelineResult
-from fusion.orchestration.schemas import CostLatencyInfo
+from fusion.orchestration.schemas import CostLatencyInfo, Detail
 from fusion.orchestration.stages import Stage, default_stages
 from fusion.orchestration.strategy import Mode
 from fusion.providers.base import ModelProvider
@@ -19,6 +20,14 @@ from fusion.routing.policy import RoutingPolicy
 from fusion.security.policy import SecurityPolicy
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.cost import PricingRegistry
+
+
+async def _stop_background(state: RunState) -> None:
+    """Cancel work a run started but did not collect (a halted or failed run's shadow call)."""
+    task = state.shadow_task
+    if task is not None and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 class BasePipeline:
@@ -71,17 +80,22 @@ class BasePipeline:
         serves Claude Code (real) or is measured in a study (benchmark).
         """
         state = RunState.start(ctx, self.deps, mode)
-        for stage in self._stages:
-            if state.halted and not stage.always_runs:
-                continue
-            state = await stage.run(state)
+        try:
+            for stage in self._stages:
+                if state.halted and not stage.always_runs:
+                    continue
+                state = await stage.run(state)
+        finally:
+            await _stop_background(state)
         assert state.result is not None, "the final stage must produce a result"
         return state.result
 
     # -- output helpers used by the task-specific subclasses ----------------------------------
 
-    def _common_output_fields(self, result: PipelineResult, title: str) -> dict[str, Any]:
-        return self.deps.presenter.common_output_fields(result, title)
+    def _common_output_fields(
+        self, result: PipelineResult, title: str, detail: Detail = "compact"
+    ) -> dict[str, Any]:
+        return self.deps.presenter.common_output_fields(result, title, detail)
 
     def _build_cost_latency(self, result: PipelineResult) -> CostLatencyInfo:
         return self.deps.presenter.cost_latency(result)

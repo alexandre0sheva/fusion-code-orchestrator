@@ -206,7 +206,7 @@ def test_unknown_pricing_stays_unknown() -> None:
 async def test_mcp_output_includes_markdown_usage_and_comparison(tmp_path) -> None:
     tools = FusionTools(db_path=str(tmp_path / "runs.db"), use_mock=True)
     output = await tools.fusion_review_diff(
-        ReviewDiffInput(diff="diff --git a/a.py b/a.py\n+print('x')")
+        ReviewDiffInput(diff="diff --git a/a.py b/a.py\n+print('x')", detail="full")
     )
     assert "display_markdown" in output
     assert "Cost & usage" in output["display_markdown"]

@@ -47,6 +47,15 @@ Do **not** call Fusion for:
 | `fusion_compare_claude_runs` | Comparing Claude Code + Opus vs Claude Code + Fusion outputs |
 | `fusion_stats` | Showing cumulative savings and shadow A/B win-rate vs the frontier baseline |
 
+## Reading the result
+
+- Every orchestration tool returns `claims` (the panel's points, grouped across models, with who
+  backs each and whether it is shared, single-model or disputed) and `agreement`. Trust shared
+  points most; treat single-model points as leads to check, and look at `contradicted` ones first.
+- `confidence` comes from agreement, evidence and coverage. Under 0.5 with `low_information` set
+  means only one model answered: there was nothing to cross-check.
+- `detail: "full"` adds every claim, the cost breakdown and all warnings; the default is compact.
+
 ## Strategies, Refinement, and Shadow A/B
 
 - `strategy` chooses which models run: `solo-cheap` (one cheap model), `panel-cheap` (the default

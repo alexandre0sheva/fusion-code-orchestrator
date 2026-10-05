@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,9 +12,12 @@ from fusion.evals.schemas import (
     ModelResponseEval,
     OutcomeEvalResult,
 )
+from fusion.orchestration.claims import AgreementReport, ClaimCluster
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.policy import RoutingDecision
 from fusion.telemetry.cost import CostComparison, UsageSummary
+
+Detail = Literal["compact", "full"]
 
 
 class StepUsage(BaseModel):
@@ -66,6 +69,7 @@ class CodeReviewInput(BaseModel):
     goals: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    detail: Detail = "compact"
     max_models: int | None = None
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
@@ -80,6 +84,7 @@ class FusionAskInput(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    detail: Detail = "compact"
     max_models: int | None = None
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
@@ -99,6 +104,8 @@ class FusionAskOutput(BaseModel):
     routing: RoutingDecision
     cost_latency: CostLatencyInfo
     display_markdown: str = ""
+    claims: list[ClaimCluster] = Field(default_factory=list)
+    agreement: AgreementReport | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
@@ -123,6 +130,8 @@ class CodeReviewOutput(BaseModel):
     routing: RoutingDecision
     cost_latency: CostLatencyInfo
     display_markdown: str = ""
+    claims: list[ClaimCluster] = Field(default_factory=list)
+    agreement: AgreementReport | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
@@ -141,6 +150,7 @@ class DebugInput(BaseModel):
     environment: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    detail: Detail = "compact"
     shadow_baseline: bool | None = None
 
 
@@ -156,6 +166,8 @@ class DebugOutput(BaseModel):
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
     display_markdown: str = ""
+    claims: list[ClaimCluster] = Field(default_factory=list)
+    agreement: AgreementReport | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
@@ -173,6 +185,7 @@ class ArchitectureDecisionInput(BaseModel):
     repo_context: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    detail: Detail = "compact"
     shadow_baseline: bool | None = None
 
 
@@ -190,6 +203,8 @@ class ArchitectureDecisionOutput(BaseModel):
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
     display_markdown: str = ""
+    claims: list[ClaimCluster] = Field(default_factory=list)
+    agreement: AgreementReport | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
@@ -207,6 +222,7 @@ class ImplementationPlanInput(BaseModel):
     existing_patterns: str = ""
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    detail: Detail = "compact"
     shadow_baseline: bool | None = None
 
 
@@ -225,6 +241,8 @@ class ImplementationPlanOutput(BaseModel):
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
     display_markdown: str = ""
+    claims: list[ClaimCluster] = Field(default_factory=list)
+    agreement: AgreementReport | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
@@ -255,6 +273,8 @@ class AnswerEvalOutput(BaseModel):
     evals: PipelineEvals
     cost_latency: CostLatencyInfo
     display_markdown: str = ""
+    claims: list[ClaimCluster] = Field(default_factory=list)
+    agreement: AgreementReport | None = None
     result: dict[str, Any] = Field(default_factory=dict)
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None

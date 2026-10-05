@@ -137,6 +137,7 @@ strategies:
     aggregator: llm              # llm | digest
     aggregator_model: claude-sonnet   # omit for the catalog's synthesizer role
     judge: off                   # off | light | full
+    judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
     max_cost_usd: 0.05           # optional; going over adds a warning
     max_latency_s: 60            # optional; going over adds a warning
 budget_strategies:
@@ -169,6 +170,10 @@ How the fields behave:
   run costs only its panel and aggregator). `light` has the judge model score each answer.
   `full` does the same and also records a check of the judge's own output under
   `evals.judge_quality`. Which model judges is the task's `judge_model` in `routing_policies.yaml`.
+- **`judge_feeds_synthesis`** (default `false`): by default the judge and synthesis run at the same
+  time, since the synthesizer does not read the judge's scores. Set it to `true` for the synthesizer
+  to receive them; synthesis then waits for the judge. It needs `judge: light` or `full` and an
+  `llm` aggregator.
 - A model may appear only once in a strategy. `kind: cascade` is reserved and rejected for now.
 - `max_cost_usd` and `max_latency_s` are checked after the run and add a warning; they do not stop
   a run.
@@ -212,7 +217,7 @@ mode is an argument of `Pipeline.run(ctx, mode=...)`, not a global.
 | Sampling | provider defaults | temperature `0` and seed `0` unless a member sets its own (seeds reach OpenAI, Google and Ollama; Anthropic has none) |
 | Prompts over a model's context window | trimmed, with a warning | sent as is |
 | Shadow A/B | per `FUSION_SHADOW_MODE` and `shadow_baseline` | never |
-| Lifetime-stats footer | appended | omitted |
+| Lifetime-stats footer | appended at `detail: full` | omitted |
 | Stored ledger | full | full |
 
 The benchmark runner that drives this mode and its provider-response cache arrive with the benchmark
@@ -231,11 +236,24 @@ fanout:
   min_successful_responses: 2
   cancel_on_global_timeout: true
   allow_partial_results: true
+  early_return: {quorum: 2, grace_ms: 1500}   # optional, off by default
+  hedge_after_ms: 8000                        # optional, off by default
 ```
+
+`max_concurrency` is per provider: one provider's calls queue behind each other, other providers'
+do not. Two optional settings trade a little quality or cost for latency:
+
+- `early_return`: once `quorum` members have answered (and at least `min_successful_responses`),
+  wait `grace_ms` more for the rest, then cancel them and carry on. The run warns which models were
+  dropped. A cancelled call may still be billed, so its cost is recorded as unknown.
+- `hedge_after_ms`: when a member has not answered after this long, ask the next enabled model with
+  the `panel` role that is not already in the panel. Whichever of the two answers first is used,
+  attributed to the model that actually answered, and the other is cancelled. With no spare model
+  the run says so and keeps waiting.
 
 Fusion preserves partial panel results. A failed or timed-out model produces a warning and a usage
 record, but the run continues when quorum is met. If quorum is not met, Fusion returns a structured
-diagnostic instead of pretending synthesis succeeded. Internals: [ARCHITECTURE.md](ARCHITECTURE.md#fanout).
+diagnostic instead of pretending synthesis succeeded. Internals: [ARCHITECTURE.md](ARCHITECTURE.md#concurrency-and-latency).
 
 ## Refinement (mixture-of-agents)
 
@@ -249,7 +267,11 @@ refinement:
   per_model_timeout_seconds: 45
   global_timeout_seconds: 60
   min_panel_size: 2          # fewer answers than this and refinement is skipped with a warning
+  skip_above_agreement: 0.8  # skip a round when the panel already agrees this much; null = always refine
 ```
+
+Every revision of a round starts together once all round-1 answers are in. The agreement is the
+score from [claim clustering](ARCHITECTURE.md#claims-and-agreement); a skipped round adds a warning.
 
 ## Pricing and baseline
 

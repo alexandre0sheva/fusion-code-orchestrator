@@ -21,6 +21,7 @@ __all__ = [
     "BaselineEntry",
     "BudgetConfig",
     "CostTier",
+    "EarlyReturn",
     "FanoutConfig",
     "ModelEntry",
     "ModelRegistryConfig",
@@ -85,15 +86,24 @@ class BudgetConfig(BaseModel):
     warn_cost_usd: float = 0.5
 
 
+class EarlyReturn(BaseModel):
+    """Stop waiting for stragglers once enough panelists have answered."""
+
+    quorum: int = Field(default=2, ge=1)  # answers needed (never below min_successful_responses)
+    grace_ms: float = Field(default=1500.0, ge=0)  # how long stragglers get after the quorum
+
+
 class FanoutConfig(BaseModel):
     """Async panel fan-out controls."""
 
-    max_concurrency: int = Field(default=6, ge=1)
+    max_concurrency: int = Field(default=6, ge=1)  # in-flight calls per provider
     per_model_timeout_seconds: float = Field(default=45.0, gt=0)
     global_timeout_seconds: float = Field(default=60.0, gt=0)
     min_successful_responses: int = Field(default=2, ge=1)
     cancel_on_global_timeout: bool = True
     allow_partial_results: bool = True
+    early_return: EarlyReturn | None = None  # off unless set
+    hedge_after_ms: float | None = Field(default=None, gt=0)  # off unless set
 
 
 class RefinementConfig(BaseModel):
@@ -102,6 +112,8 @@ class RefinementConfig(BaseModel):
     per_model_timeout_seconds: float = Field(default=45.0, gt=0)
     global_timeout_seconds: float = Field(default=60.0, gt=0)
     min_panel_size: int = Field(default=2, ge=1)
+    # Skip a round when the panel already agrees at least this much (None: always refine).
+    skip_above_agreement: float | None = Field(default=0.8, ge=0, le=1)
 
     @model_validator(mode="before")
     @classmethod

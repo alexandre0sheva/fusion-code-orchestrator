@@ -16,6 +16,7 @@ from fusion.config.catalog import load_catalog
 from fusion.config.layers import ConfigError
 from fusion.config.loader import load_routing_policies
 from fusion.mcp_server.server import create_mcp_server
+from fusion.orchestration.claims import parse_panel_answer, render_panel_answer
 from fusion.orchestration.context import PipelineContext, RunState
 from fusion.orchestration.factory import Settings, build_deps, build_pipeline
 from fusion.orchestration.ledger import CallGateway, RunLedger
@@ -263,9 +264,11 @@ async def test_solo_is_one_provider_call_and_one_ledger_record(tmp_path: Path) -
     assert _stages(result) == ["panel"]
     assert len(result.ledger.records) == 1
     assert result.routing.strategy == "solo-frontier"
-    assert result.final_answer == result.panel_results[0].content  # returned as is
+    answer, valid = parse_panel_answer(result.panel_results[0].content)
+    assert valid and result.final_answer == render_panel_answer(answer)  # the answer as is
     assert result.usage.successful_model_calls == 1
-    assert result.disagreement["consensus"] is True
+    assert result.disagreement["low_information"] is True  # one model has nobody to agree with
+    assert result.disagreement["consensus"] is False
 
 
 async def test_budget_levels_resolve_to_strategies_and_an_explicit_strategy_wins(
@@ -305,8 +308,10 @@ async def test_digest_makes_no_synthesis_call_and_returns_every_answer(tmp_path:
     assert "synthesis" not in _stages(result)
     assert result.routing.synthesizer_model == ""
     for panel in result.panel_results:
+        answer, _ = parse_panel_answer(panel.content)
         assert f"### Answer from {panel.model_name}" in result.final_answer
-        assert panel.content.strip() in result.final_answer
+        assert render_panel_answer(answer) in result.final_answer
+    assert "### Shared by most models" in result.final_answer
     assert result.final_answer.startswith("## Panel digest: 3 answers")
 
 
@@ -331,7 +336,7 @@ async def test_judge_level_controls_judge_calls(
     off = await _pipeline(tmp_path).run(_ctx())
     assert "judge" not in _stages(off)
     assert off.evals is not None and off.evals.judge_quality is None
-    assert all("heuristic" in p.evaluation.judge_notes for p in off.panel_results)
+    assert all("LLM judge off" in p.evaluation.judge_notes for p in off.panel_results)
 
     monkeypatch.setenv("FUSION__STRATEGIES__PANEL-CHEAP__JUDGE", "light")
     light = await _pipeline(tmp_path).run(_ctx())
@@ -449,6 +454,7 @@ def _display(pipe: Any, result: Any) -> str:
         result=result,
         usage=usage,
         cost_comparison=presenter.comparison_for(result, usage),
+        detail="full",
     )
 
 

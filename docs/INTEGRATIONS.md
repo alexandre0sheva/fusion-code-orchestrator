@@ -95,13 +95,17 @@ Orchestration tools accept an optional `strategy` (for example `solo-cheap`, `pa
 `panel-refine`, `panel-digest`), or the older `budget` (`low`, `medium`, `high`, `local_only`), which
 selects a strategy; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets). They also take
 `shadow_baseline: true|false` to force or suppress a shadow A/B run against the real baseline model
-for that call.
+for that call, and `detail`: `compact` (the default: the answer, the top five claims, confidence and
+one cost line) or `full` (every claim, the cost breakdown and all warnings). Neither is ever cut at
+a fixed length.
 
 Each tool returns top-level task-specific fields and a consistent envelope:
 
 | Field | Meaning |
 |-------|---------|
-| `display_markdown` | Compact Claude Code-facing summary: recommendation, confidence, cost, usage, caveats |
+| `display_markdown` | Claude Code-facing summary, sized by `detail` |
+| `claims` | The panel's claims grouped across models: text, kind, severity, location, which models back it and its status |
+| `agreement` | Agreement score, consensus / unique / contradicted cluster ids, evidence rate, coverage, `low_information` and the calibrated `confidence` |
 | `result` | Structured task-specific result object |
 | `evals` | Context, per-answer, disagreement, judge and final eval data |
 | `usage` | Per-model token, cost, latency and failure telemetry |
