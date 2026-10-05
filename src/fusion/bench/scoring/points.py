@@ -1,89 +1,16 @@
-"""Scoring interface for studies, and the one built-in scorer.
+"""``PointsScorer``: the deterministic baseline, and what the other scorers fall back to.
 
-A scorer turns an arm's answer to a task into a quality in [0, 1] using the task's ground truth.
-``PointsScorer`` is the deterministic baseline: it checks which of the truth's key points an
-answer says and which known-wrong ones it asserts. Other scorers (hidden tests, performance
-measurements, LLM judges) implement the same ``Scorer`` protocol and are registered per category
-in ``SCORERS``; whatever they spend on judge calls is reported as ``eval_cost_usd``, separately
-from what the arm cost.
+The truth lists ``points`` an answer should say and ``decoys`` it should not; quality is the
+weighted share of points found, less a penalty for each decoy asserted.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from fusion.bench.scoring.base import AnswerView, Evidence, ScoreEnv, ScoreResult, ScoringError
+from fusion.bench.spec import BenchTask
+from fusion.routing.budget import PlannedCall
 
-from pydantic import BaseModel, Field
-
-from fusion.bench.spec import BenchTask, Category
-from fusion.orchestration.ledger import CallGateway
-
-__all__ = [
-    "PASS_THRESHOLDS",
-    "SCORERS",
-    "AnswerView",
-    "PointsScorer",
-    "ScoreEnv",
-    "ScoreResult",
-    "Scorer",
-    "get_scorer",
-    "is_solved",
-]
-
-# Quality an answer needs to count as solved, per category.
-PASS_THRESHOLDS: dict[Category, float] = {
-    "code_review": 0.6,
-    "debugging": 0.6,
-    "architecture": 0.6,
-    "planning": 0.6,
-    "coding": 0.6,
-    "frontend": 0.6,
-    "performance": 0.6,
-}
-
-
-def is_solved(category: Category, quality: float | None) -> bool:
-    return quality is not None and quality >= PASS_THRESHOLDS[category]
-
-
-@dataclass
-class AnswerView:
-    """What a scorer may look at: the arm's final answer and the claims behind it."""
-
-    final_answer: str
-    claims: list[dict[str, Any]] = field(default_factory=list)  # ClaimCluster dumps
-    structured: dict[str, Any] = field(default_factory=dict)
-    halted: bool = False  # the run stopped early; the answer is a diagnostic, not an attempt
-
-    def text(self) -> str:
-        """What the arm answered, for keyword matching. The claims behind it are not added: an
-        aggregator that dropped a point must not get credit for a model having raised it."""
-        return self.final_answer
-
-
-@dataclass
-class ScoreEnv:
-    """Resources a scorer may use. ``gateway`` records its calls in a ledger of its own, so the
-    money a scorer spends is kept apart from the arm's."""
-
-    gateway: CallGateway
-    judge_models: list[str] = field(default_factory=list)
-
-
-class ScoreResult(BaseModel):
-    quality: float = Field(ge=0.0, le=1.0)
-    scorer: str
-    details: dict[str, Any] = Field(default_factory=dict)
-
-
-class Scorer(Protocol):
-    name: str
-
-    def estimate_usd(self, task: BenchTask) -> float:
-        """What scoring one answer to ``task`` is expected to cost (0 for deterministic scorers)."""
-        ...
-
-    async def score(self, task: BenchTask, answer: AnswerView, env: ScoreEnv) -> ScoreResult: ...
+__all__ = ["PointsScorer", "points_fallback"]
 
 
 class PointsScorer:
@@ -96,10 +23,16 @@ class PointsScorer:
     name = "points"
     decoy_penalty = 0.5
 
-    def estimate_usd(self, task: BenchTask) -> float:
-        return 0.0
+    def estimate_calls(self, task: BenchTask, judges: list[str]) -> list[PlannedCall]:
+        return []
 
-    async def score(self, task: BenchTask, answer: AnswerView, env: ScoreEnv) -> ScoreResult:
+    async def score(
+        self,
+        task: BenchTask,
+        answer: AnswerView,
+        env: ScoreEnv,
+        evidence: Evidence | None = None,
+    ) -> ScoreResult:
         truth = task.parsed_truth()
         if not truth.points:
             return ScoreResult(
@@ -127,17 +60,13 @@ class PointsScorer:
         )
 
 
-_POINTS = PointsScorer()
-SCORERS: dict[Category, Scorer] = {
-    "code_review": _POINTS,
-    "debugging": _POINTS,
-    "architecture": _POINTS,
-    "planning": _POINTS,
-    "coding": _POINTS,
-    "frontend": _POINTS,
-    "performance": _POINTS,
-}
-
-
-def get_scorer(category: Category) -> Scorer:
-    return SCORERS[category]
+def points_fallback(task: BenchTask, scorer: str) -> PointsScorer:
+    """The scorer for a task whose truth is in ``points`` format, where ``scorer`` (the one the
+    category names) wants another format. Without points the task cannot be scored at all."""
+    if task.truth.get("points"):
+        return PointsScorer()
+    msg = (
+        f"{scorer} cannot score task '{task.id}': its truth has none of the keys it reads "
+        f"(it has {', '.join(sorted(task.truth)) or 'none'})"
+    )
+    raise ScoringError(msg)

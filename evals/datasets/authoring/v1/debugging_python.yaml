@@ -1,0 +1,540 @@
+# Debugging tasks, Python. Format: see src/fusion/bench/datasets/build.py and evals/datasets/README.md.
+
+- id: dbg-py-01
+  category: debugging
+  language: python
+  difficulty: easy
+  split: dev
+  symptom: |
+    The plugin registry prints the same greeting for every plugin. Each plugin should say hello
+    with its own name, but `beta` and `alpha` both say they are `gamma`.
+  files:
+    - path: plugins/registry.py
+      content: |
+        from typing import Callable
+
+
+        class Registry:
+            def __init__(self) -> None:
+                self.handlers: dict[str, Callable[[], str]] = {}
+
+            def register(self, name: str, handler: Callable[[], str]) -> None:
+                if name in self.handlers:
+                    raise ValueError(f"plugin {name!r} is already registered")
+                self.handlers[name] = handler
+
+            def unregister(self, name: str) -> None:
+                self.handlers.pop(name, None)
+
+            def names(self) -> list[str]:
+                return sorted(self.handlers)
+
+            def run(self, name: str) -> str:
+                return self.handlers[name]()
+
+
+        def build_registry(names: list[str]) -> Registry:
+            registry = Registry()
+            for name in names:
+                registry.register(name, lambda: f"hello from {name}")
+            return registry
+    - path: main.py
+      content: |
+        from plugins.registry import build_registry
+
+        registry = build_registry(["alpha", "beta", "gamma"])
+        for name in registry.names():
+            print(f"{name}: {registry.run(name)}")
+  trace: |
+    $ python main.py
+    alpha: hello from gamma
+    beta: hello from gamma
+    gamma: hello from gamma
+    # expected: "alpha: hello from alpha", "beta: hello from beta", "gamma: hello from gamma"
+  logs: |
+    2026-03-02 09:00:01 INFO plugins: loading 3 plugins from config/plugins.toml
+    2026-03-02 09:00:01 INFO plugins: registered alpha
+    2026-03-02 09:00:01 INFO plugins: registered beta
+    2026-03-02 09:00:01 INFO plugins: registered gamma
+    2026-03-02 09:00:01 WARN plugins: handlers alpha, beta, gamma returned identical output
+    2026-03-02 09:00:01 INFO plugins: self-check failed (3 distinct outputs expected, 1 found)
+  root_cause_tags: [late-binding-closure, closure-captures-loop-variable]
+  root_cause_aliases:
+    late-binding-closure: [late binding, lambda captures, closure over the loop variable, captured by reference, cell variable]
+    closure-captures-loop-variable: [loop variable captured, same variable, name is looked up when the lambda runs]
+  root_cause: The lambda looks up `name` when it is called, after the loop has finished, so every handler sees the last value of the loop variable.
+  fix_keywords: ["default argument|name=name|functools.partial|factory function", "bind|capture|early binding"]
+
+- id: dbg-py-02
+  category: debugging
+  language: python
+  difficulty: easy
+  split: dev
+  symptom: |
+    The nightly cleanup job crashes part-way through with a RuntimeError about the dictionary,
+    but only when some sessions are expired. When nothing has expired it succeeds.
+  files:
+    - path: sessions/store.py
+      content: |
+        import time
+        from dataclasses import dataclass
+
+
+        @dataclass
+        class Session:
+            user_id: int
+            expires_at: float
+
+
+        class SessionStore:
+            def __init__(self) -> None:
+                self._sessions: dict[str, Session] = {}
+
+            def add(self, token: str, user_id: int, ttl: float) -> None:
+                self._sessions[token] = Session(user_id, time.time() + ttl)
+
+            def get(self, token: str) -> Session | None:
+                session = self._sessions.get(token)
+                if session is None or session.expires_at < time.time():
+                    return None
+                return session
+
+            def purge_expired(self) -> int:
+                removed = 0
+                now = time.time()
+                for token, session in self._sessions.items():
+                    if session.expires_at < now:
+                        del self._sessions[token]
+                        removed += 1
+                return removed
+
+            def __len__(self) -> int:
+                return len(self._sessions)
+  trace: |
+    Traceback (most recent call last):
+      File "jobs/cleanup.py", line 14, in run
+        removed = store.purge_expired()
+      File "sessions/store.py", line 29, in purge_expired
+        for token, session in self._sessions.items():
+    RuntimeError: dictionary changed size during iteration
+  logs: |
+    2026-03-02 02:00:00,114 INFO cleanup: starting, 18432 sessions in store
+    2026-03-02 02:00:00,131 ERROR cleanup: failed: dictionary changed size during iteration
+  root_cause_tags: [mutating-dict-during-iteration, dictionary-changed-size]
+  root_cause_aliases:
+    mutating-dict-during-iteration: [modifies the dictionary while iterating, deleting while iterating, delete inside the loop, changing the dict during the loop]
+    dictionary-changed-size: [changed size during iteration, del self._sessions]
+  root_cause: "`purge_expired` deletes entries from the dict it is iterating over; Python raises as soon as the first expired session is deleted."
+  fix_keywords: ["list(|copy|snapshot|comprehension|collect the expired tokens first", "pop|del"]
+
+- id: dbg-py-03
+  category: debugging
+  language: python
+  difficulty: easy
+  split: test
+  symptom: |
+    The service crashes on startup in the staging environment with a TypeError, although it
+    works on developers' laptops where `PORT` is not set.
+  files:
+    - path: app/settings.py
+      content: |
+        import os
+
+        DEBUG = os.environ.get("DEBUG", "0") == "1"
+        HOST = os.environ.get("HOST", "0.0.0.0")
+        PORT = os.environ.get("PORT", 8000)
+        METRICS_OFFSET = 1000
+
+
+        def metrics_port() -> int:
+            """The port the Prometheus endpoint listens on."""
+            return PORT + METRICS_OFFSET
+    - path: app/main.py
+      content: |
+        from app import settings
+        from app.server import serve, serve_metrics
+
+
+        def main() -> None:
+            serve(settings.HOST, settings.PORT)
+            serve_metrics(settings.HOST, settings.metrics_port())
+
+
+        if __name__ == "__main__":
+            main()
+  trace: |
+    Traceback (most recent call last):
+      File "app/main.py", line 10, in <module>
+        main()
+      File "app/main.py", line 7, in main
+        serve_metrics(settings.HOST, settings.metrics_port())
+      File "app/settings.py", line 10, in metrics_port
+        return PORT + METRICS_OFFSET
+    TypeError: can only concatenate str (not "int") to str
+  logs: |
+    staging-web-2 | 2026-03-03T08:15:00Z deploy: image=svc:3.9.1 env=staging
+    staging-web-2 | PORT=8080 HOST=0.0.0.0 DEBUG=0
+    staging-web-2 | Listening on 0.0.0.0:8080
+    staging-web-2 | Traceback (most recent call last): ... TypeError (see above)
+    staging-web-2 | exited with code 1, restarting in 5s (restart 4 of 10)
+    staging-web-2 | 2026-03-03T08:15:12Z deploy: health check failed, rolling back
+    dev-laptop    | PORT is not set, using default 8000 -> metrics on 9000
+  root_cause_tags: [env-var-is-a-string, missing-int-conversion]
+  root_cause_aliases:
+    env-var-is-a-string: [environment variables are strings, os.environ returns str, PORT is a string, str not int]
+    missing-int-conversion: [no int() conversion, not converted to int, int(os.environ, cast to int]
+  root_cause: "`os.environ.get` returns a string when `PORT` is set (the default 8000 is an int), so `PORT + 1000` adds a string and an int in staging."
+  fix_keywords: ["int(", "convert|cast|parse"]
+
+- id: dbg-py-04
+  category: debugging
+  language: python
+  difficulty: medium
+  split: dev
+  symptom: |
+    Users are reporting that new accounts start with another user's interests already selected.
+    It looks random: the interests that show up belong to whoever signed up before them.
+  files:
+    - path: profiles/models.py
+      content: |
+        from dataclasses import dataclass
+
+
+        class Profile:
+            def __init__(self, user_id: int, name: str, interests=[]):
+                self.user_id = user_id
+                self.name = name
+                self.interests = interests
+
+            def add_interest(self, interest: str) -> None:
+                if interest not in self.interests:
+                    self.interests.append(interest)
+
+            def to_dict(self) -> dict:
+                return {"user_id": self.user_id, "name": self.name, "interests": self.interests}
+    - path: profiles/signup.py
+      content: |
+        from profiles.models import Profile
+
+        PROFILES: dict[int, Profile] = {}
+
+
+        def sign_up(user_id: int, name: str, picks: list[str] | None = None) -> Profile:
+            profile = Profile(user_id, name)
+            for pick in picks or []:
+                profile.add_interest(pick)
+            PROFILES[user_id] = profile
+            return profile
+  trace: |
+    >>> a = sign_up(1, "Ada", ["chess", "rowing"])
+    >>> b = sign_up(2, "Bo")
+    >>> b.to_dict()
+    {'user_id': 2, 'name': 'Bo', 'interests': ['chess', 'rowing']}
+    >>> a.interests is b.interests
+    True
+  logs: |
+    2026-03-04 11:02:19 INFO signup user=1 picks=2
+    2026-03-04 11:02:41 INFO signup user=2 picks=0
+    2026-03-04 11:02:41 WARN profile user=2 starts with 2 interests (expected 0)
+  root_cause_tags: [mutable-default-argument, shared-default-list]
+  root_cause_aliases:
+    mutable-default-argument: ["mutable default", "default argument", "interests=[]"]
+    shared-default-list: [the same list is shared, default list is created once, evaluated once at definition time]
+  root_cause: "`interests=[]` is evaluated once when the function is defined, so every `Profile` created without interests shares one list object."
+  fix_keywords: ["None", "copy|list(|new list|default_factory"]
+
+- id: dbg-py-05
+  category: debugging
+  language: python
+  difficulty: medium
+  split: dev
+  symptom: |
+    The monthly report shows a correct row count but every total is 0.00. The numbers are fine
+    if I run the same query in the database console.
+  files:
+    - path: reports/monthly.py
+      content: |
+        from collections.abc import Iterable, Iterator
+        from decimal import Decimal
+
+
+        def read_invoices(rows: Iterable[dict]) -> Iterator[dict]:
+            for row in rows:
+                if row["status"] != "void":
+                    yield {"customer": row["customer"], "amount": Decimal(row["amount"])}
+
+
+        def build_report(rows: Iterable[dict]) -> dict:
+            invoices = read_invoices(rows)
+            count = sum(1 for _ in invoices)
+            total = sum((inv["amount"] for inv in invoices), Decimal("0"))
+            by_customer: dict[str, Decimal] = {}
+            for inv in invoices:
+                by_customer[inv["customer"]] = by_customer.get(inv["customer"], Decimal("0")) + inv["amount"]
+            return {"count": count, "total": total, "by_customer": by_customer}
+  trace: |
+    >>> report = build_report(fetch_rows("2026-02"))
+    >>> report["count"]
+    1284
+    >>> report["total"]
+    Decimal('0')
+    >>> report["by_customer"]
+    {}
+  logs: |
+    2026-03-01 06:00:00 INFO report month=2026-02 started
+    2026-03-01 06:00:01 INFO report fetched rows=1311 (27 void)
+    2026-03-01 06:00:02 INFO report count=1284 total=0 customers=0
+    2026-03-01 06:00:02 WARN report total is zero with 1284 invoices; check inputs
+    2026-03-01 06:00:02 INFO report sanity: SELECT sum(amount) FROM invoices WHERE month='2026-02' = 481920.55
+    2026-03-01 06:00:03 ERROR report sanity check failed: report total 0 != database total 481920.55
+    2026-03-01 06:00:03 INFO report emailed to finance@example.com (flagged as suspect)
+  root_cause_tags: [generator-exhausted, iterator-consumed-once]
+  root_cause_aliases:
+    generator-exhausted: [generator is exhausted, generator can only be iterated once, used up, consumed by the first loop]
+    iterator-consumed-once: [iterating twice, second iteration is empty, single-use iterator]
+  root_cause: "`read_invoices` returns a generator, which the `count` expression consumes completely; the later `total` and per-customer loops see an empty iterator."
+  fix_keywords: ["list(|materialize|materialise|store in a list|itertools.tee", "single pass|one pass|once"]
+
+- id: dbg-py-06
+  category: debugging
+  language: python
+  difficulty: medium
+  split: test
+  symptom: |
+    The async API is fast with one user but its latency explodes under load: with 20 concurrent
+    requests the p95 goes from 80 ms to 9 seconds, even though CPU stays low and the upstream
+    service answers in 50 ms.
+  files:
+    - path: api/handlers.py
+      content: |
+        import asyncio
+
+        import requests
+        from aiohttp import web
+
+        UPSTREAM = "https://pricing.internal/api/v2/quote"
+
+
+        async def fetch_quote(sku: str) -> dict:
+            response = requests.get(UPSTREAM, params={"sku": sku}, timeout=5)
+            response.raise_for_status()
+            return response.json()
+
+
+        async def quote(request: web.Request) -> web.Response:
+            sku = request.match_info["sku"]
+            data = await fetch_quote(sku)
+            return web.json_response({"sku": sku, "price": data["price"]})
+
+
+        async def health(request: web.Request) -> web.Response:
+            await asyncio.sleep(0)
+            return web.json_response({"ok": True})
+
+
+        app = web.Application()
+        app.add_routes([web.get("/quote/{sku}", quote), web.get("/health", health)])
+  trace: |
+    # load test: 20 concurrent clients, GET /quote/ABC-123, 60s
+    requests: 1184   p50: 4.1s   p95: 9.2s   errors: 0
+    # single client for comparison
+    requests: 1210   p50: 0.07s  p95: 0.08s  errors: 0
+  logs: |
+    2026-03-05 14:20:10 INFO load-test started: 20 clients
+    2026-03-05 14:20:11 WARNING asyncio Executing <Task pending name='Task-188' coro=<quote()>> took 0.052 seconds
+    2026-03-05 14:20:11 WARNING asyncio Executing <Task pending name='Task-190' coro=<quote()>> took 0.049 seconds
+    2026-03-05 14:20:11 WARNING asyncio Executing <Task pending name='Task-191' coro=<quote()>> took 0.051 seconds
+    2026-03-05 14:20:12 INFO access GET /health 200 3.912s
+    2026-03-05 14:20:12 INFO access GET /health 200 4.105s
+    2026-03-05 14:20:13 INFO upstream pricing.internal p95=61ms (healthy)
+    2026-03-05 14:20:13 INFO host cpu=11% loadavg=0.4
+  root_cause_tags: [blocking-call-in-event-loop, synchronous-http-in-async-handler]
+  root_cause_aliases:
+    blocking-call-in-event-loop: [blocks the event loop, blocking call, synchronous call inside async, requests.get blocks]
+    synchronous-http-in-async-handler: [requests is synchronous, sync http client in coroutine, not awaitable]
+  root_cause: "`fetch_quote` is declared async but calls the synchronous `requests.get`, which blocks the single event-loop thread, so all requests (even /health) queue behind each upstream call."
+  fix_keywords: ["aiohttp|httpx|ClientSession|AsyncClient", "run_in_executor|to_thread|executor"]
+
+- id: dbg-py-07
+  category: debugging
+  language: python
+  difficulty: medium
+  split: dev
+  symptom: |
+    The orders list page times out for large customers. It is instant for a customer with 10
+    orders and takes 40 seconds for one with 4,000. Database CPU is high during the request.
+  files:
+    - path: shop/views.py
+      content: |
+        from django.http import JsonResponse
+
+        from shop.models import Order
+
+
+        def order_list(request, customer_id: int):
+            orders = Order.objects.filter(customer_id=customer_id).order_by("-created_at")[:5000]
+            payload = []
+            for order in orders:
+                payload.append(
+                    {
+                        "id": order.id,
+                        "placed": order.created_at.isoformat(),
+                        "customer": order.customer.name,
+                        "lines": [
+                            {"sku": line.sku, "qty": line.qty} for line in order.lines.all()
+                        ],
+                        "total": str(sum(line.qty * line.unit_price for line in order.lines.all())),
+                    }
+                )
+            return JsonResponse({"orders": payload})
+  trace: |
+    # django-debug-toolbar SQL panel for GET /customers/812/orders (4,000 orders)
+    SQL queries: 12,001 in 38,211 ms
+      1x  SELECT ... FROM shop_order WHERE customer_id = 812 ORDER BY created_at DESC LIMIT 5000
+      4000x SELECT ... FROM shop_customer WHERE id = 812
+      4000x SELECT ... FROM shop_orderline WHERE order_id = %s
+      4000x SELECT ... FROM shop_orderline WHERE order_id = %s   (similar to the previous)
+  logs: |
+    2026-03-06 09:40:29 INFO django.request GET /customers/812/orders started
+    2026-03-06 09:40:29 DEBUG django.db 12 queries so far in 0.4s
+    2026-03-06 09:40:49 DEBUG django.db 6,402 queries so far in 20.1s
+    2026-03-06 09:41:07 WARNING django.request slow request: GET /customers/812/orders took 38.4s
+    2026-03-06 09:41:07 ERROR gunicorn worker timeout (pid 2291), killing
+    2026-03-06 09:41:08 INFO postgres cpu=92% active_connections=41
+  root_cause_tags: [n-plus-one-queries, lazy-loaded-relations-in-loop]
+  root_cause_aliases:
+    n-plus-one-queries: [n+1, one query per order, query per row, queries in a loop]
+    lazy-loaded-relations-in-loop: [lazy loading, related objects fetched per row, order.customer, order.lines.all]
+  root_cause: "The view touches `order.customer` and `order.lines` inside the loop without prefetching, so each order triggers extra queries (about 3 per order)."
+  fix_keywords: ["select_related", "prefetch_related", "aggregate|annotate|compute the total once"]
+
+- id: dbg-py-08
+  category: debugging
+  language: python
+  difficulty: hard
+  split: dev
+  symptom: |
+    The long-running worker's memory grows by about 40 MB per hour until the container is
+    OOM-killed, even though it processes jobs one at a time and keeps no list of past jobs.
+    A heap snapshot shows thousands of `Thumbnailer` objects still alive.
+  files:
+    - path: worker/thumbnails.py
+      content: |
+        import functools
+        from pathlib import Path
+
+        from PIL import Image
+
+
+        class Thumbnailer:
+            def __init__(self, size: tuple[int, int], cache_dir: Path) -> None:
+                self.size = size
+                self.cache_dir = cache_dir
+                self._font = None
+
+            @functools.lru_cache(maxsize=None)
+            def target_path(self, source: str) -> Path:
+                name = Path(source).stem
+                return self.cache_dir / f"{name}_{self.size[0]}x{self.size[1]}.jpg"
+
+            def render(self, source: str) -> Path:
+                target = self.target_path(source)
+                if not target.exists():
+                    with Image.open(source) as img:
+                        img.thumbnail(self.size)
+                        img.convert("RGB").save(target, "JPEG", quality=85)
+                return target
+    - path: worker/jobs.py
+      content: |
+        from pathlib import Path
+
+        from worker.thumbnails import Thumbnailer
+
+
+        def handle_job(job: dict) -> str:
+            thumbnailer = Thumbnailer(tuple(job["size"]), Path(job["cache_dir"]))
+            return str(thumbnailer.render(job["source"]))
+  trace: |
+    # tracemalloc top 3 after 6 hours (2,100 jobs)
+    1. functools.py:  cache_wrapper   212.4 MiB  (the cache dict and its keys)
+    2. worker/thumbnails.py:20  Thumbnailer.render   31.8 MiB
+    3. PIL/Image.py:3245 open   18.2 MiB
+    # gc.get_objects(): 2,100 live Thumbnailer instances
+  logs: |
+    2026-03-07 03:00:00 INFO worker rss=310MB jobs=0
+    2026-03-07 05:00:00 INFO worker rss=1.1GB jobs=700
+    2026-03-07 08:59:58 INFO worker rss=2.4GB jobs=2100
+    2026-03-07 09:00:41 ERROR container killed: OOMKilled
+  root_cause_tags: [lru-cache-on-method, cache-holds-self-reference]
+  root_cause_aliases:
+    lru-cache-on-method: [functools.lru_cache on a method, lru_cache decorating an instance method, cache decorator on method, unbounded lru_cache]
+    cache-holds-self-reference: [self is part of the cache key, the cache keeps instances alive, strong reference to self, instances are never freed]
+  root_cause: "`lru_cache` on an instance method keys the cache on `self`, so the unbounded module-level cache holds a strong reference to every `Thumbnailer` ever created, and with it its entries."
+  fix_keywords: ["remove|drop|do not use lru_cache|staticmethod|module-level function", "maxsize|per-instance|cached_property|weakref"]
+
+- id: dbg-py-09
+  category: debugging
+  language: python
+  difficulty: hard
+  split: test
+  symptom: |
+    The report exporter hangs forever on large exports. Small exports are fine. When it hangs,
+    the child process is still running, and `py-spy dump` shows the parent waiting.
+  files:
+    - path: export/runner.py
+      content: |
+        import subprocess
+        import sys
+
+
+        def run_export(dataset: str, out_path: str) -> str:
+            """Run the exporter CLI and return what it printed."""
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "exporter", "--dataset", dataset, "--out", out_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            code = proc.wait()
+            output = proc.stdout.read()
+            if code != 0:
+                raise RuntimeError(f"export failed ({code}):\n{output[-2000:]}")
+            return output
+    - path: exporter/__main__.py
+      content: |
+        import argparse
+        import sys
+
+        from exporter.core import rows_for
+
+
+        def main() -> None:
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--dataset", required=True)
+            parser.add_argument("--out", required=True)
+            args = parser.parse_args()
+            with open(args.out, "w", encoding="utf-8") as out:
+                for i, row in enumerate(rows_for(args.dataset)):
+                    out.write(",".join(map(str, row)) + "\n")
+                    print(f"exported row {i}: {row[0]}", file=sys.stdout, flush=True)
+
+
+        main()
+  trace: |
+    # py-spy dump --pid 4417 (parent)
+    Thread 4417 (idle): "MainThread"
+        wait (subprocess.py:1957)
+        run_export (export/runner.py:13)
+        main (jobs/nightly.py:31)
+    # ps for the child (pid 4420): state S (sleeping), blocked in write(1, ...)
+    # exports under ~1,000 rows finish; exports over ~3,000 rows never do
+  logs: |
+    2026-03-08 01:00:00 INFO nightly export dataset=small rows=420 done in 0.9s
+    2026-03-08 01:00:02 INFO nightly export dataset=customers rows=51200 started
+    2026-03-08 04:00:02 WARN nightly export dataset=customers still running after 3h
+  root_cause_tags: [pipe-buffer-deadlock, wait-before-reading-pipe]
+  root_cause_aliases:
+    pipe-buffer-deadlock: [pipe buffer is full, deadlock on pipe, child blocks writing to stdout, OS pipe buffer, 64 KB]
+    wait-before-reading-pipe: [wait() before reading stdout, proc.wait deadlock, parent waits while child waits for the parent to read]
+  root_cause: "The parent calls `proc.wait()` before reading the child's stdout pipe; once the child has written more than the OS pipe buffer it blocks on write while the parent waits for it to exit."
+  fix_keywords: ["communicate", "subprocess.run|capture_output|read before wait|drain|redirect to a file"]

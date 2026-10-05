@@ -400,16 +400,18 @@ uv run fusion runs export --format jsonl
 
 | Module | Role |
 |--------|------|
-| `spec.py`, `arms.py` | `BenchTask`, `Arm`, `BenchConfig`, dataset loading; arms resolved to strategies, with overrides |
+| `spec.py`, `arms.py` | `BenchTask`, `Arm`, `BenchConfig`, the truth formats, dataset loading and splits; arms resolved to strategies, with overrides |
+| `datasets/` | `build` (authoring YAML to JSONL, and spend-capped draft generation), `validate` (checks and statistics), `generate`; sources in `evals/datasets/authoring/` |
 | `runner.py` | `run_bench`: jobs keyed by hash, run concurrently under the per-provider limiters, resumable; a governor reserves each job's worst case against `max_usd` and the spend ledger |
 | `plan.py` | the cost and time estimator, built on `budget_guard.plan_calls`, and the fit-to-budget suggestion |
 | `store.py` | `results.jsonl` per run plus the `bench_runs` and `bench_items` tables (migration 5) in `bench-results/bench.db` |
 | `cache.py`, `spend.py` | the disk response cache (a provider wrapper that flags replays with `ModelResponse.cache_hit`) and the live-spend ledger |
-| `scoring.py`, `metrics.py`, `summary.py` | the `Scorer` protocol and built-in `PointsScorer`; `BenchMetrics` built from a run's ledger; per-arm summary rows |
+| `scoring/` | the `Scorer` protocol (`base`) and the scorers: `points`, `review`, `debug`, `rubric`; `pairwise` (the A/B judge) and `calibration` (judge accuracy and κ); see [BENCHMARKING.md](BENCHMARKING.md#scoring) |
+| `calibrate.py`, `metrics.py`, `summary.py` | running a judge calibration with the spend cap; `BenchMetrics` built from a run's ledger; per-arm summary rows |
 | `virtual.py` | an event loop with a virtual clock, used for simulated runs |
 | `cli.py` | the `fusion bench` commands |
 
-`providers/simulated.py` holds the simulated models. The runner builds an ordinary `BasePipeline`
+`providers/simulated.py` holds the simulated models, and `providers/simulated_judge.py` the way they play a judge. The runner builds an ordinary `BasePipeline`
 over a strategy book extended with the study's arms and calls `run(..., mode=Mode.BENCHMARK)` with a
 `RunLedger` of its own, so a failed run's spending is still known; nothing in the pipeline knows it
 is being benchmarked beyond the mode.

@@ -35,6 +35,7 @@ from fusion.providers.base import (
     speed_metrics,
 )
 from fusion.providers.mock import MockProvider
+from fusion.providers.simulated_judge import JUDGE_ROLE, judge_reply
 
 if TYPE_CHECKING:
     from fusion.bench.spec import BenchTask, TruthPoint
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from fusion.providers.limits import ProviderLimiter
 
 __all__ = [
+    "TIER_POSITION_BIAS",
     "TIER_SKILL",
     "TIER_SPEED",
     "TIER_TOKENS",
@@ -61,6 +63,7 @@ TIER_SPEED = {
     "high": (2200.0, 40.0),
 }  # ttft, tok/s
 TIER_TOKENS = {"weak": 500, "medium": 800, "strong": 1100, "frontier": 1400}
+TIER_POSITION_BIAS = {"weak": 0.2, "medium": 0.1, "strong": 0.04, "frontier": 0.0}  # as a judge
 
 
 class SimModel(BaseModel):
@@ -74,6 +77,8 @@ class SimModel(BaseModel):
     tokens_per_s: float = Field(default=90.0, gt=0)
     answer_tokens: int = Field(default=800, ge=1)
     error_rate: float = Field(default=0.0, ge=0.0, le=1.0)  # chance a call fails outright
+    # As a judge: how far it leans to the answer shown first (added to the score margin).
+    position_bias: float = Field(default=0.0, ge=-1.0, le=1.0)
 
 
 def sim_models_from_catalog(catalog: Catalog, provider: str) -> dict[str, SimModel]:
@@ -95,6 +100,7 @@ def sim_models_from_catalog(catalog: Catalog, provider: str) -> dict[str, SimMod
             ttft_ms=ttft,
             tokens_per_s=speed,
             answer_tokens=TIER_TOKENS[entry.quality_tier],
+            position_bias=TIER_POSITION_BIAS[entry.quality_tier],
         )
     return models
 
@@ -263,9 +269,18 @@ class SimulatedProvider(ModelProvider):
     def _answer(
         self, request: ModelRequest, spec: SimModel, role: str, prompt: str, task: BenchTask | None
     ) -> str:
+        if role == JUDGE_ROLE:
+            reply = judge_reply(
+                request.metadata.get("judge"),
+                model=request.model_id,
+                spec=spec,
+                world=self.world,
+                seed=request.seed,
+            )
+            return reply if reply is not None else self._canned(request)
         if task is None or role not in {"panel", "refine", "synthesizer"}:
             return self._canned(request)
-        truth = task.parsed_truth()
+        truth = task.simulated_truth()
         shift = _DIFFICULTY_SHIFT[task.difficulty]
         model = request.model_id
         if role == "panel":
@@ -304,7 +319,7 @@ class SimulatedProvider(ModelProvider):
 
     def _refine(self, request: ModelRequest, spec: SimModel, task: BenchTask, seen: str) -> str:
         """Keep what the model said, adopt what peers said it is persuaded by, drop some decoys."""
-        truth = task.parsed_truth()
+        truth = task.simulated_truth()
         points = [
             p
             for p in truth.points
@@ -323,7 +338,7 @@ class SimulatedProvider(ModelProvider):
 
     def _synthesize(self, request: ModelRequest, spec: SimModel, task: BenchTask, seen: str) -> str:
         """Merge what the panel said: favour points several models raised, doubt lone decoys."""
-        truth = task.parsed_truth()
+        truth = task.simulated_truth()
         sections = seen.split("## response from ")[1:] or [seen]
 
         def support(point: TruthPoint) -> int:

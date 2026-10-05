@@ -11,6 +11,7 @@ shrinking in a fixed order: fewer repeats, then fewer tasks, then fewer arms.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from fusion.bench.scoring import Scorer, get_scorer
@@ -140,8 +141,9 @@ def estimate_job(
     registry: ModelRegistry,
     pricing: PricingRegistry,
     scorer: Scorer,
+    judge_models: Sequence[str] = (),
 ) -> JobEstimate:
-    """Forecast one run of ``strategy`` on ``task`` from the catalog."""
+    """Forecast one run of ``strategy`` on ``task`` from the catalog, scoring included."""
     decision = routing.router.route(
         strategy=strategy, explicit_type=task.task_type.value, content=task.prompt
     )
@@ -174,7 +176,9 @@ def estimate_job(
     expected = first_usd + ESCALATION_SHARE * (full_usd - first_usd)
     low = price(_scaled(first, LOW_FACTOR))[0]
     high = price(_scaled(full, HIGH_FACTOR))[0]
-    eval_usd = scorer.estimate_usd(task)
+    eval_usd = forecast_calls(
+        scorer.estimate_calls(task, list(judge_models)), registry.models, pricing
+    ).usd
     seconds = _seconds(first, registry) + ESCALATION_SHARE * (
         _seconds(full, registry) - _seconds(first, registry)
     )
@@ -214,6 +218,7 @@ def make_plan(
                 registry=registry,
                 pricing=pricing,
                 scorer=get_scorer(t.category),
+                judge_models=cfg.judge_models,
             )
             for t in tasks
         }

@@ -14,8 +14,26 @@ from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from fusion.bench.arms import arm_book, parse_arms
+from fusion.bench.calibrate import default_mock_judges, run_calibration
+from fusion.bench.datasets.build import (
+    AUTHORING_DIR,
+    CATEGORY_FILES,
+    AuthoringError,
+    compile_dir,
+    render_jsonl,
+    write_compiled,
+)
+from fusion.bench.datasets.generate import Generated, run_generation
+from fusion.bench.datasets.validate import Rules, validate_dataset
 from fusion.bench.plan import BenchPlan, make_plan
 from fusion.bench.runner import BenchEnv, BenchProgress, BenchRun, build_env, run_bench
+from fusion.bench.scoring import ScoringError
+from fusion.bench.scoring.calibration import (
+    CalibrationReport,
+    build_cases,
+    cases_from_file,
+    save_report,
+)
 from fusion.bench.spec import (
     BenchConfig,
     BenchTask,
@@ -23,7 +41,7 @@ from fusion.bench.spec import (
     resolve_dataset,
     select_tasks,
 )
-from fusion.bench.spend import default_ledger
+from fusion.bench.spend import SpendCapError, default_ledger
 from fusion.bench.store import BenchItem, BenchStore
 from fusion.bench.summary import summarize
 from fusion.bench.virtual import run_virtual
@@ -57,6 +75,13 @@ _Concurrency = Annotated[int | None, typer.Option(help="Jobs at once; default 8"
 _Limit = Annotated[
     int | None, typer.Option(help="Use only this many tasks (spread over categories)")
 ]
+_Split = Annotated[
+    str | None,
+    typer.Option(
+        help="dev (default), test (held out for the final study) or all; tasks without a split "
+        "are always used"
+    ),
+]
 _Config = Annotated[
     Path | None,
     typer.Option("--config", help="YAML file with BenchConfig fields; options override it"),
@@ -76,6 +101,7 @@ def _build_config(
     redact: bool = False,
     limit: int | None = None,
     judge_models: str | None = None,
+    split: str | None = None,
     config_file: Path | None = None,
 ) -> BenchConfig:
     data: dict[str, Any] = {}
@@ -98,6 +124,8 @@ def _build_config(
     ):
         if value is not None:
             data[key] = value
+    if split is not None:
+        data["split"] = split
     if mock:
         data["mock"] = True
     if no_cache:
@@ -188,7 +216,7 @@ def _print_plan(plan: BenchPlan, cfg: BenchConfig) -> None:
 
 
 def _load(cfg: BenchConfig, *, providers: bool = True) -> tuple[list[BenchTask], BenchEnv]:
-    tasks = select_tasks(load_dataset(cfg.dataset), cfg.limit, cfg.seed)
+    tasks = select_tasks(load_dataset(cfg.dataset, cfg.split), cfg.limit, cfg.seed)
     try:
         return tasks, build_env(cfg, tasks, providers=providers)
     except RuntimeError as exc:  # no provider is configured
@@ -277,6 +305,7 @@ def plan_cmd(
     seed: _Seed = None,
     concurrency: _Concurrency = None,
     limit: _Limit = None,
+    split: _Split = None,
     config: _Config = None,
 ) -> None:
     """Estimate cost and time of a study (no model is called) and fit it to --max-usd."""
@@ -289,6 +318,7 @@ def plan_cmd(
         concurrency=concurrency,
         mock=mock,
         limit=limit,
+        split=split,
         config_file=config,
     )
     tasks, env = _load(cfg, providers=False)
@@ -308,6 +338,7 @@ def run_cmd(
     seed: _Seed = None,
     concurrency: _Concurrency = None,
     limit: _Limit = None,
+    split: _Split = None,
     config: _Config = None,
     no_cache: Annotated[
         bool, typer.Option("--no-cache", help="Do not reuse or store responses")
@@ -332,6 +363,7 @@ def run_cmd(
         redact=redact,
         limit=limit,
         judge_models=judge_models,
+        split=split,
         config_file=config,
     )
     tasks, env = _load(cfg)
@@ -430,6 +462,259 @@ def show_cmd(
     if record.stop_reason:
         console.print(f"Stopped: {record.stop_reason}")
     _print_arms(items)
+
+
+@bench_app.command("calibrate-judge")
+def calibrate_judge_cmd(
+    dataset: _Dataset = "",
+    judge_models: Annotated[
+        str | None, typer.Option(help="Catalog aliases of the judges (--mock picks three)")
+    ] = None,
+    cases: Annotated[
+        Path | None,
+        typer.Option(
+            help="JSONL of {task_id, good, flawed}; default: seeded from each task's truth"
+        ),
+    ] = None,
+    max_usd: _MaxUsd = None,
+    mock: _Mock = False,
+    seed: _Seed = None,
+    concurrency: _Concurrency = None,
+    limit: _Limit = None,
+    split: _Split = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the report as JSON")] = False,
+) -> None:
+    """Measure how well each judge picks the better of two answers whose order is known."""
+    if not dataset:
+        err.print("Name a dataset with --dataset.")
+        raise typer.Exit(2)
+    base_seed = seed or 0
+    probe = BenchConfig(
+        dataset=Path(dataset), arms=parse_arms("solo-cheap"), max_usd=max_usd or 1.0, mock=mock
+    )
+    tasks = select_tasks(load_dataset(dataset, split or "dev"), limit, base_seed)
+    try:
+        env = build_env(probe.model_copy(update={"dataset": resolve_dataset(dataset)}), tasks)
+    except RuntimeError as exc:  # no provider is configured
+        raise ConfigError(str(exc)) from exc
+    judges = [j.strip() for j in (judge_models or "").split(",") if j.strip()]
+    if not judges and mock:
+        judges = default_mock_judges(env)
+    if not judges:
+        err.print("Name the judges with --judge-models (catalog aliases, comma-separated).")
+        raise typer.Exit(2)
+    pairs = cases_from_file(cases) if cases else build_cases(tasks)
+
+    async def study() -> CalibrationReport:
+        try:
+            return await run_calibration(
+                env,
+                tasks,
+                pairs,
+                judges,
+                max_usd=max_usd,
+                seed=base_seed,
+                concurrency=concurrency or 8,
+                mock=mock,
+            )
+        finally:
+            await close_providers(env.providers)
+
+    try:
+        report = run_virtual(study()) if mock else asyncio.run(study())
+    except (ScoringError, SpendCapError) as exc:
+        err.print(str(exc))
+        raise typer.Exit(2) from exc
+    path = save_report(report, env.store.root)
+    if as_json:
+        typer.echo(report.model_dump_json(indent=2))
+        return
+    _print_calibration(report, path)
+
+
+def _print_calibration(report: CalibrationReport, path: Path) -> None:
+    table = Table(title=f"Judge calibration {report.id} ({report.cases} cases)")
+    for column in ("judge", "accuracy", "ties", "order flips", "kappa", "failed calls"):
+        table.add_column(column, justify="left" if column == "judge" else "right")
+    for j in report.judges:
+        table.add_row(
+            j.judge,
+            f"{j.accuracy:.0%}",
+            f"{j.tie_rate:.0%}",
+            f"{j.inconsistent_rate:.0%}",
+            f"{j.kappa:.2f}",
+            str(j.failed_calls),
+        )
+    console.print(table)
+    if report.agreement is not None:
+        console.print(f"Judges agree on {report.agreement:.0%} of cases.")
+        for pair, kappa in report.pair_kappa.items():
+            console.print(f"  kappa {pair}: {kappa:.2f}")
+    console.print(
+        f"Cost ${report.cost_usd:.4f}"
+        + (" (simulated judges: not a measurement)" if report.mock else "")
+        + f"; saved to {path}"
+    )
+
+
+# -------------------------------------------------------------------------------- datasets
+
+dataset_app = typer.Typer(
+    help="Validate, summarise and build benchmark datasets", no_args_is_help=True
+)
+bench_app.add_typer(dataset_app, name="dataset")
+_DatasetPath = Annotated[str, typer.Argument(help="Dataset file, directory or name")]
+
+
+@dataset_app.command("validate")
+def dataset_validate_cmd(
+    path: _DatasetPath,
+    release: Annotated[
+        bool,
+        typer.Option("--release", help="Also require the published dataset's size and coverage"),
+    ] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Hide warnings")] = False,
+) -> None:
+    """Check a dataset: schema, ids, line numbers, secrets, splits, and that truth is scorable."""
+    report = validate_dataset(path, Rules(release=release))
+    for issue in report.issues:
+        if issue.level == "error" or not quiet:
+            (err if issue.level == "error" else console).print(f"{issue}", markup=False)
+    n_err, n_warn = len(report.errors), len(report.warnings)
+    if report.ok:
+        console.print(
+            f"[green]OK[/green]: {report.stats.tasks} tasks"
+            + (f", {n_warn} warnings" if n_warn else "")
+            + (" (release rules)" if release else "")
+        )
+        return
+    err.print(f"{n_err} errors, {n_warn} warnings in {path}")
+    raise typer.Exit(1)
+
+
+@dataset_app.command("stats")
+def dataset_stats_cmd(path: _DatasetPath) -> None:
+    """Counts per category, difficulty, split and language, and the size of the tasks."""
+    stats = validate_dataset(path).stats
+    table = Table(title=f"{path}: {stats.tasks} tasks")
+    for column in (
+        "category",
+        "tasks",
+        "easy",
+        "medium",
+        "hard",
+        "dev",
+        "test",
+        "lines min/mean/max",
+    ):
+        table.add_column(column, justify="left" if column == "category" else "right")
+    for category, n in stats.by_category.items():
+        diff, split = stats.by_difficulty[category], stats.by_split[category]
+        lines = stats.lines.get(category)
+        table.add_row(
+            category,
+            str(n),
+            *(str(diff.get(d, 0)) for d in ("easy", "medium", "hard")),
+            *(str(split.get(x, 0)) for x in ("dev", "test")),
+            "/".join(map(str, lines)) if lines else "-",
+        )
+    console.print(table)
+    if stats.languages:
+        console.print("Languages: " + ", ".join(f"{k} {v}" for k, v in stats.languages.items()))
+    if stats.reviews:
+        console.print(
+            f"Clean code-review tasks: {stats.clean_reviews} of {stats.reviews} "
+            f"({stats.clean_reviews / stats.reviews:.0%})"
+        )
+
+
+@dataset_app.command("build")
+def dataset_build_cmd(
+    authoring: Annotated[
+        Path, typer.Option(help="Directory of authoring YAML files")
+    ] = AUTHORING_DIR,
+    out: Annotated[Path, typer.Option(help="Where the JSONL goes")] = Path("evals/datasets/v1"),
+    check: Annotated[
+        bool, typer.Option("--check", help="Write nothing; fail if the JSONL is out of date")
+    ] = False,
+    generate: Annotated[
+        int | None,
+        typer.Option(help="Instead, have a model draft this many candidate tasks (costs money)"),
+    ] = None,
+    category: Annotated[str, typer.Option(help="Category to draft (with --generate)")] = "",
+    model: Annotated[str, typer.Option(help="Catalog alias that drafts (with --generate)")] = "",
+    max_usd: _MaxUsd = None,
+    candidates: Annotated[
+        Path | None, typer.Option(help="Where drafts are written (with --generate)")
+    ] = None,
+) -> None:
+    """Compile authoring files into the dataset JSONL, or draft candidates for review."""
+    if generate is not None:
+        _generate(generate, category, model, max_usd, candidates, authoring, out)
+        return
+    try:
+        compiled = compile_dir(authoring)
+    except AuthoringError as exc:
+        err.print(str(exc), markup=False)
+        raise typer.Exit(1) from exc
+    if check:
+        stale = [
+            str(out / CATEGORY_FILES[c])
+            for c, tasks in compiled.tasks.items()
+            if not (out / CATEGORY_FILES[c]).is_file()
+            or (out / CATEGORY_FILES[c]).read_text(encoding="utf-8") != render_jsonl(tasks)
+        ]
+        if stale:
+            err.print("Out of date (run `fusion bench dataset build`): " + ", ".join(stale))
+            raise typer.Exit(1)
+        console.print(f"Up to date: {len(compiled.all())} tasks in {out}")
+        return
+    paths = write_compiled(compiled, out)
+    console.print(f"Wrote {len(compiled.all())} tasks to " + ", ".join(p.name for p in paths))
+
+
+def _generate(
+    count: int,
+    category: str,
+    model: str,
+    max_usd: float | None,
+    candidates: Path | None,
+    authoring: Path,
+    out: Path,
+) -> None:
+    if not category or not model or max_usd is None:
+        err.print("--generate needs --category, --model and --max-usd.")
+        raise typer.Exit(2)
+    probe = BenchConfig(dataset=Path("."), arms=parse_arms("solo-cheap"), max_usd=max_usd)
+    try:
+        env = build_env(probe, [])
+        existing = load_dataset(out) if out.exists() else []
+    except RuntimeError as exc:  # no provider is configured
+        raise ConfigError(str(exc)) from exc
+
+    async def drafting() -> Generated:
+        try:
+            return await run_generation(
+                env, category, count, alias=model, max_usd=max_usd, existing=existing
+            )
+        finally:
+            await close_providers(env.providers)
+
+    try:
+        result = asyncio.run(drafting())
+    except (AuthoringError, SpendCapError) as exc:
+        err.print(str(exc), markup=False)
+        raise typer.Exit(2) from exc
+    target = candidates or authoring.parent / "candidates" / f"{category}.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    header = "# UNREVIEWED model drafts. Check every seeded defect and rubric point by hand.\n"
+    target.write_text(header + yaml.safe_dump(result.items, sort_keys=False, allow_unicode=True))
+    console.print(
+        f"{len(result.items)} drafts written to {target} (${result.cost_usd:.4f}); "
+        f"{len(result.rejected)} rejected"
+    )
+    for reason in result.rejected:
+        err.print(reason, markup=False)
 
 
 @bench_app.command("spend")

@@ -1,0 +1,526 @@
+# Code-review tasks, Go. Format: see src/fusion/bench/datasets/build.py and evals/datasets/README.md.
+
+- id: cr-go-01
+  category: code_review
+  language: go
+  difficulty: easy
+  split: dev
+  tags: [errors]
+  title: Load settings from a JSON file
+  description: |
+    Adds `config.Load`, which reads the service settings from a JSON file and falls back to defaults
+    when the file does not exist. Operators edit the file by hand.
+  files:
+    - path: internal/config/config.go
+      diff: |
+        =package config
+        =
+        =import (
+        =	"encoding/json"
+        =	"errors"
+        =	"os"
+        =)
+        =
+        =type Settings struct {
+        =	Addr	 string `json:"addr"`
+        =	LogLevel string `json:"log_level"`
+        =	Workers  int	`json:"workers"`
+        =}
+        =
+        +// Load reads settings from a JSON file. A missing file yields the defaults.
+        +func Load(path string) (*Settings, error) {
+        +	s := &Settings{Addr: ":8080", LogLevel: "info", Workers: 4}
+        +	data, err := os.ReadFile(path)
+        +	if err != nil {
+        +		if os.IsNotExist(err) {
+        +			return s, nil
+        +		}
+        +		return nil, err
+        +	}
+        +	json.Unmarshal(data, s)«b1»
+        +	if s.Workers < 1 {
+        +		s.Workers = 1
+        +	}
+        +	return s, nil
+        +}
+        +
+        +// Validate reports the first problem with the settings.
+        +func (s *Settings) Validate() error {
+        +	if s.Addr == "" {
+        +		return errors.New("addr is required")
+        +	}
+        +	return nil
+        +}
+  bugs:
+    - id: b1
+      category: ignored-error
+      severity: medium
+      description: 'The error from `json.Unmarshal` is discarded, so a hand-edited file with a syntax error silently yields the defaults instead of failing at startup.'
+      aliases: ["ignored error", "unchecked error", "error not handled", "discarded error", "silently ignored"]
+
+- id: cr-go-02
+  category: code_review
+  language: go
+  difficulty: easy
+  split: test
+  tags: [concurrency]
+  line_tolerance: 5
+  title: Fetch many URLs in parallel
+  description: |
+    Adds `FetchAll`, which downloads a list of URLs concurrently and returns the HTTP status code
+    for each, in input order (-1 if the request failed). The module declares `go 1.21`.
+  files:
+    - path: internal/fetch/fetch.go
+      diff: |
+        =package fetch
+        =
+        =import (
+        =	"net/http"
+        =	"sync"
+        =)
+        =
+        =// Status codes returned in place of an HTTP status when a request fails.
+        =const Failed = -1
+        =
+        +// FetchAll downloads every URL concurrently and returns the status codes in input order.
+        +func FetchAll(urls []string) []int {
+        +	codes := make([]int, len(urls))
+        +	var wg sync.WaitGroup
+        +	for i, u := range urls {
+        +		wg.Add(1)
+        +		go func() {«b1»
+        +			defer wg.Done()
+        +			resp, err := http.Get(u)
+        +			if err != nil {
+        +				codes[i] = Failed
+        +				return
+        +			}
+        +			resp.Body.Close()
+        +			codes[i] = resp.StatusCode
+        +		}()
+        +	}
+        +	wg.Wait()
+        +	return codes
+        +}
+        +
+        +// Healthy reports whether every status is a 2xx.
+        +func Healthy(codes []int) bool {
+        +	for _, c := range codes {
+        +		if c < 200 || c > 299 {
+        +			return false
+        +		}
+        +	}
+        +	return true
+        +}
+  bugs:
+    - id: b1
+      category: loop-variable-capture
+      severity: high
+      description: 'The goroutine closes over the loop variables `i` and `u`, which under Go 1.21 semantics are shared by all iterations, so most goroutines fetch the last URL and write to the last index.'
+      aliases: ["loop variable", "loop var", "closure captures", "captured variable", "shadow", "pass as argument", "go 1.22"]
+
+- id: cr-go-03
+  category: code_review
+  language: go
+  difficulty: medium
+  split: dev
+  tags: [concurrency]
+  title: Generic worker pool
+  description: |
+    Adds `pool.Run` and `pool.Map`, which process a slice with a bounded number of goroutines.
+    `Run` returns the first error but lets the remaining jobs finish.
+  files:
+    - path: internal/pool/pool.go
+      diff: |
+        +package pool
+        +
+        +import "sync"
+        +
+        +// Run calls fn on every job using at most workers goroutines and returns the first error.
+        +func Run[T any](jobs []T, workers int, fn func(T) error) error {
+        +	if workers < 1 {
+        +		workers = 1
+        +	}
+        +	ch := make(chan T)
+        +	var (
+        +		wg	   sync.WaitGroup
+        +		once	 sync.Once
+        +		firstErr error
+        +	)
+        +	for w := 0; w < workers; w++ {
+        +		wg.Add(1)
+        +		go func() {
+        +			defer wg.Done()
+        +			for job := range ch {
+        +				if err := fn(job); err != nil {
+        +					once.Do(func() { firstErr = err })
+        +				}
+        +			}
+        +		}()
+        +	}
+        +	for _, job := range jobs {
+        +		ch <- job
+        +	}
+        +	close(ch)
+        +	wg.Wait()
+        +	return firstErr
+        +}
+        +
+        +// Map applies fn to every item and returns the results in input order.
+        +func Map[T, R any](items []T, workers int, fn func(T) (R, error)) ([]R, error) {
+        +	out := make([]R, len(items))
+        +	idx := make([]int, len(items))
+        +	for i := range idx {
+        +		idx[i] = i
+        +	}
+        +	err := Run(idx, workers, func(i int) error {
+        +		r, err := fn(items[i])
+        +		if err != nil {
+        +			return err
+        +		}
+        +		out[i] = r
+        +		return nil
+        +	})
+        +	if err != nil {
+        +		return nil, err
+        +	}
+        +	return out, nil
+        +}
+  bugs: []
+
+- id: cr-go-04
+  category: code_review
+  language: go
+  difficulty: medium
+  split: test
+  tags: [resources]
+  title: Checksum every file in a tree
+  description: |
+    Adds `Checksums`, used by the backup verifier to hash every file under a directory. A typical
+    run hashes 50,000 files in one call.
+  files:
+    - path: internal/backup/checksum.go
+      diff: |
+        =package backup
+        =
+        =import (
+        =	"crypto/sha256"
+        =	"encoding/hex"
+        =	"io"
+        =	"os"
+        =)
+        =
+        +// Checksums returns the hex SHA-256 of each path.
+        +func Checksums(paths []string) (map[string]string, error) {
+        +	sums := make(map[string]string, len(paths))
+        +	for _, p := range paths {
+        +		f, err := os.Open(p)
+        +		if err != nil {
+        +			return nil, err
+        +		}
+        +		defer f.Close()«b1»
+        +		h := sha256.New()
+        +		if _, err := io.Copy(h, f); err != nil {
+        +			return nil, err
+        +		}
+        +		sums[p] = hex.EncodeToString(h.Sum(nil))
+        +	}
+        +	return sums, nil
+        +}
+        +
+        +// Verify compares the files' checksums with the expected ones and returns the paths that differ.
+        +func Verify(expected map[string]string) ([]string, error) {
+        +	paths := make([]string, 0, len(expected))
+        +	for p := range expected {
+        +		paths = append(paths, p)
+        +	}
+        +	got, err := Checksums(paths)
+        +	if err != nil {
+        +		return nil, err
+        +	}
+        +	var bad []string
+        +	for p, want := range expected {
+        +		if got[p] != want {
+        +			bad = append(bad, p)
+        +		}
+        +	}
+        +	return bad, nil
+        +}
+  bugs:
+    - id: b1
+      category: defer-in-loop
+      severity: high
+      description: "`defer f.Close()` inside the loop runs only when the whole function returns, so every file stays open until all are hashed and a 50,000-file run exhausts the process's file descriptors."
+      aliases: ["defer in loop", "defer inside loop", "file descriptors", "too many open files", "resource leak", "close each file"]
+
+- id: cr-go-05
+  category: code_review
+  language: go
+  difficulty: medium
+  split: dev
+  tags: [correctness]
+  title: Request counters for the metrics endpoint
+  description: |
+    Adds `Stats`, a mutex-guarded set of named counters, and uses a package-level `var requests
+    Stats` in the HTTP middleware. `Snapshot` is served by `/metrics`.
+  files:
+    - path: internal/metrics/stats.go
+      diff: |
+        =package metrics
+        =
+        =import (
+        =	"sort"
+        =	"sync"
+        =)
+        =
+        +// Stats counts named events. It is safe for concurrent use.
+        +type Stats struct {
+        +	mu	 sync.Mutex
+        +	counts map[string]int
+        +}
+        +
+        +// Inc adds one to the named counter.
+        +func (s *Stats) Inc(name string) {
+        +	s.mu.Lock()
+        +	defer s.mu.Unlock()
+        +	s.counts[name]++«b1»
+        +}
+        +
+        +// Snapshot returns a copy of the counters.
+        +func (s *Stats) Snapshot() map[string]int {
+        +	s.mu.Lock()
+        +	defer s.mu.Unlock()
+        +	out := make(map[string]int, len(s.counts))
+        +	for k, v := range s.counts {
+        +		out[k] = v
+        +	}
+        +	return out
+        +}
+        +
+        +// Names returns the counter names in alphabetical order.
+        +func (s *Stats) Names() []string {
+        +	s.mu.Lock()
+        +	defer s.mu.Unlock()
+        +	names := make([]string, 0, len(s.counts))
+        +	for k := range s.counts {
+        +		names = append(names, k)
+        +	}
+        +	sort.Strings(names)
+        +	return names
+        +}
+        +
+        +var requests Stats
+  bugs:
+    - id: b1
+      category: nil-map-write
+      severity: high
+      description: '`counts` is never initialised and `requests` is used as a zero value, so the first `Inc` writes to a nil map and panics.'
+      aliases: ["nil map", "assignment to entry in nil map", "uninitialized map", "not initialized", "make(map"]
+
+- id: cr-go-06
+  category: code_review
+  language: go
+  difficulty: hard
+  split: test
+  line_tolerance: 2
+  tags: [concurrency]
+  title: Chat registry with broadcast
+  description: |
+    Adds `Registry`, which tracks connected chat clients. Clients connect and disconnect from
+    many goroutines while a ticker goroutine calls `Broadcast` every second. `Remove` is also called
+    by the client's own cleanup, so it may be called twice or for an unknown id.
+  files:
+    - path: internal/chat/registry.go
+      diff: |
+        =package chat
+        =
+        =import "sync"
+        =
+        =type Client struct {
+        =	ID   string
+        =	done chan struct{}
+        =	out  chan string
+        =}
+        =
+        =func (c *Client) Send(msg string) {
+        =	select {
+        =	case c.out <- msg:
+        =	default: // slow client: drop the message
+        =	}
+        =}
+        =
+        +// Registry tracks connected clients.
+        +type Registry struct {
+        +	mu	  sync.RWMutex
+        +	clients map[string]*Client
+        +}
+        +
+        +func NewRegistry() *Registry {
+        +	return &Registry{clients: make(map[string]*Client)}
+        +}
+        +
+        +func (r *Registry) Add(c *Client) {
+        +	r.mu.Lock()
+        +	r.clients[c.ID] = c
+        +	r.mu.Unlock()
+        +}
+        +
+        +func (r *Registry) Remove(id string) {
+        +	r.mu.Lock()
+        +	c := r.clients[id]
+        +	delete(r.clients, id)
+        +	r.mu.Unlock()
+        +	close(c.done)«b2»
+        +}
+        +
+        +func (r *Registry) Broadcast(msg string) {
+        +	for _, c := range r.clients {«b1»
+        +		c.Send(msg)
+        +	}
+        +}
+        +
+        +func (r *Registry) Count() int {
+        +	r.mu.RLock()
+        +	defer r.mu.RUnlock()
+        +	return len(r.clients)
+        +}
+  bugs:
+    - id: b1
+      category: data-race
+      severity: high
+      description: '`Broadcast` ranges over the map without taking the read lock while `Add` and `Remove` write to it from other goroutines, which is a data race and can crash with `concurrent map iteration and map write`.'
+      aliases: ["data race", "race", "RLock", "concurrent map", "without lock", "mutex"]
+    - id: b2
+      category: nil-dereference
+      severity: high
+      description: '`Remove` closes `c.done` unconditionally: for an unknown id `c` is nil and it panics, and a second `Remove` of the same client closes an already-closed channel and panics.'
+      aliases: ["nil pointer", "nil dereference", "double close", "close of closed channel", "unknown id", "panic"]
+
+- id: cr-go-07
+  category: code_review
+  language: go
+  difficulty: hard
+  split: dev
+  tags: [reliability]
+  title: Context-aware retry helper
+  description: |
+    Adds `retry.Do`, which calls a function up to N times with exponential backoff, stops as soon as
+    the context is cancelled, and stops early for errors wrapped with `Permanent`.
+  files:
+    - path: internal/retry/retry.go
+      diff: |
+        +package retry
+        +
+        +import (
+        +	"context"
+        +	"errors"
+        +	"fmt"
+        +	"time"
+        +)
+        +
+        +type permanent struct{ err error }
+        +
+        +func (p permanent) Error() string { return p.err.Error() }
+        +func (p permanent) Unwrap() error { return p.err }
+        +
+        +// Permanent marks an error as not worth retrying.
+        +func Permanent(err error) error {
+        +	if err == nil {
+        +		return nil
+        +	}
+        +	return permanent{err}
+        +}
+        +
+        +// Do calls fn up to attempts times, doubling the delay after each failure.
+        +func Do(ctx context.Context, attempts int, base time.Duration, fn func(context.Context) error) error {
+        +	if attempts < 1 {
+        +		return errors.New("retry: attempts must be at least 1")
+        +	}
+        +	var err error
+        +	delay := base
+        +	for i := 0; i < attempts; i++ {
+        +		if err = fn(ctx); err == nil {
+        +			return nil
+        +		}
+        +		var p permanent
+        +		if errors.As(err, &p) {
+        +			return p.err
+        +		}
+        +		if ctx.Err() != nil {
+        +			return ctx.Err()
+        +		}
+        +		if i == attempts-1 {
+        +			break
+        +		}
+        +		timer := time.NewTimer(delay)
+        +		select {
+        +		case <-ctx.Done():
+        +			timer.Stop()
+        +			return ctx.Err()
+        +		case <-timer.C:
+        +		}
+        +		delay *= 2
+        +	}
+        +	return fmt.Errorf("retry: gave up after %d attempts: %w", attempts, err)
+        +}
+  bugs: []
+
+- id: cr-go-08
+  category: code_review
+  language: go
+  difficulty: hard
+  split: test
+  tags: [reliability]
+  title: Fetch JSON from partner APIs
+  description: |
+    Adds `FetchJSON`, used by the nightly sync to pull a few thousand documents from partner APIs,
+    some of which are slow and some of which return 5xx errors regularly.
+  files:
+    - path: internal/partner/client.go
+      diff: |
+        =package partner
+        =
+        =import (
+        =	"encoding/json"
+        =	"fmt"
+        =	"net/http"
+        =)
+        =
+        +var client = &http.Client{}«b1»
+        +
+        +// FetchJSON GETs url and decodes the JSON body into out.
+        +func FetchJSON(url string, out any) error {
+        +	resp, err := client.Get(url)
+        +	if err != nil {
+        +		return err
+        +	}
+        +	if resp.StatusCode != http.StatusOK {
+        +		return fmt.Errorf("fetch %s: status %d", url, resp.StatusCode)«b2»
+        +	}
+        +	defer resp.Body.Close()
+        +	return json.NewDecoder(resp.Body).Decode(out)
+        +}
+        +
+        +// FetchAll fetches each url into a new value made by newValue.
+        +func FetchAll[T any](urls []string) ([]T, error) {
+        +	out := make([]T, 0, len(urls))
+        +	for _, u := range urls {
+        +		var v T
+        +		if err := FetchJSON(u, &v); err != nil {
+        +			return nil, err
+        +		}
+        +		out = append(out, v)
+        +	}
+        +	return out, nil
+        +}
+  bugs:
+    - id: b1
+      category: missing-timeout
+      severity: high
+      description: 'The shared `http.Client` has no `Timeout`, so a partner that accepts the connection and never answers blocks the sync forever.'
+      aliases: ["no timeout", "timeout", "http.Client{}", "hang", "context deadline", "default client"]
+    - id: b2
+      category: resource-leak
+      severity: medium
+      description: 'On a non-200 response the function returns before the deferred `resp.Body.Close()`, leaking the connection, which matters because some partners return 5xx regularly.'
+      aliases: ["body not closed", "response body", "leak", "close the body", "connection leak", "defer resp.Body.Close"]

@@ -1,0 +1,459 @@
+# Debugging tasks, TypeScript. Format: see src/fusion/bench/datasets/build.py and evals/datasets/README.md.
+
+- id: dbg-ts-01
+  category: debugging
+  language: typescript
+  difficulty: easy
+  split: dev
+  symptom: |
+    Clicking the "+" button on the counter widget does nothing visible and logs an error in the
+    browser console. The initial render ("Clicked 0 times") is correct.
+  files:
+    - path: src/ui/Counter.ts
+      content: |
+        export class Counter {
+          private count = 0;
+          private label: HTMLElement;
+
+          constructor(private root: HTMLElement) {
+            this.label = root.querySelector(".label") as HTMLElement;
+            const button = root.querySelector("button") as HTMLButtonElement;
+            button.addEventListener("click", this.increment);
+            this.render();
+          }
+
+          increment() {
+            this.count += 1;
+            this.render();
+          }
+
+          render() {
+            this.label.textContent = `Clicked ${this.count} times`;
+          }
+        }
+    - path: src/ui/index.ts
+      content: |
+        import { Counter } from "./Counter";
+
+        export function mountCounters(): Counter[] {
+          const roots = Array.from(document.querySelectorAll<HTMLElement>("[data-counter]"));
+          return roots.map((root) => new Counter(root));
+        }
+
+        window.addEventListener("DOMContentLoaded", mountCounters);
+  trace: |
+    Uncaught TypeError: Cannot read properties of undefined (reading 'count')
+        at HTMLButtonElement.increment (Counter.ts:12:5)
+  logs: |
+    [console] Counter mounted: 3 widgets
+    [console] Counter.render: Clicked 0 times (x3)
+    [console] Uncaught TypeError: Cannot read properties of undefined (reading 'count')
+    [console] Uncaught TypeError: Cannot read properties of undefined (reading 'count')
+    [console] (the label still reads "Clicked 0 times")
+    [console] No errors on page load; errors appear only after the first click
+  root_cause_tags: [this-binding-lost, unbound-method-as-callback]
+  root_cause_aliases:
+    this-binding-lost: [this is undefined, lost this, wrong this, this refers to the button, this binding]
+    unbound-method-as-callback: [method passed as a callback, passing this.increment, unbound method, event listener without bind]
+  root_cause: "`this.increment` is passed to `addEventListener` as a bare function, so when the browser calls it `this` is the button (or undefined in strict mode), not the `Counter`."
+  fix_keywords: ["arrow function|=>|class field", "bind(this)|.bind"]
+
+- id: dbg-ts-02
+  category: debugging
+  language: typescript
+  difficulty: easy
+  split: test
+  symptom: |
+    The orders page for `?ids=10,20,30` shows only order 10; the other two never load. The
+    backend logs show requests for `NaN`.
+  files:
+    - path: src/orders/query.ts
+      content: |
+        export function parseIds(raw: string): number[] {
+          return raw.split(",").map(parseInt);
+        }
+
+        export function buildUrl(ids: number[]): string {
+          return `/api/orders?ids=${ids.join(",")}`;
+        }
+    - path: src/orders/page.ts
+      content: |
+        import { buildUrl, parseIds } from "./query";
+
+        export async function loadOrders(search: string) {
+          const params = new URLSearchParams(search);
+          const ids = parseIds(params.get("ids") ?? "");
+          if (ids.length === 0) {
+            return [];
+          }
+          const res = await fetch(buildUrl(ids));
+          if (!res.ok) {
+            throw new Error(`orders request failed: ${res.status}`);
+          }
+          return (await res.json()) as { id: number; total: number }[];
+        }
+  trace: |
+    > parseIds("10,20,30")
+    [ 10, NaN, NaN ]
+    > buildUrl(parseIds("10,20,30"))
+    '/api/orders?ids=10,NaN,NaN'
+  logs: |
+    GET /api/orders?ids=10,NaN,NaN 200 (1 order returned)
+    [orders] page: requested 3 ids, rendered 1 order
+    [orders] warn: server ignored 2 invalid ids
+    [api] GET /api/orders?ids=10,NaN,NaN user=u-4411 ua=Chrome/121
+    [api] GET /api/orders?ids=10,NaN,NaN user=u-5120 ua=Safari/17
+    [api] 4.1% of /api/orders requests this week contained the literal string NaN
+    [support] ticket 2231: "only my first order shows up when I open a bookmarked link"
+  root_cause_tags: [parseint-radix-in-map, map-passes-index-as-radix]
+  root_cause_aliases:
+    parseint-radix-in-map: [parseInt as the map callback, map(parseInt), parseInt receives the index, radix argument]
+    map-passes-index-as-radix: [index is used as the radix, second argument of parseInt, map passes (value, index, array)]
+  root_cause: "`map` calls `parseInt(value, index, array)`, so the index becomes the radix: `parseInt('20', 1)` and `parseInt('30', 2)` are NaN."
+  fix_keywords: ["Number|(s) => parseInt(s, 10)|parseInt(s, 10)|parseInt(x, 10)", "radix|arrow function|wrap"]
+
+- id: dbg-ts-03
+  category: debugging
+  language: typescript
+  difficulty: easy
+  split: dev
+  symptom: |
+    Opening any user profile shows "Could not load user" even though the network tab shows the
+    API returning 200 with the right JSON.
+  files:
+    - path: src/api/users.ts
+      content: |
+        export interface User {
+          id: string;
+          name: string;
+          email: string;
+        }
+
+        export async function getUser(id: string): Promise<User> {
+          const res = fetch(`/api/users/${encodeURIComponent(id)}`);
+          if (!res.ok) {
+            throw new Error(`Request failed for user ${id}`);
+          }
+          return res.json();
+        }
+    - path: src/pages/Profile.tsx
+      content: |
+        import { useEffect, useState } from "react";
+        import { getUser, User } from "../api/users";
+
+        export function Profile({ id }: { id: string }) {
+          const [user, setUser] = useState<User | null>(null);
+          const [error, setError] = useState<string | null>(null);
+
+          useEffect(() => {
+            getUser(id)
+              .then(setUser)
+              .catch(() => setError("Could not load user"));
+          }, [id]);
+
+          if (error) return <p role="alert">{error}</p>;
+          if (!user) return <p>Loading...</p>;
+          return <h1>{user.name}</h1>;
+        }
+  trace: |
+    Error: Request failed for user 42
+        at getUser (users.ts:9:11)
+    # DevTools network: GET /api/users/42 -> 200 OK, application/json, 118 B
+  logs: |
+    [console] Profile: loading user 42
+    [console] Profile: error Could not load user
+  root_cause_tags: [missing-await, promise-not-awaited]
+  root_cause_aliases:
+    missing-await: [forgot await, no await on fetch, await the fetch call, res is a Promise]
+    promise-not-awaited: [res is a promise, res.ok is undefined, not awaited, checks a promise]
+  root_cause: "`fetch(...)` is not awaited, so `res` is a Promise; `res.ok` is undefined and `!res.ok` is always true, so the function always throws."
+  fix_keywords: ["await fetch", "res.ok|response.ok"]
+
+- id: dbg-ts-04
+  category: debugging
+  language: typescript
+  difficulty: medium
+  split: dev
+  symptom: |
+    A few checkouts per day fail with "Amount mismatch" even though the cart total looks right.
+    It happens with carts like 3 items at $0.10, $0.20 and so on, never with whole-dollar prices.
+  files:
+    - path: src/checkout/total.ts
+      content: |
+        export interface Line {
+          sku: string;
+          price: number; // dollars
+          qty: number;
+        }
+
+        export function cartTotal(lines: Line[]): number {
+          return lines.reduce((sum, line) => sum + line.price * line.qty, 0);
+        }
+
+        export function discounted(total: number, percent: number): number {
+          return total - total * (percent / 100);
+        }
+    - path: src/checkout/pay.ts
+      content: |
+        import { cartTotal } from "./total";
+        import type { Line } from "./total";
+        import { gateway } from "../gateway";
+
+        export async function pay(lines: Line[], token: string) {
+          const total = cartTotal(lines);
+          const quote = await gateway.quote(token); // { amount: 0.3 } for these lines
+          if (total !== quote.amount) {
+            throw new Error(`Amount mismatch: computed ${total}, gateway ${quote.amount}`);
+          }
+          return gateway.charge(token, total);
+        }
+  trace: |
+    Error: Amount mismatch: computed 0.30000000000000004, gateway 0.3
+        at pay (pay.ts:9:13)
+    > 0.1 + 0.2
+    0.30000000000000004
+  logs: |
+    2026-03-09 16:02:11 WARN checkout failed lines=[{"sku":"A1","price":0.1,"qty":1},{"sku":"B2","price":0.2,"qty":1}]
+    2026-03-09 16:02:11 INFO gateway quote amount=0.3
+  root_cause_tags: [floating-point-money, binary-floating-point-rounding]
+  root_cause_aliases:
+    floating-point-money: [floating point, float arithmetic, 0.1 + 0.2, money as floats, decimals as doubles]
+    binary-floating-point-rounding: [rounding error, not exactly representable, IEEE 754, strict equality on floats]
+  root_cause: "Prices are binary floating-point numbers and `0.1 + 0.2` is `0.30000000000000004`; comparing with `!==` against the gateway's exact amount fails."
+  fix_keywords: ["cents|integer|minor units", "Decimal|decimal.js|round|toFixed|tolerance|epsilon"]
+
+- id: dbg-ts-05
+  category: debugging
+  language: typescript
+  difficulty: medium
+  split: test
+  symptom: |
+    The results table flickers and the browser tab becomes sluggish. The API team says our page
+    is sending thousands of identical search requests per minute while the user does nothing.
+  files:
+    - path: src/search/Results.tsx
+      content: |
+        import { useEffect, useState } from "react";
+        import { fetchRows, Filters, Row } from "./api";
+
+        export function Results({ filters }: { filters: Filters }) {
+          const [rows, setRows] = useState<Row[]>([]);
+          const [loading, setLoading] = useState(false);
+
+          const options = { ...filters, limit: 20, sort: "recent" };
+
+          useEffect(() => {
+            setLoading(true);
+            fetchRows(options)
+              .then((data) => setRows(data))
+              .finally(() => setLoading(false));
+          }, [options]);
+
+          return (
+            <section aria-busy={loading}>
+              {rows.map((row) => (
+                <article key={row.id}>{row.title}</article>
+              ))}
+            </section>
+          );
+        }
+  trace: |
+    # Network panel, page idle for 10 seconds
+    GET /api/rows?q=shoes&limit=20&sort=recent   200   (x 412)
+    # React Profiler: <Results> rendered 824 times in 10 s
+  logs: |
+    [api] rate limit: client 10.2.4.7 exceeded 100 req/s on /api/rows
+    [api] 2026-03-08 10:02:11 GET /api/rows?q=shoes&limit=20&sort=recent 200 12ms
+    [api] 2026-03-08 10:02:11 GET /api/rows?q=shoes&limit=20&sort=recent 200 11ms
+    [api] 2026-03-08 10:02:11 GET /api/rows?q=shoes&limit=20&sort=recent 200 12ms
+    [api] 2026-03-08 10:02:12 GET /api/rows?q=shoes&limit=20&sort=recent 429 1ms
+    [browser] page CPU 96%, 14 long tasks in the last 5 s
+    [browser] user did not type, scroll or click during this period
+  root_cause_tags: [effect-dependency-new-object-each-render, unstable-dependency]
+  root_cause_aliases:
+    effect-dependency-new-object-each-render: [options is a new object every render, object in the dependency array, dependency changes on every render, useEffect runs every render]
+    unstable-dependency: [referential equality, new reference each render, not memoized, useMemo]
+  root_cause: "`options` is created on every render, so the effect's dependency changes each time; the effect sets state, which re-renders, which creates a new `options`, and the cycle repeats."
+  fix_keywords: ["useMemo", "primitive|depend on the filter values|JSON.stringify|move the object|stable reference"]
+
+- id: dbg-ts-06
+  category: debugging
+  language: typescript
+  difficulty: medium
+  split: dev
+  symptom: |
+    The event calendar shows events one day early, but only for users in the US. Colleagues in
+    Europe see the right day. Our test suite (run in UTC) passes.
+  files:
+    - path: src/calendar/format.ts
+      content: |
+        const dayFormat: Intl.DateTimeFormatOptions = {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+        };
+
+        /** Formats an event date such as "2024-03-10" for display. */
+        export function formatDay(isoDate: string): string {
+          const date = new Date(isoDate);
+          return date.toLocaleDateString("en-US", dayFormat);
+        }
+
+        export function isWeekend(isoDate: string): boolean {
+          const day = new Date(isoDate).getDay();
+          return day === 0 || day === 6;
+        }
+    - path: src/calendar/format.test.ts
+      content: |
+        import { formatDay, isWeekend } from "./format";
+
+        test("formats a Sunday", () => {
+          expect(formatDay("2024-03-10")).toBe("Sunday, Mar 10");
+          expect(isWeekend("2024-03-10")).toBe(true);
+        });
+  trace: |
+    $ TZ=UTC npm test
+    PASS src/calendar/format.test.ts
+    $ TZ=America/Los_Angeles npm test
+    FAIL src/calendar/format.test.ts
+      Expected: "Sunday, Mar 10"
+      Received: "Saturday, Mar 9"
+    > new Date("2024-03-10").toString()    // TZ=America/Los_Angeles
+    'Sat Mar 09 2024 16:00:00 GMT-0800 (Pacific Standard Time)'
+  logs: |
+    2026-03-10 18:02:11 INFO calendar render user=u-1203 tz=America/Los_Angeles event=2024-03-10
+    2026-03-10 18:02:11 INFO calendar shown "Saturday, Mar 9" for event dated 2024-03-10
+    2026-03-10 18:02:14 INFO calendar render user=u-8841 tz=Europe/Berlin event=2024-03-10
+    2026-03-10 18:02:14 INFO calendar shown "Sunday, Mar 10" for event dated 2024-03-10
+    2026-03-10 18:05:00 INFO support: 14 tickets this week, all from US users, all "one day early"
+  root_cause_tags: [date-only-string-parsed-as-utc, timezone-conversion]
+  root_cause_aliases:
+    date-only-string-parsed-as-utc: [ISO date is parsed as UTC, new Date with a date-only string, UTC midnight, parsed as UTC]
+    timezone-conversion: [local timezone, converted to local time, previous day in US timezones, timezone]
+  root_cause: "A date-only ISO string is parsed as midnight UTC, but `toLocaleDateString` and `getDay` use the local timezone, so west of UTC the date falls on the previous day."
+  fix_keywords: ["timeZone: \"UTC\"|timeZone: 'UTC'|getUTCDay|T00:00:00|split(\"-\")|new Date(year", "local|UTC"]
+
+- id: dbg-ts-07
+  category: debugging
+  language: typescript
+  difficulty: hard
+  split: dev
+  symptom: |
+    Some orders open fine from the list but show "Order not found" when we click through to
+    their invoices. It only affects recently created orders, whose ids are very long numbers.
+  files:
+    - path: src/api/orders.ts
+      content: |
+        export interface Order {
+          id: number;
+          customer: string;
+          total: number;
+        }
+
+        export async function listOrders(): Promise<Order[]> {
+          const res = await fetch("/api/orders?limit=50");
+          return (await res.json()) as Order[];
+        }
+
+        export async function getInvoice(order: Order): Promise<Blob> {
+          const res = await fetch(`/api/orders/${order.id}/invoice`);
+          if (res.status === 404) {
+            throw new Error(`Order not found: ${order.id}`);
+          }
+          return res.blob();
+        }
+    - path: src/pages/Orders.tsx
+      content: |
+        import { getInvoice, listOrders, Order } from "../api/orders";
+
+        export async function openLatestInvoice(): Promise<Blob> {
+          const orders = await listOrders();
+          const latest: Order = orders[0];
+          return getInvoice(latest);
+        }
+  trace: |
+    # raw response body of GET /api/orders?limit=50 (first element)
+    {"id": 1234567890123456789, "customer": "acme", "total": 99.5}
+    # after JSON.parse in the browser
+    > JSON.parse('{"id": 1234567890123456789}').id
+    1234567890123456800
+    # request made by getInvoice
+    GET /api/orders/1234567890123456800/invoice -> 404
+  logs: |
+    [api] GET /api/orders/1234567890123456800/invoice 404 order not found
+    [api] id generator: snowflake 64-bit ids since 2025-11-01
+  root_cause_tags: [integer-precision-loss, id-exceeds-max-safe-integer]
+  root_cause_aliases:
+    integer-precision-loss: [precision loss, number cannot represent, double precision, 53 bits, lossy conversion]
+    id-exceeds-max-safe-integer: [Number.MAX_SAFE_INTEGER, larger than 2^53, 64-bit id parsed as a number, JSON.parse rounds big integers]
+  root_cause: "The 64-bit id exceeds `Number.MAX_SAFE_INTEGER`, so `JSON.parse` rounds it to the nearest double (…800), and the invoice request uses the wrong id."
+  fix_keywords: ["string", "BigInt|json-bigint|reviver|encode ids as strings"]
+
+- id: dbg-ts-08
+  category: debugging
+  language: typescript
+  difficulty: hard
+  split: test
+  symptom: |
+    After a few days the price-feed server uses more and more memory and CPU, and its logs fill
+    with warnings and errors about closed sockets. Restarting fixes it for a while. Traffic is
+    flat.
+  files:
+    - path: src/feed/bus.ts
+      content: |
+        import { EventEmitter } from "node:events";
+        import type { WebSocket } from "ws";
+
+        export interface Price {
+          symbol: string;
+          bid: number;
+          ask: number;
+        }
+
+        const bus = new EventEmitter();
+
+        export function publish(price: Price): void {
+          bus.emit(`price:${price.symbol}`, price);
+        }
+
+        export function subscribe(ws: WebSocket, symbol: string): void {
+          bus.on(`price:${symbol}`, (price: Price) => {
+            ws.send(JSON.stringify(price));
+          });
+        }
+    - path: src/feed/server.ts
+      content: |
+        import { WebSocketServer } from "ws";
+        import { subscribe } from "./bus";
+
+        export function start(port: number): WebSocketServer {
+          const wss = new WebSocketServer({ port });
+          wss.on("connection", (ws) => {
+            ws.on("message", (raw) => {
+              const msg = JSON.parse(raw.toString());
+              if (msg.type === "subscribe") {
+                subscribe(ws, String(msg.symbol));
+              }
+            });
+          });
+          return wss;
+        }
+  trace: |
+    (node:1) MaxListenersExceededWarning: Possible EventEmitter memory leak detected.
+    11 price:AAPL listeners added to [EventEmitter]. Use emitter.setMaxListeners() to increase limit
+    ...
+    Error: WebSocket is not open: readyState 3 (CLOSED)
+        at WebSocket.send (ws/lib/websocket.js:456:13)
+        at EventEmitter.<anonymous> (bus.ts:21:8)
+        at EventEmitter.emit (node:events:517:28)
+        at publish (bus.ts:14:7)
+  logs: |
+    2026-03-10 00:00:00 INFO feed clients=210 listeners(price:AAPL)=214
+    2026-03-13 00:00:00 INFO feed clients=205 listeners(price:AAPL)=9.8k
+    2026-03-13 00:00:01 ERROR feed send failed: WebSocket is not open (x 9.6k)
+  root_cause_tags: [event-listener-leak, subscription-never-removed]
+  root_cause_aliases:
+    event-listener-leak: [listeners are never removed, listener leak, EventEmitter memory leak, listeners accumulate]
+    subscription-never-removed: [no unsubscribe on close, bus.off, removeListener, closed sockets stay subscribed, no cleanup when the socket closes]
+  root_cause: "`subscribe` adds a listener to the shared emitter for every subscription and never removes it, so listeners for closed sockets (and repeat subscriptions) accumulate and keep being called."
+  fix_keywords: ["off|removeListener|unsubscribe", "close"]

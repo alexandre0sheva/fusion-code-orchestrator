@@ -319,7 +319,7 @@ async def run_bench(
     on_item: Callable[[BenchItem, BenchProgress], None] | None = None,
 ) -> BenchRun:
     """Run (or resume, when ``run_id`` names an existing run) the study ``cfg`` describes."""
-    tasks = select_tasks(load_dataset(cfg.dataset), cfg.limit, cfg.seed)
+    tasks = select_tasks(load_dataset(cfg.dataset, cfg.split), cfg.limit, cfg.seed)
     env = env or build_env(cfg, tasks)
     unknown = [m for m in cfg.judge_models if m not in env.registry.models]
     if unknown:
@@ -349,7 +349,7 @@ async def run_bench(
                         arm=arm.name,
                         repeat=repeat,
                         seed=seed,
-                        worst_usd=_worst_case(task, strategy, routing, env),
+                        worst_usd=_worst_case(task, strategy, routing, env, cfg.judge_models),
                     )
                 )
 
@@ -436,7 +436,11 @@ async def run_bench(
 
 
 def _worst_case(
-    task: BenchTask, strategy: Strategy, routing: RoutingPolicy, env: BenchEnv
+    task: BenchTask,
+    strategy: Strategy,
+    routing: RoutingPolicy,
+    env: BenchEnv,
+    judge_models: list[str],
 ) -> float:
     return estimate_job(
         task,
@@ -445,6 +449,7 @@ def _worst_case(
         registry=env.registry,
         pricing=env.pricing,
         scorer=get_scorer(task.category),
+        judge_models=judge_models,
     ).worst_usd
 
 

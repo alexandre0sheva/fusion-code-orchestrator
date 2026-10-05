@@ -15,7 +15,7 @@ than a single frontier model. Cost methodology is in [COSTS.md](COSTS.md); confi
 
 Benchmark mode is the framework the 0.2.0 study is built on. Its scorers, datasets, statistics and
 report are added task by task in the
-[0.2.0 roadmap](superpowers/plans/2026-10-05-v0.2.0-roadmap.md) (Tasks 14 to 19); this page says what
+[0.2.0 roadmap](superpowers/plans/2026-10-05-v0.2.0-roadmap.md) (Tasks 16 to 19); this page says what
 exists today.
 
 ## Benchmark mode (`fusion bench`)
@@ -57,13 +57,15 @@ uv run fusion bench list                  # runs, newest first
 uv run fusion bench show RUN              # one summary row per arm (--json for scripts)
 uv run fusion bench resume RUN --max-usd 8   # continue a stopped or interrupted run
 uv run fusion bench spend                 # the live-spend ledger
+uv run fusion bench calibrate-judge --dataset toy --mock   # how well do judges pick the better answer?
+uv run fusion bench dataset validate evals/datasets/v1 --release   # check a dataset (also: stats, build)
 ```
 
 `--arms` takes strategy names (`solo-cheap,panel-cheap`), `name=strategy` to rename, or `default`.
 `--config study.yaml` supplies any `BenchConfig` field, including arms with `overrides`; options on
 the command line win. Other options: `--limit N` (use N tasks, spread over categories and chosen by
 seed), `--seed`, `--concurrency` (jobs at once, default 8), `--no-cache`, `--redact`,
-`--judge-models`.
+`--judge-models`, `--split dev|test|all` (see [Datasets](#datasets)).
 
 ### Planning and the cost caps
 
@@ -149,13 +151,107 @@ measurements, and say nothing about the real models**.
 
 ### Scoring
 
-`PointsScorer` is the built-in scorer: the truth lists `points` (each with `keywords`, any of which
-counts as saying it, and an optional `weight`) and `decoys` (known-wrong claims). Quality is the
-weighted share of points the final answer says, less 0.5 times the share of decoys it asserts, never
-below 0. Only the final answer is read, not the claims behind it, so an aggregator that dropped a
-point gets no credit for a model having raised it. Other scorers implement the `Scorer` protocol
-(`bench/scoring.py`) and are registered per category; whatever they spend on judge calls is
-`eval_cost_usd`. Ground-truth datasets and the scorers for them are roadmap Tasks 14 to 17.
+Ground truth first, an LLM judge second. A scorer (`bench/scoring/`) turns the arm's *final answer*
+into a quality in [0, 1]; the claims behind it are never read, so an aggregator that dropped a point
+gets no credit for a model having raised it. One scorer is registered per category, reads the
+`truth` format below, and falls back to `PointsScorer` for a task whose truth is in `points`
+format. A judge is called only for what the deterministic checks cannot decide, and only when the
+study names `--judge-models` (catalog aliases); without them every scorer is free and offline.
+Judge spend is `eval_cost_usd`, kept apart from the arm's cost and included in `plan` and in
+`--max-usd`. Every scorer also accepts optional `Evidence` (measured test, timing or visual
+results) so that later evaluators can feed the rubric without a new interface.
+
+| Category | Scorer | `truth` | Quality |
+|---|---|---|---|
+| `code_review` | `ReviewScorer` | `bugs`: `[{file, line, category, severity, description, aliases?}]`, `line_tolerance` (3); empty `bugs` = a clean change | F1 of severity-weighted recall and precision |
+| `debugging` | `DebugScorer` | `root_cause_tags`, `root_cause_aliases?`, `root_cause?`, `fix_keywords?` | 0.7 × cause credit + 0.3 × share of fix keywords |
+| `architecture`, `planning` | `RubricScorer` | `required_points`, `forbidden_points`: strings or `{id, text, keywords?, gate?, weight?}` | weighted share of required items met, less 0.5 × share of forbidden asserted |
+| any | `PointsScorer` | `points`, `decoys`: `{id, keywords, text?, weight?}` | weighted recall less 0.5 × share of decoys asserted |
+
+`coding`, `frontend` and `performance` are scored on measured results by the evaluators of roadmap
+Tasks 16 and 17; until then only a `points` truth scores them.
+
+**Review.** The answer's *findings* are the places it points at (`file:line`, `file, line N`, or a
+bare `line N` when the task has one file). A finding reports a seeded bug when it names the bug's
+file within `line_tolerance` lines: full credit if it also says the bug's category (or an alias),
+half if it only points there. Unmatched findings are false positives; one in a file the task does
+not contain is a *hallucinated file* and counts double. Only bugs still unmatched go to the judge
+(the first of `--judge-models`) together with the leftover findings; a finding with no location is
+never penalised, since without a location it cannot be called false. A clean change scores
+`1 / (1 + false-positive weight)`: one false alarm leaves 0.5, below the pass mark.
+
+**Debugging.** `root_cause_tags` are equivalent names for the one root cause. The answer's
+hypotheses are its list entries (paragraphs if it has no list), in order; the rank of the first one
+naming the cause gives 1.0 (first), 0.7 (second or third), 0.3 (later), 0 (none). If none names it
+in so many words the judge is asked whether one of the first five says the same thing.
+
+**Rubric.** Each item is judged met or not and the judge must *quote* the answer; a quote that is in
+neither the answer nor the evidence voids the verdict. With several judges each item goes by
+majority. Items with `keywords` need no judge. An item with `gate: true` that is missed caps quality
+at 0.4. If no item can be decided (no judge, no keywords) the task errors rather than guesses.
+
+**Pairwise judge** (`PairwiseJudge`, used for A/B comparisons between arms). Every judge sees both
+orderings; a judge that names a different answer in each (it followed the position) is a tie, and
+the rate is reported as position bias. Equal judge votes tie. **Cross-family rule:** a judge may not
+come from a provider that serves either arm (models favour their own family); with none left the
+comparison refuses. Cost is the scorer's, never the arms'.
+
+**Calibrating judges.** Before trusting a judge, measure it:
+
+```bash
+uv run fusion bench calibrate-judge --dataset my.jsonl --judge-models claude-haiku,gpt-luna --max-usd 1
+uv run fusion bench calibrate-judge --dataset toy --mock      # simulated judges, free
+```
+
+Each task with a known truth yields a *good* answer (says what the truth says) and a *flawed* one
+(says little of it and asserts what is wrong); `--cases file.jsonl` supplies `{task_id, good,
+flawed}` pairs instead. Every judge compares every pair in both orderings and the report gives
+accuracy, tie rate, position-flip rate, Cohen's κ against the truth (over both orderings, so an
+always-"A" judge scores κ ≈ 0), agreement between judges and κ per pair. Reports are kept in
+`bench-results/calibration/`; a live calibration is forecast first, refuses to exceed `--max-usd`
+or the live-spend cap, and records its spend.
+
+**Caveats.** The seeded pairs are *easy* by construction (a judge that fails them is unusable; one
+that passes may still fail on subtle differences), and an LLM judge validated on them can still
+favour verbose or confident answers. Keyword and word-overlap checks reward wording the truth
+anticipated: write `aliases` and `keywords` generously, and prefer judged items for open-ended
+points. Simulated judges (`--mock`) follow assumed skill and position-bias numbers; their reports
+test the harness, not any real model.
+
+### Datasets
+
+`evals/datasets/v1/` is the ground-truth dataset the 0.2.0 study runs on: 100 tasks, 25 each of
+`code_review`, `debugging`, `architecture` and `planning`, in three difficulties, with code tasks in
+Python, TypeScript and Go, and six clean reviews (24%) that test false alarms. Truth formats and
+scorers are under [Scoring](#scoring). **All tasks are synthetic and not yet reviewed by a person;
+what that means for validity is in [evals/datasets/README.md](../evals/datasets/README.md#provenance-and-validity-read-this-before-quoting-a-number),
+which is also where the licence note and the guidelines for adding tasks live.**
+
+**Splits.** Every task is in `dev` (15 per category) or `test` (10 per category). `dev` is for tuning
+(the cascade threshold, prompts, judge choice); `test` is touched only by the final study. A run uses
+`--split dev` unless told otherwise (`BenchConfig.split`, default `dev`), so a tuning run cannot
+see held-out tasks by accident; `--split test` and `--split all` are for the final study. A dataset
+with no split labels (the toy dataset, your own file) is used whole under any split. The validator
+rejects a prompt or a file set shared between the splits.
+
+```bash
+uv run fusion bench dataset validate evals/datasets/v1 --release   # schema, ids, lines, secrets, splits, coverage
+uv run fusion bench dataset stats evals/datasets/v1                # counts per category, difficulty, split, language
+uv run fusion bench dataset build                                  # compile authoring/v1/*.yaml into v1/*.jsonl
+uv run fusion bench dataset build --check                          # fail if the JSONL is out of date
+uv run fusion bench dataset build --generate 10 --category debugging --model claude-sonnet --max-usd 1
+```
+
+`validate` always checks each row's schema, unique ids and prompts, that bug files and line numbers
+are inside the files supplied (and on added lines of the diff), that no string looks like a secret,
+that a licence note sits next to the dataset, and that an answer written from a task's own truth
+scores at least 0.9 under its offline scorer and a flawed one at most 0.5. `--release` adds the
+published dataset's promise: at least 100 tasks, 25 per category, 8 per split and 3 per difficulty in
+each category, three languages, 20% clean reviews, and 30 to 400 lines per review diff or debugging
+task. Tasks are written as YAML (code review diffs mark each seeded bug with `«id»`, and the compiler
+computes the line numbers), compiled to JSONL, and a test fails when the two differ. `--generate`
+has a model draft candidates into `evals/datasets/authoring/candidates/` for a person to review; it
+is forecast, held to `--max-usd` and the live-spend cap, and recorded in the spend ledger.
 
 ## Offline dataset evals
 
