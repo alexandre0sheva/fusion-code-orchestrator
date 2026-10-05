@@ -31,6 +31,16 @@
 # budget_strategies:
 #   medium: my-panel                    # what the legacy `budget: medium` runs
 
+# A hard cap on one strategy: forecast over it -> cheaper form, or refused before any call.
+# strategies:
+#   panel-cheap:
+#     max_cost_usd: 0.05
+
+# Reuse the answer to an identical request for a while (off by default; in-process memory).
+# cache:
+#   enabled: true
+#   ttl_seconds: 900
+
 # Spend warnings and defaults.
 # budgets:
 #   warn_cost_usd: 0.5

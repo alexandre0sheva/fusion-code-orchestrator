@@ -61,8 +61,11 @@ Do **not** call Fusion for:
 - `strategy` chooses which models run: `solo-cheap` (one cheap model), `panel-cheap` (the default
   three-model panel), `panel-refine` (adds a mixture-of-agents refinement round where panel models
   revise after seeing anonymized peer answers — use it for hard or high-stakes tasks),
-  `panel-cheap-strong-synth` (stronger final merge) and `panel-digest` (no merge call: you read the
-  panel's answers and combine them). The older `budget` (`low`/`medium`/`high`) picks one of these.
+  `panel-cheap-strong-synth` (stronger final merge), `panel-cascade` (two cheap models first; the
+  rest only if they disagree), `panel-vote` (only the points most models backed, no merge call) and
+  `panel-digest` (no merge call: you are the aggregator, so keep what several models agree on and
+  check the disputed or single-model points against the code). The older `budget`
+  (`low`/`medium`/`high`) picks one of these.
 - `shadow_baseline: true` on any orchestration tool also runs the real baseline model
   (Opus 5.5 by default) on the same task and records a blind pairwise verdict. Use it when the
   user wants proof that Fusion matches big-model quality; it costs extra API money.

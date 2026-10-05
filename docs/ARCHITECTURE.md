@@ -12,15 +12,18 @@ Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
    RedactStage       redact secrets, open the run record
    RouteStage        apply the strategy: panel/aggregator/judge models, fall back by catalog role
    ContextEvalStage  score the context            -- halts: "insufficient context"
+   BudgetStage       forecast the cost against max_cost_usd; shift the strategy down if it is over
+                                                  -- halts: cap below the cheapest option
    ShadowStartStage  start the shadow baseline call now, if a shadow run is wanted
    PanelStage        concurrent fan-out           -- halts: quorum not met
+                     (a cascade asks its cheapest members first and may stop there)
    RefineStage       the strategy's extra peer-review rounds (rounds - 1; none for rounds: 1),
-                     skipped when the panel already agrees
+                     skipped when the panel already agrees or a cascade already stopped
    ClaimsStage       read answers as claims, cluster them across models, measure agreement
    ConcurrentStages  at the same time:
      JudgeStage        safety checks and claim-derived scores per answer; LLM judge if on
      AggregateStage    final answer (solo: the answer itself; llm: one synthesizer call;
-                       digest: the panel's answers and clusters, no call)
+                       digest, vote, best_of: built from the claims, no call)
    FinalEvalStage    final eval, structured output, budget warnings
    ShadowStage       collect the baseline answer and judge it blind against Fusion's
    PersistStage      build the result from the ledger, store the run (always runs)
@@ -54,8 +57,8 @@ Models with no declared window are never trimmed.
 
 ### Strategies and run modes
 
-A **strategy** (`strategy.py`, packaged in `config/strategies.yaml`) is data: `kind` (`solo` or
-`panel`), `members` (catalog aliases, each with an optional role, temperature and reasoning effort),
+A **strategy** (`strategy.py`, packaged in `config/strategies.yaml`) is data: `kind` (`solo`,
+`panel` or `cascade`), `members` (catalog aliases, each with an optional role, temperature and reasoning effort),
 `rounds`, `aggregator`, `judge` and optional cost/latency caps. `RunState.start` resolves it once
 per run, from `PipelineContext.strategy` or else the legacy `budget` through `budget_strategies`, so
 an unknown name fails before a run is recorded. The router turns the strategy into the models to
@@ -157,7 +160,7 @@ strategy into:
 - panel models (the strategy's enabled members; if none is enabled, the catalog's panel-role models
   with a warning);
 - the judge model (the task policy's `judge_model`, else a JSON-capable model with the judge role);
-- the aggregator model (an `llm` aggregator only; empty for solo and digest);
+- the aggregator model (an `llm` aggregator only; empty for solo, digest, vote and best_of);
 - the resolved strategy name, an estimated cost tier and routing warnings.
 
 `RoutingDecision.strategy` reports the strategy that ran. Model metadata and prices live in the
@@ -206,6 +209,46 @@ t0 ─┬─ panel member A ──────────┐
 Config keys and failure semantics are in [CONFIGURATION.md](CONFIGURATION.md#fan-out). A panel call
 that is still pending when the global timeout hits is attributed to its own model. The MCP request
 is still a normal blocking request from Claude Code's perspective.
+
+### Cascade, aggregators and caps
+
+Three mechanisms cut what a run spends without a model call of their own. All of them read the
+claim clusters and the ledger, never an answer's wording.
+
+- **Cascade** (`cascade.py`, run by `PanelStage`). The members are sorted cheapest first by catalog
+  list price and the first `cascade.first` form wave one. `measure_claims` (the measurement
+  `ClaimsStage` also uses) and `decide` judge that wave: it may stop only if two or more models
+  answered, `agreement_score` reaches the threshold, no cluster is contradicted and the router's
+  risk is not `high`. Stopping sets `RunState.cascade.exited_early`; the panel is trimmed to wave
+  one (so coverage is measured over the models actually asked), `RefineStage` does nothing and
+  `AggregateStage` uses `early_aggregator`. Otherwise wave two runs the rest, `merge_fanouts`
+  combines the waves (wall times add, the quorum is judged again over every model asked) and the
+  run continues as a panel. A wave-one call that fails counts as "fewer than two answered", so a
+  flaky cheap model escalates rather than answering alone. `CascadeOutcome` (reason, agreement,
+  threshold, risk, who ran) is stored with the run.
+- **Aggregators** (`aggregate.py`). `aggregator_for(strategy, cascade_exited_early)` picks one;
+  `digest`, `vote` and `best_of` are pure functions of the clusters and answers. `vote` keeps the
+  `consensus` clusters, `best_of` scores each model by the mean share of the other models backing
+  its clusters (halved when disputed) and returns that model's answer as written, and `digest`
+  lists consensus, disputed and single-model clusters ahead of every answer for Claude Code to
+  merge. `llm` stays in `synthesize.py`.
+- **Caps** (`budget_guard.py`, `routing/budget.py`). `BudgetStage` runs `preflight`: `plan_calls`
+  lists the calls a strategy makes with assumed token counts (prompt size from the redacted text;
+  fixed overheads and output sizes as constants in `routing/budget.py`), `forecast_calls` prices
+  them from the catalog, and `down_shifts` yields cheaper strategies until one fits or none is
+  left (a halt with reason `budget`). The result is stored as `RunState.preflight`. During the run
+  a `BudgetGuard` on `RunState` is asked before each optional stage (`refinement`, `judge`,
+  `synthesis`, a cascade's `escalation`): it adds the money held by stages already approved and
+  not yet in the ledger (`release` frees it), compares with `max_cost_usd`, and compares the
+  slowest call so far with the time left to `max_latency_s`. A refused stage degrades instead of
+  failing: no refinement, deterministic judging, the digest instead of a synthesis, the first wave
+  instead of escalation. `BudgetReport` (caps, forecasts, shifts, skipped stages) is stored with
+  the run. Settings: [CONFIGURATION.md](CONFIGURATION.md#cost-and-latency-caps).
+
+An optional **response cache** (`cache.py`, `BasePipeline.run`) returns an earlier answer for an
+identical request in real mode; see [CONFIGURATION.md](CONFIGURATION.md#response-cache). Its key is
+a hash of the redacted task, the task type, the whole strategy definition and `max_models`, so
+changing any of them is a miss.
 
 ### Refinement (mixture-of-agents)
 
@@ -295,7 +338,8 @@ penalties for unsupported claims and residual risk.
 
 ### Synthesis
 
-For an `llm` aggregator the synthesizer prompt receives:
+For an `llm` aggregator (the other aggregators are described under
+[Cascade, aggregators and caps](#cascade-aggregators-and-caps)) the synthesizer prompt receives:
 
 - the original task;
 - the claim clusters and a short agreement summary;

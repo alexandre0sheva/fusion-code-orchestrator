@@ -37,7 +37,10 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         instructions=(
             "Multi-model orchestration engine for code review, debugging, "
             "architecture decisions, implementation planning, general coding answers, "
-            "and Claude Code run comparison. Claude Code remains the executor."
+            "and Claude Code run comparison. Claude Code remains the executor. "
+            "With the panel-digest strategy no model merges the panel's answers: the response "
+            "lists the shared, disputed and single-model points and each model's answer, and you "
+            "decide what to keep."
         ),
         lifespan=lifespan,
     )

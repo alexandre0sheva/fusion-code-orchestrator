@@ -20,6 +20,7 @@ __all__ = [
     "BaselineConfig",
     "BaselineEntry",
     "BudgetConfig",
+    "CacheConfig",
     "CostTier",
     "EarlyReturn",
     "FanoutConfig",
@@ -33,7 +34,7 @@ __all__ = [
 ]
 
 _CONFIG_DIR = Path(__file__).parent
-_ROUTING_KEYS = frozenset({"policies", "budgets", "fanout", "refinement"})
+_ROUTING_KEYS = frozenset({"policies", "budgets", "fanout", "refinement", "cache"})
 
 class ModelRegistryConfig(BaseModel):
     """Full model registry loaded from YAML."""
@@ -122,6 +123,14 @@ class RefinementConfig(BaseModel):
         return _reject_moved_keys(data, dict.fromkeys(("enabled_budgets", "max_rounds"), hint))
 
 
+class CacheConfig(BaseModel):
+    """Cache of whole answers for identical requests (real mode; off unless enabled)."""
+
+    enabled: bool = False
+    ttl_seconds: float = Field(default=900.0, gt=0)
+    max_entries: int = Field(default=128, ge=1)
+
+
 class RoutingPoliciesConfig(BaseModel):
     """Full routing policies loaded from YAML."""
 
@@ -129,6 +138,7 @@ class RoutingPoliciesConfig(BaseModel):
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
     fanout: FanoutConfig = Field(default_factory=FanoutConfig)
     refinement: RefinementConfig = Field(default_factory=RefinementConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
 
 
 class BaselineEntry(BaseModel):

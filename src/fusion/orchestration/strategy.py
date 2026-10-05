@@ -1,7 +1,8 @@
 """Strategies (declarative arms) and the two run modes.
 
-A strategy is data: who answers, for how many rounds, who aggregates, whether a judge scores the
-answers. Baselines in a benchmark and Fusion itself are both strategies, so they share one code
+A strategy is data: who answers, for how many rounds, who aggregates (a model, or no model at
+all), whether a judge scores the answers, whether cheap models go first (a cascade) and what the
+run may cost. Baselines in a benchmark and Fusion itself are both strategies, so they share one code
 path and one accounting. Strategies come from the ``strategies`` config section; the legacy
 ``budget`` argument of the tools resolves to a strategy through ``budget_strategies``.
 """
@@ -39,8 +40,8 @@ __all__ = [
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 _STRATEGY_KEYS = ("strategies", "budget_strategies")
-# Reserved values of Strategy fields; validation rejects them until they are implemented.
-_RESERVED_AGGREGATORS = {"vote", "best_of"}
+# Aggregators that make no model call, so they take no aggregator_model.
+NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest"})
 
 
 class Mode(StrEnum):
@@ -92,9 +93,21 @@ class PanelMember(BaseModel):
 
 
 class CascadeSpec(BaseModel):
-    """Escalation rules of a cascade strategy. Cascades are reserved and cannot run yet."""
+    """When a cascade stops after its cheap first wave and when it asks the rest of the panel.
+
+    The ``first`` cheapest members answer first. If at least two answered, their agreement is at
+    least ``agreement_threshold``, no point is disputed and the task is not high risk, the cascade
+    returns at once with ``early_aggregator`` (no model call). Otherwise it escalates: the other
+    members answer, then the strategy's ``rounds`` and ``aggregator`` apply as in a panel.
+    """
 
     model_config = ConfigDict(extra="forbid")
+
+    first: int = Field(default=2, ge=2)  # agreement needs two answers, so never fewer
+    # Provisional default; the benchmark study tunes it (roadmap task 19).
+    agreement_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    early_aggregator: Literal["vote", "best_of"] = "vote"
+    escalate_on_high_risk: bool = True
 
 
 class Strategy(BaseModel):
@@ -121,10 +134,14 @@ class Strategy(BaseModel):
     def _consistent(self) -> Strategy:
         problems: list[str] = []
         if self.kind == "cascade":
-            problems.append("kind 'cascade' is reserved and cannot run yet")
-        if self.aggregator in _RESERVED_AGGREGATORS:
-            problems.append(f"aggregator '{self.aggregator}' is reserved and cannot run yet")
-        if self.cascade is not None and self.kind != "cascade":
+            if self.cascade is None:
+                self.cascade = CascadeSpec()
+            if len(self.members) <= self.cascade.first:
+                problems.append(
+                    f"a cascade needs more than cascade.first ({self.cascade.first}) members "
+                    "to have anyone to escalate to"
+                )
+        elif self.cascade is not None:
             problems.append("'cascade' is only valid for kind 'cascade'")
         aliases = [m.model for m in self.members]
         if len(set(aliases)) != len(aliases):
@@ -140,8 +157,10 @@ class Strategy(BaseModel):
             problems.append("judge_feeds_synthesis needs judge: light or full")
         if self.judge_feeds_synthesis and (self.kind == "solo" or self.aggregator != "llm"):
             problems.append("judge_feeds_synthesis needs an llm aggregator")
-        if self.aggregator == "digest" and self.aggregator_model is not None:
-            problems.append("a digest aggregator calls no model, so aggregator_model must be unset")
+        if self.aggregator in NO_MODEL_AGGREGATORS and self.aggregator_model is not None:
+            problems.append(
+                f"a {self.aggregator} aggregator calls no model, so aggregator_model must be unset"
+            )
         if problems:
             raise ValueError("; ".join(problems))
         return self

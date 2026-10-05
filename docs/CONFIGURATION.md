@@ -17,7 +17,7 @@ Settings come from five layers; a later layer overrides an earlier one:
 5. **`fusion --set section.key=value`** (repeatable, placed before the command).
 
 User and project files may set these top-level sections: `models`, `provider_limits`, `policies`,
-`budgets`, `fanout`, `refinement`, `strategies`, `budget_strategies` and `baselines`. A misspelled section is an error with a
+`budgets`, `fanout`, `refinement`, `cache`, `strategies`, `budget_strategies` and `baselines`. A misspelled section is an error with a
 suggestion. Mappings merge key by key, so `models: {gpt-luna: {max_tokens: 1234}}` changes one field
 and keeps the rest; lists (`baselines`, a strategy's `members`) and single values are replaced.
 
@@ -126,7 +126,7 @@ code change.
 ```yaml
 strategies:
   my-panel:
-    kind: panel                  # solo | panel
+    kind: panel                  # solo | panel | cascade
     members:                     # catalog aliases; solo has exactly one
       - model: claude-haiku
       - model: gpt-luna
@@ -134,12 +134,22 @@ strategies:
         temperature: 0.2         # optional per member
         reasoning_effort: low    # optional per member
     rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
-    aggregator: llm              # llm | digest
-    aggregator_model: claude-sonnet   # omit for the catalog's synthesizer role
+    aggregator: llm              # llm | digest | vote | best_of
+    aggregator_model: claude-sonnet   # llm only; omit for the catalog's synthesizer role
     judge: off                   # off | light | full
     judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
-    max_cost_usd: 0.05           # optional; going over adds a warning
-    max_latency_s: 60            # optional; going over adds a warning
+    max_cost_usd: 0.05           # optional hard cap, see "Cost and latency caps"
+    max_latency_s: 60            # optional; stages that would not fit are skipped
+  my-cascade:
+    kind: cascade                # cheapest members first, the rest only if they disagree
+    members: [{model: claude-haiku}, {model: gpt-luna}, {model: gemini-flash}]
+    cascade:
+      first: 2                   # how many of the cheapest members answer first (at least 2)
+      agreement_threshold: 0.7   # stop there when their agreement is at least this
+      early_aggregator: vote     # vote | best_of: how that early answer is made (no model call)
+      escalate_on_high_risk: true  # a high-risk task always asks the whole panel
+    aggregator: llm              # what merges the answers once it has escalated
+    aggregator_model: claude-sonnet
 budget_strategies:
   medium: my-panel
 ```
@@ -154,6 +164,8 @@ budget_strategies:
 | `panel-cheap-strong-synth` | the same panel, merged by Claude Sonnet 5.5 | 3 + 1 |
 | `panel-refine` | the same panel plus one refinement round, merged by Haiku 4.5 | 3 + 3 + 1 |
 | `panel-digest` | the same panel, no synthesis: the answers come back for Claude Code to merge | 3 |
+| `panel-vote` | the same panel, no synthesis: only the points a majority of models backed come back | 3 |
+| `panel-cascade` | the two cheapest of the panel first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
 | `panel-local` | Ollama and LM Studio models; falls back to the cloud panel with a warning when none are enabled | 2 + 1 |
 
 How the fields behave:
@@ -164,8 +176,13 @@ How the fields behave:
   refinement round each member sees the other members' anonymized answers and revises its own; a
   member whose call fails keeps its previous answer. Timeouts and the minimum panel size are under
   [Refinement](#refinement-mixture-of-agents).
-- **`aggregator: llm`** makes one synthesizer call; **`digest`** makes none and returns every answer
-  plus the disagreement summary. `vote` and `best_of` are reserved names and are rejected for now.
+- **`aggregator`** says how the answers become one. `llm` makes one synthesizer call. The others make
+  none, so aggregation is free: `digest` returns every answer plus the shared, disputed and
+  single-model points, and **Claude Code is the aggregator** (the tool descriptions tell it to keep
+  what several models agree on and check the rest against the code); `vote` returns only the points
+  a majority of the models backed (and says so when there are none); `best_of` returns the one
+  answer that the other models' claims back most, as written (ties go to the answer with more
+  evidence, then to the earlier member). `vote`, `best_of` and `digest` take no `aggregator_model`.
 - **`judge`**: `off` runs only the deterministic checks and makes no judge call (the default, so a
   run costs only its panel and aggregator). `light` has the judge model score each answer.
   `full` does the same and also records a check of the judge's own output under
@@ -174,9 +191,43 @@ How the fields behave:
   time, since the synthesizer does not read the judge's scores. Set it to `true` for the synthesizer
   to receive them; synthesis then waits for the judge. It needs `judge: light` or `full` and an
   `llm` aggregator.
-- A model may appear only once in a strategy. `kind: cascade` is reserved and rejected for now.
-- `max_cost_usd` and `max_latency_s` are checked after the run and add a warning; they do not stop
-  a run.
+- **`kind: cascade`** runs the `cascade.first` cheapest members (by catalog list price; ties keep the
+  configured order; a model with no price counts as dearest) as a first wave. If at least two
+  answered, their agreement is at least `agreement_threshold`, no point has a disputed severity and
+  the task is not high risk (unless `escalate_on_high_risk: false`), the run ends there:
+  `early_aggregator` (`vote` or `best_of`) makes the answer, no refinement or synthesis happens and
+  no other model is called. Otherwise the remaining members answer, and `rounds` and `aggregator`
+  apply as for a panel. A cascade needs more members than `first`; if `max_models` leaves fewer it
+  runs as one panel and says so. The default `agreement_threshold` of 0.7 is provisional until the
+  benchmark study tunes it. `routing.reasons` and the stored run's `cascade` record which way it
+  went and why.
+- A model may appear only once in a strategy.
+- `max_cost_usd` and `max_latency_s` are caps; see [Cost and latency caps](#cost-and-latency-caps).
+
+### Cost and latency caps
+
+`max_cost_usd` on a strategy is enforced before and during a run:
+
+1. **Before any call**, the planned calls are priced from the catalog (assumed token counts, the
+   same arithmetic as the table in [COSTS.md](COSTS.md#what-a-task-costs-by-strategy), using the
+   prompt's real size). If the forecast is over the cap, the strategy is shifted down one step at a
+   time until it fits, and the response says so in `warnings` and `routing.reasons`: drop the
+   refinement rounds and judge calls, then drop the dearest member until two are left, then run the
+   cheapest member alone. If even that is over the cap, the run is refused before any model is
+   called (cost $0) with a message naming the strategy and the cap to raise. A cascade is forecast
+   for its first wave only. When a model has no catalog price the forecast cannot be checked, which
+   is warned about, and the cap is still enforced during the run.
+2. **During the run**, before refinement, the LLM judge, synthesis and a cascade's escalation, the
+   stage is priced (from the answers' real sizes) against the money already spent. A stage that
+   would pass the cap is skipped with a warning: refinement stops, the judge falls back to
+   deterministic checks, synthesis is replaced by the free panel digest, and a cascade returns its
+   first wave's answer instead of escalating. Stages that run together reserve their share.
+
+`max_latency_s` is enforced during the run only (latency cannot be forecast before a call has been
+made): a stage is skipped when the elapsed time plus the slowest call so far would pass the cap.
+The panel itself is never cut short by it; use `fanout.global_timeout_seconds` for that. A run that
+still ends over a cap adds a warning. Costs are estimates until the ledger has them, so treat a cap
+as a tight budget, not an accounting guarantee.
 
 Budgets are aliases kept for compatibility:
 
@@ -222,6 +273,22 @@ mode is an argument of `Pipeline.run(ctx, mode=...)`, not a global.
 
 The benchmark runner that drives this mode and its provider-response cache arrive with the benchmark
 framework; see [BENCHMARKING.md](BENCHMARKING.md).
+
+## Response cache
+
+Off by default. With `cache.enabled: true`, a real-mode run whose redacted task text, task type,
+strategy (its whole definition) and `max_models` match an earlier completed run less than
+`ttl_seconds` old returns that answer without calling any model: no cost, a warning saying it came
+from the cache, and no new run in the stored history or lifetime stats. It is kept in the memory of
+one process (an MCP server session), least recently used entries go first, a halted run is never
+cached, and benchmark mode neither reads nor writes it.
+
+```yaml
+cache:
+  enabled: true
+  ttl_seconds: 900     # how long an answer may be reused
+  max_entries: 128
+```
 
 ## Fan-out
 

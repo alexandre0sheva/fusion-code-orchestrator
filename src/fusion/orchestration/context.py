@@ -17,6 +17,8 @@ from fusion.evals.schemas import (
     HybridEvalResult,
     ModelResponseEval,
 )
+from fusion.orchestration.budget_guard import BudgetGuard, BudgetReport, Preflight
+from fusion.orchestration.cascade import CascadeOutcome
 from fusion.orchestration.claims import AgreementReport, ClaimCluster, PanelAnswer
 from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import CallGateway, RunLedger
@@ -75,7 +77,7 @@ class PipelineDeps:
 class Halt:
     """Why a run stopped early; the persist stage still produces a diagnostic result."""
 
-    reason: Literal["insufficient_context", "quorum"]
+    reason: Literal["insufficient_context", "quorum", "budget"]
 
 
 @dataclass
@@ -88,6 +90,7 @@ class RunState:
     ledger: RunLedger
     gateway: CallGateway
     budget: BudgetTracker
+    guard: BudgetGuard
     warnings: list[str] = field(default_factory=list)
 
     run_id: str = ""
@@ -96,6 +99,7 @@ class RunState:
     sanitized_context: str = ""
     sanitized_snippets: list[str] = field(default_factory=list)
     redaction_count: int = 0
+    prompt_tokens: int = 0  # estimated size of the task prompt, for cost forecasts
 
     strategy: Strategy | None = None
     routing: RoutingDecision | None = None
@@ -105,6 +109,8 @@ class RunState:
     synthesizer_model: str = ""
     context_eval: ContextEvalResult | None = None
 
+    preflight: Preflight | None = None
+    cascade: CascadeOutcome | None = None
     fanout: FanoutResult | None = None
     successful: list[tuple[str, ModelResponse]] = field(default_factory=list)
     refinement: RefinementResult | None = None
@@ -145,6 +151,26 @@ class RunState:
     def halted(self) -> bool:
         return self.halt is not None
 
+    @property
+    def cascade_exited_early(self) -> bool:
+        return self.cascade is not None and self.cascade.exited_early
+
+    def budget_report(self) -> BudgetReport | None:
+        """What the strategy's caps did to this run; None when it has no caps."""
+        guard = self.guard
+        if not guard.active:
+            return None
+        plan = self.preflight
+        return BudgetReport(
+            max_cost_usd=guard.max_cost_usd,
+            max_latency_s=guard.max_latency_s,
+            requested_forecast_usd=plan.requested.usd if plan else None,
+            forecast_usd=plan.forecast.usd if plan else None,
+            forecast_known=plan.forecast.known if plan else True,
+            shifts=list(plan.shifts) if plan else [],
+            skipped=list(guard.skipped),
+        )
+
     @classmethod
     def start(
         cls, ctx: PipelineContext, deps: PipelineDeps, mode: Mode = Mode.REAL
@@ -162,13 +188,24 @@ class RunState:
             temperature=settings.temperature,
             seed=settings.seed,
         )
+        strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
+        started = deps.clock()
         return cls(
             ctx=ctx,
             mode=mode,
-            strategy=deps.routing.resolve_strategy(ctx.strategy, ctx.budget),
-            started=deps.clock(),
+            strategy=strategy,
+            started=started,
             ledger=ledger,
             gateway=gateway,
             budget=BudgetTracker(config=deps.routing.budgets.budgets),
+            guard=BudgetGuard(
+                max_cost_usd=strategy.max_cost_usd,
+                max_latency_s=strategy.max_latency_s,
+                ledger=ledger,
+                clock=deps.clock,
+                started=started,
+                models=deps.registry.models,
+                pricing=deps.pricing,
+            ),
             warnings=warnings,
         )

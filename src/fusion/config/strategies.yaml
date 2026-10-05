@@ -3,7 +3,18 @@
 #
 # kind: solo   one model answers; the answer is returned as is (one call, no synthesis)
 # kind: panel  several models answer; `rounds` > 1 adds peer-refinement rounds; then `aggregator`
-#              merges the answers (llm = one synthesizer call, digest = return the answers)
+#              merges the answers:
+#                llm      one synthesizer call
+#                digest   no call; the answers and claim clusters go to Claude Code to merge
+#                vote     no call; keep only the points a majority of the models backed
+#                best_of  no call; return the answer the other models agree with most
+# kind: cascade  the `cascade.first` cheapest members answer first; if they agree (agreement >=
+#              `cascade.agreement_threshold`, nothing disputed, task not high risk) the run ends
+#              there with `cascade.early_aggregator` (vote | best_of) and no synthesis call;
+#              otherwise the other members answer too and `rounds` and `aggregator` apply
+# max_cost_usd  hard cap: a run forecast over it is shifted down (no refinement/judge, smaller
+#              panel, cheapest model alone) and refused if even that is over; optional stages
+#              that would pass it are skipped. max_latency_s skips stages that would not fit.
 # judge: off   deterministic checks only, no judge calls (default)
 #        light the LLM judge scores each answer
 #        full  light, plus a check of the judge's own output
@@ -72,6 +83,29 @@ strategies:
       - model: gpt-luna
       - model: gemini-flash
     aggregator: digest
+
+  panel-vote:
+    kind: panel
+    description: The cheap panel with no synthesis call; only the points a majority of models backed are returned.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: vote
+
+  panel-cascade:
+    kind: cascade
+    description: The two cheapest panel models answer first; if they agree the vote is returned with no synthesis, otherwise the full panel answers and Claude Sonnet 5.5 merges.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    cascade:
+      first: 2
+      agreement_threshold: 0.7
+      early_aggregator: vote
+    aggregator: llm
+    aggregator_model: claude-sonnet
 
   panel-local:
     kind: panel

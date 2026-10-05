@@ -152,6 +152,7 @@ def test_default_stage_order() -> None:
         "RedactStage",
         "RouteStage",
         "ContextEvalStage",
+        "BudgetStage",
         "ShadowStartStage",
         "PanelStage",
         "RefineStage",

@@ -8,6 +8,18 @@ from pydantic import BaseModel, Field
 
 from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelResponseEval
 
+STRATEGY_DESCRIPTION = (
+    "Strategy name; overrides budget. Run `fusion strategies list` to see them. Examples: "
+    "solo-cheap (one cheap model), panel-cheap (default: cheap panel, one synthesis call), "
+    "panel-cascade (two cheap models, the rest only if they disagree), panel-refine (adds a "
+    "refinement round), panel-vote (the points most models backed, no synthesis). "
+    "panel-digest returns every panel answer plus the shared, disputed and single-model points "
+    "WITHOUT a synthesis call, so you are the aggregator: keep what several models agree on and "
+    "check disputed or single-model points against the code before relying on them. A strategy "
+    "may carry a hard cost cap (max_cost_usd): the run is then shifted to a cheaper form and "
+    "the response says so in its warnings."
+)
+
 
 class ReviewDiffInput(BaseModel):
     """Input for fusion_review_diff tool."""
@@ -20,13 +32,7 @@ class ReviewDiffInput(BaseModel):
     repo_context: str = Field(default="", description="Repository context")
     goals: str = Field(default="", description="Review goals or focus areas")
     budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
-    strategy: str | None = Field(
-        default=None,
-        description=(
-            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
-            "overrides budget. Run `fusion strategies list` to see them"
-        ),
-    )
+    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
     detail: Literal["compact", "full"] = Field(
         default="compact",
         description=(
@@ -53,13 +59,7 @@ class FusionAskInput(BaseModel):
     file_snippets: list[str] = Field(default_factory=list, description="Relevant file snippets")
     changed_files: list[str] = Field(default_factory=list, description="Relevant file paths")
     budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
-    strategy: str | None = Field(
-        default=None,
-        description=(
-            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
-            "overrides budget. Run `fusion strategies list` to see them"
-        ),
-    )
+    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
     detail: Literal["compact", "full"] = Field(
         default="compact",
         description=(
@@ -90,13 +90,7 @@ class DebugErrorInput(BaseModel):
     recent_changes: str = Field(default="", description="Recent changes that may relate")
     environment: str = Field(default="", description="Runtime environment details")
     budget: str = Field(default="medium", description="Budget level")
-    strategy: str | None = Field(
-        default=None,
-        description=(
-            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
-            "overrides budget. Run `fusion strategies list` to see them"
-        ),
-    )
+    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
     detail: Literal["compact", "full"] = Field(
         default="compact",
         description=(
@@ -122,13 +116,7 @@ class DecideArchitectureInput(BaseModel):
     context: str = Field(default="", description="System context")
     file_snippets: list[str] = Field(default_factory=list)
     budget: str = Field(default="medium", description="Budget level")
-    strategy: str | None = Field(
-        default=None,
-        description=(
-            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
-            "overrides budget. Run `fusion strategies list` to see them"
-        ),
-    )
+    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
     detail: Literal["compact", "full"] = Field(
         default="compact",
         description=(
@@ -154,13 +142,7 @@ class PlanFeatureInput(BaseModel):
     file_snippets: list[str] = Field(default_factory=list)
     existing_patterns: str = Field(default="", description="Existing patterns to follow")
     budget: str = Field(default="medium", description="Budget level")
-    strategy: str | None = Field(
-        default=None,
-        description=(
-            "Strategy name (for example solo-cheap, panel-cheap, panel-refine, panel-digest); "
-            "overrides budget. Run `fusion strategies list` to see them"
-        ),
-    )
+    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
     detail: Literal["compact", "full"] = Field(
         default="compact",
         description=(

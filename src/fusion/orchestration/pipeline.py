@@ -7,6 +7,7 @@ from typing import Any
 
 from fusion.config.loader import BaselineEntry
 from fusion.evals.engine import EvalEngine
+from fusion.orchestration.cache import ResponseCache, request_key
 from fusion.orchestration.context import PipelineContext, PipelineDeps, RunState
 from fusion.orchestration.output import ResultPresenter
 from fusion.orchestration.result import PipelineResult
@@ -63,6 +64,7 @@ class BasePipeline:
             shadow_baseline=shadow_baseline,
         )
         self._stages = stages if stages is not None else default_stages(self.deps)
+        self._cache = ResponseCache(routing.budgets.cache)
 
     # Read-only views kept for callers that poke at a pipeline's collaborators.
     @property
@@ -80,6 +82,9 @@ class BasePipeline:
         serves Claude Code (real) or is measured in a study (benchmark).
         """
         state = RunState.start(ctx, self.deps, mode)
+        key = self._cache_key(state) if mode is Mode.REAL else None
+        if key is not None and (hit := self._cache.get(key)) is not None:
+            return hit
         try:
             for stage in self._stages:
                 if state.halted and not stage.always_runs:
@@ -88,7 +93,16 @@ class BasePipeline:
         finally:
             await _stop_background(state)
         assert state.result is not None, "the final stage must produce a result"
+        if key is not None and not state.halted:
+            self._cache.put(key, state.result)
         return state.result
+
+    def _cache_key(self, state: RunState) -> str | None:
+        """The response-cache key of this run, or None when the cache is off."""
+        if not self._cache.enabled:
+            return None
+        assert state.strategy is not None
+        return request_key(state.ctx, state.strategy)
 
     # -- output helpers used by the task-specific subclasses ----------------------------------
 

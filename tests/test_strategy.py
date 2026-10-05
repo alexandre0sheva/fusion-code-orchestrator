@@ -97,10 +97,42 @@ def _member(alias: str = "claude-haiku", **kw: Any) -> dict[str, Any]:
             },
             "calls no model",
         ),
-        ({"kind": "cascade", "members": [_member(), _member("gpt-luna")]}, "reserved"),
         (
-            {"kind": "panel", "members": [_member(), _member("gpt-luna")], "aggregator": "vote"},
-            "reserved",
+            {"kind": "cascade", "members": [_member(), _member("gpt-luna")]},
+            "more than cascade.first",
+        ),
+        (
+            {
+                "kind": "cascade",
+                "members": [_member(), _member("gpt-luna"), _member("gemini-flash")],
+                "cascade": {"first": 1},
+            },
+            "greater than or equal to 2",
+        ),
+        (
+            {
+                "kind": "cascade",
+                "members": [_member(), _member("gpt-luna"), _member("gemini-flash")],
+                "cascade": {"early_aggregator": "llm"},
+            },
+            "early_aggregator",
+        ),
+        (
+            {
+                "kind": "panel",
+                "members": [_member(), _member("gpt-luna")],
+                "cascade": {"first": 2},
+            },
+            "only valid for kind 'cascade'",
+        ),
+        (
+            {
+                "kind": "panel",
+                "members": [_member(), _member("gpt-luna")],
+                "aggregator": "vote",
+                "aggregator_model": "claude-sonnet",
+            },
+            "vote aggregator calls no model",
         ),
         ({"kind": "panel", "members": [_member(role="poet"), _member("gpt-luna")]}, "unknown role"),
         (
@@ -154,6 +186,8 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-cheap-strong-synth",
         "panel-refine",
         "panel-digest",
+        "panel-vote",
+        "panel-cascade",
         "panel-local",
     }
     assert book.get("solo-frontier").members[0].model == "claude-opus"
@@ -161,6 +195,10 @@ def test_packaged_strategies_are_the_documented_set() -> None:
     assert book.get("panel-cheap-strong-synth").aggregator_model == "claude-sonnet"
     assert book.get("panel-refine").rounds == 2
     assert book.get("panel-digest").aggregator == "digest"
+    assert book.get("panel-vote").aggregator == "vote"
+    cascade = book.get("panel-cascade")
+    assert cascade.kind == "cascade" and cascade.cascade is not None
+    assert (cascade.cascade.first, cascade.cascade.early_aggregator) == (2, "vote")
     assert all(s.judge == "off" for s in book.strategies.values())
 
 

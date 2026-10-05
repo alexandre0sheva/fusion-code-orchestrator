@@ -433,5 +433,7 @@ class ResultPresenter:
             ),
             "claims": [c.model_dump() for c in result.claims],
             "agreement": result.agreement.model_dump() if result.agreement else {},
+            "cascade": result.cascade.model_dump() if result.cascade else {},
+            "budget": result.budget.model_dump() if result.budget else {},
             "warnings": result.warnings,
         }

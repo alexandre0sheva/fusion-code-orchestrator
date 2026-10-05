@@ -33,6 +33,7 @@ SECTIONS = frozenset(
         "budgets",
         "fanout",
         "refinement",
+        "cache",
         "strategies",
         "budget_strategies",
         "baselines",

@@ -81,6 +81,7 @@ async def fanout_to_panel(
     config: FanoutConfig | None = None,
     gateway: CallGateway | None = None,
     members: Mapping[str, PanelMember] | None = None,
+    min_successful: int | None = None,
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
@@ -89,6 +90,8 @@ async def fanout_to_panel(
     All calls start at once; ``max_concurrency`` caps in-flight calls per provider, so a slow
     provider's queue never holds up another's. With ``early_return`` the fan-out stops waiting
     shortly after quorum; with ``hedge_after_ms`` a slow member is re-asked of another model.
+    ``min_successful`` replaces the configured quorum (a cascade's first wave needs two answers
+    whatever the panel's quorum is).
     """
     fanout_config = config or FanoutConfig()
     panel = _Panel(
@@ -106,6 +109,7 @@ async def fanout_to_panel(
             changed_files=changed_files,
         ),
         task_type=task_type,
+        min_successful=min_successful,
     )
     return await panel.run()
 
@@ -133,6 +137,7 @@ class _Panel:
         members: Mapping[str, PanelMember],
         user_prompt: str,
         task_type: TaskType,
+        min_successful: int | None = None,
     ) -> None:
         self.panel_models = panel_models
         self.registry_models = registry_models
@@ -144,7 +149,8 @@ class _Panel:
         self.task_type = task_type
         self.system_prompt = get_system_prompt(task_type)
         self.schema = panel_answer_schema()
-        self.min_success = min(config.min_successful_responses, max(len(panel_models), 1))
+        needed = min_successful or config.min_successful_responses
+        self.min_success = min(needed, max(len(panel_models), 1))
         self._slots: dict[str, asyncio.Semaphore] = {}
         self._attempts: list[_Attempt] = []
         self._hedged: dict[str, str] = {}  # slow member -> model that was asked instead

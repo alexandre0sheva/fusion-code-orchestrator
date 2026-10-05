@@ -52,3 +52,10 @@ refinement:
   global_timeout_seconds: 60
   min_panel_size: 2
   skip_above_agreement: 0.8
+
+# Identical-request answer cache (real mode, in the memory of one server process). Off by default:
+# a repeated request within ttl_seconds returns the earlier answer without calling any model.
+cache:
+  enabled: false
+  ttl_seconds: 900
+  max_entries: 128

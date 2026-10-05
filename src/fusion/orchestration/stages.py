@@ -1,6 +1,6 @@
 """Pipeline stages. Each reads and writes only ``RunState``; nothing else is shared.
 
-Order: Redact -> Route -> ContextEval -> ShadowStart -> Panel -> Refine -> Claims ->
+Order: Redact -> Route -> ContextEval -> Budget -> ShadowStart -> Panel -> Refine -> Claims ->
 (Judge | Aggregate) -> FinalEval -> Shadow -> Persist. Judge and Aggregate run at the same time
 unless the strategy's synthesis needs the judge's scores; the shadow baseline runs alongside the
 panel and is collected by Shadow. A stage may halt the run (``state.halt``); every later stage is
@@ -20,6 +20,20 @@ from fusion.benchmark.shadow import (
     finish_shadow_comparison,
     should_run_shadow,
 )
+from fusion.orchestration.aggregate import (
+    aggregator_for,
+    build_best_of,
+    build_digest,
+    build_vote,
+)
+from fusion.orchestration.budget_guard import (
+    escalation_calls,
+    judge_calls,
+    preflight,
+    refine_round_calls,
+    synthesis_calls,
+)
+from fusion.orchestration.cascade import CascadeOutcome, cheapest_first, decide, merge_fanouts
 from fusion.orchestration.claims import (
     AgreementReport,
     ClaimCluster,
@@ -31,7 +45,7 @@ from fusion.orchestration.claims import (
 )
 from fusion.orchestration.context import Halt, PipelineDeps, RunState
 from fusion.orchestration.disagreement import analyze_disagreement
-from fusion.orchestration.fanout import fanout_to_panel
+from fusion.orchestration.fanout import FanoutResult, fanout_to_panel
 from fusion.orchestration.judge import judge_panel_responses
 from fusion.orchestration.ledger import CallRecord
 from fusion.orchestration.output import step_name
@@ -39,8 +53,10 @@ from fusion.orchestration.output_parser import parse_structured_output
 from fusion.orchestration.prompts import build_user_prompt, get_system_prompt
 from fusion.orchestration.refine import RefinementResult, refine_panel_responses
 from fusion.orchestration.result import PanelResult, PipelineResult, build_usage_summary
-from fusion.orchestration.strategy import PanelMember
-from fusion.orchestration.synthesize import build_digest, synthesize_responses
+from fusion.orchestration.strategy import PanelMember, Strategy
+from fusion.orchestration.synthesize import synthesize_responses
+from fusion.providers.base import ModelResponse
+from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, PlannedCall, estimate_tokens
 from fusion.routing.classifier import canonical_task_key
 from fusion.security.redaction import redact_secrets
 from fusion.storage.run_store import ShadowComparisonRecord
@@ -195,15 +211,140 @@ class ContextEvalStage(_Stage):
         return state
 
 
+# --------------------------------------------------------------------------------------- budget
+
+
+class BudgetStage(_Stage):
+    """Hold the run to its strategy's ``max_cost_usd`` before any model is called.
+
+    The planned calls are priced from assumed token counts. If they would pass the cap the
+    strategy is shifted down (see ``budget_guard.down_shifts``) with a warning; if even the
+    cheapest shift is over, the run halts having spent nothing. Without a cap this stage only
+    measures the prompt. The mid-run half of the cap lives in ``BudgetGuard``.
+    """
+
+    async def run(self, state: RunState) -> RunState:
+        strategy = state.strategy
+        assert strategy is not None
+        parts = [state.sanitized_primary, state.sanitized_context, *state.sanitized_snippets]
+        state.prompt_tokens = estimate_tokens("\n".join(p for p in parts if p))
+        if strategy.max_cost_usd is None:
+            return state
+        plan = strategy.model_copy(
+            update={
+                "members": state.members,
+                "aggregator_model": state.synthesizer_model or None,
+            }
+        )
+        found = preflight(
+            plan,
+            models=self.deps.registry.models,
+            pricing=self.deps.pricing,
+            judge_model=state.judge_model,
+            prompt_tokens=state.prompt_tokens,
+        )
+        state.preflight = found
+        cap = strategy.max_cost_usd
+        if found.shifts:
+            self._shifted(state, found.shifts, found.requested.usd, found.forecast.usd, cap)
+        if found.within_cap is None:
+            missing = ", ".join(found.forecast.unpriced)
+            state.warnings.append(
+                f"Cost cap of ${cap:.4f} cannot be checked up front: no price for {missing}. "
+                "It is still enforced between stages."
+            )
+        if found.within_cap is False:
+            self._halt(state, found.forecast.usd, cap)
+        return state
+
+    def _shifted(
+        self, state: RunState, steps: list[str], asked: float, now: float, cap: float
+    ) -> None:
+        found = state.preflight
+        assert found is not None and state.strategy is not None
+        message = (
+            f"Strategy '{state.strategy.name}' was forecast at ${asked:.4f}, over its ${cap:.4f} "
+            f"cap; {', '.join(steps)} (now about ${now:.4f})"
+        )
+        state.warnings.append(message)
+        if found.within_cap is False:
+            return  # the run halts, so there is nothing to reconfigure
+        shifted = found.strategy
+        state.strategy = shifted
+        state.members = list(shifted.members)
+        state.panel_models = [m.model for m in shifted.members]
+        if shifted.kind == "solo" or shifted.aggregator != "llm":
+            state.synthesizer_model = ""
+        if state.routing is not None:
+            state.routing.selected_panel = state.panel_models
+            state.routing.synthesizer_model = state.synthesizer_model
+            state.routing.reasons.append(f"Cost cap: {', '.join(steps)}")
+        if state.trace is not None:
+            state.trace.panel_models = state.panel_models
+
+    def _halt(self, state: RunState, forecast: float, cap: float) -> None:
+        assert state.strategy is not None and state.context_eval is not None
+        engine = self.deps.eval_engine
+        name = state.strategy.name
+        text = (
+            f"Cost cap not met: the cheapest way to run '{name}' is forecast at about "
+            f"${forecast:.4f}, over its ${cap:.4f} cap, so no model was called. Raise "
+            f"strategies.{name}.max_cost_usd or choose a cheaper strategy."
+        )
+        state.final_answer = text
+        state.final_eval = engine.evaluate_final(
+            text, is_coding_task=engine.is_coding_task(state.task_type)
+        )
+        state.disagreement = {
+            "disagreement_score": 0.0,
+            "agreement_score": 0.0,
+            "low_information": True,
+            "consensus": False,
+            "outlier_models": [],
+        }
+        state.structured = {
+            "summary": text,
+            "budget_exceeded": True,
+            "forecast_cost_usd": forecast,
+            "max_cost_usd": cap,
+        }
+        state.evals = self.deps.presenter.build_evals(
+            state.context_eval, [], state.disagreement, state.final_eval, None, state.warnings
+        )
+        state.panel_models = []
+        if state.trace is not None:
+            state.trace.panel_models = []
+        state.halt = Halt("budget")
+        state.stamp_latency(self.deps.clock)
+
+
 # ---------------------------------------------------------------------------------------- panel
 
 
 class PanelStage(_Stage):
-    """Fan the task out to the panel; halt when too few models answered."""
+    """Fan the task out to the panel; halt when too few models answered.
+
+    A cascade asks its cheapest members first and only asks the rest when they disagree.
+    """
 
     async def run(self, state: RunState) -> RunState:
-        fanout = await fanout_to_panel(
-            panel_models=state.panel_models,
+        strategy = state.strategy
+        assert strategy is not None
+        if strategy.kind == "cascade":
+            assert strategy.cascade is not None
+            if len(state.panel_models) > strategy.cascade.first:
+                return await self._cascade(state, strategy)
+            state.warnings.append(
+                f"Cascade needs more than {strategy.cascade.first} available models to have "
+                "anyone to escalate to; ran them as one panel"
+            )
+        return self._accept(state, await self._fan(state, state.panel_models))
+
+    async def _fan(
+        self, state: RunState, models: list[str], *, min_successful: int | None = None
+    ) -> FanoutResult:
+        return await fanout_to_panel(
+            panel_models=models,
             registry_models=self.deps.registry.models,
             providers=self.deps.providers,
             task_type=state.task_type,
@@ -214,13 +355,74 @@ class PanelStage(_Stage):
             config=self.deps.routing.budgets.fanout,
             gateway=state.gateway,
             members={m.model: m for m in state.members},
+            min_successful=min_successful,
         )
+
+    def _accept(self, state: RunState, fanout: FanoutResult) -> RunState:
         state.fanout = fanout
         state.warnings.extend(fanout.warnings)
         state.successful = fanout.successful
         if not fanout.quorum_met:
             self._halt_without_quorum(state)
         return state
+
+    # -- cascade ----------------------------------------------------------------------------
+
+    async def _cascade(self, state: RunState, strategy: Strategy) -> RunState:
+        spec = strategy.cascade
+        assert spec is not None and state.routing is not None
+        ordered = cheapest_first(state.members, self.deps.registry.models, self.deps.pricing)
+        state.members = ordered
+        state.panel_models = [m.model for m in ordered]
+        first_wave = state.panel_models[: spec.first]
+        first = await self._fan(state, first_wave, min_successful=2)
+        measured = measure_claims(state, successful=first.successful, n_requested=len(first_wave))
+        stop, reason = decide(measured.report, risk=state.routing.risk, spec=spec)
+        over_budget = None
+        if not stop:
+            over_budget = state.guard.check("escalation", self._escalation(state, strategy, first))
+            if over_budget:
+                stop, reason = True, f"{over_budget}; kept the first wave's answer"
+                state.warnings.append(f"{over_budget}; the cascade did not escalate")
+        outcome = CascadeOutcome(
+            exited_early=stop,
+            reason=reason,
+            agreement=measured.report.score,
+            threshold=spec.agreement_threshold,
+            risk=state.routing.risk,
+            first_wave=first_wave,
+            stopped_by_budget=over_budget is not None,
+        )
+        state.cascade = outcome
+        state.routing.reasons.append(f"Cascade: {reason}")
+        if stop:
+            state.panel_models, state.members = first_wave, ordered[: spec.first]
+            state.synthesizer_model = state.routing.synthesizer_model = ""  # none will be called
+            if state.trace is not None:
+                state.trace.panel_models = first_wave
+            return self._accept(state, first)
+        rest = state.panel_models[spec.first :]
+        outcome.escalated_to = rest
+        second = await self._fan(state, rest)
+        state.guard.release("escalation")
+        merged = merge_fanouts(
+            first,
+            second,
+            order=state.panel_models,
+            min_successful=self.deps.routing.budgets.fanout.min_successful_responses,
+        )
+        return self._accept(state, merged)
+
+    @staticmethod
+    def _escalation(state: RunState, strategy: Strategy, first: FanoutResult) -> list[PlannedCall]:
+        sized = [r.output_tokens or ANSWER_OUTPUT_TOKENS for _, r in first.successful]
+        plan = strategy.model_copy(
+            update={
+                "members": state.members,
+                "aggregator_model": state.synthesizer_model or None,
+            }
+        )
+        return escalation_calls(plan, prompt_tokens=state.prompt_tokens, first_wave=sized)
 
     def _halt_without_quorum(self, state: RunState) -> None:
         fanout = state.fanout
@@ -272,21 +474,28 @@ class RefineStage(_Stage):
 
     async def run(self, state: RunState) -> RunState:
         assert state.strategy is not None
+        if state.cascade_exited_early:
+            return state  # the cheap first wave agreed; refining is for the escalated panel
         config = self.deps.routing.budgets.refinement
         members = {m.model: m for m in state.members}
         for _ in range(state.strategy.rounds - 1):
             if self._already_agrees(state, config.skip_above_agreement):
                 break
-            state.successful, round_result = await refine_panel_responses(
-                responses=state.successful,
-                registry_models=self.deps.registry.models,
-                providers=self.deps.providers,
-                task_type=state.task_type,
-                original_task=state.sanitized_primary,
-                config=config,
-                gateway=state.gateway,
-                members=members,
-            )
+            if self._over_cap(state):
+                break
+            try:
+                state.successful, round_result = await refine_panel_responses(
+                    responses=state.successful,
+                    registry_models=self.deps.registry.models,
+                    providers=self.deps.providers,
+                    task_type=state.task_type,
+                    original_task=state.sanitized_primary,
+                    config=config,
+                    gateway=state.gateway,
+                    members=members,
+                )
+            finally:
+                state.guard.release("refinement")
             merged = round_result
             if state.refinement is not None:
                 merged = state.refinement.merged(round_result)
@@ -295,6 +504,16 @@ class RefineStage(_Stage):
             if not round_result.ran:
                 break
         return state
+
+    @staticmethod
+    def _over_cap(state: RunState) -> bool:
+        """True (with a warning) when the cost or latency cap leaves no room for a round."""
+        sizes = [r.output_tokens or ANSWER_OUTPUT_TOKENS for _, r in state.successful]
+        calls = refine_round_calls([m for m, _ in state.successful], state.prompt_tokens, sizes)
+        reason = state.guard.check("refinement", calls)
+        if reason:
+            state.warnings.append(f"{reason}; skipped the remaining refinement")
+        return reason is not None
 
     @staticmethod
     def _already_agrees(state: RunState, threshold: float | None) -> bool:
@@ -324,12 +543,17 @@ class Measured:
     report: AgreementReport
 
 
-def measure_claims(state: RunState) -> Measured:
-    """Parse the current panel answers, cluster their claims and score the agreement."""
+def measure_claims(
+    state: RunState,
+    *,
+    successful: list[tuple[str, ModelResponse]] | None = None,
+    n_requested: int | None = None,
+) -> Measured:
+    """Parse panel answers (the current ones by default), cluster their claims, score agreement."""
     key = canonical_task_key(state.task_type)
     answers: dict[str, PanelAnswer] = {}
     structured: dict[str, bool] = {}
-    for model, response in state.successful:
+    for model, response in state.successful if successful is None else successful:
         answers[model], structured[model] = parse_panel_answer(
             response.content, response.parsed_json, task_key=key
         )
@@ -337,7 +561,7 @@ def measure_claims(state: RunState) -> Measured:
     report = agreement_score(
         clusters,
         len(answers),
-        n_requested=len(state.panel_models),
+        n_requested=len(state.panel_models) if n_requested is None else n_requested,
         n_structured=sum(structured.values()),
     )
     return Measured(answers, structured, clusters, report)
@@ -389,23 +613,40 @@ class JudgeStage(_Stage):
         assert state.strategy is not None
         engine = self.deps.eval_engine
         judge = state.strategy.judge
-        state.evaluations = await judge_panel_responses(
-            eval_engine=engine,
-            responses=state.successful,
-            task_type=state.task_type.value,
-            judge_model=state.judge_model,
-            context=state.sanitized_context,
-            is_coding_task=engine.is_coding_task(state.task_type),
-            known_files=state.ctx.changed_files or None,
-            gateway=state.gateway,
-            use_llm=judge != "off",
-            answers=state.answers,
-            structured=state.answer_structured,
-        )
-        if state.evaluations and engine.use_llm_judge and judge == "full":
-            await self._check_judge_quality(state)
+        use_llm = judge != "off" and not self._over_cap(state)
+        try:
+            state.evaluations = await judge_panel_responses(
+                eval_engine=engine,
+                responses=state.successful,
+                task_type=state.task_type.value,
+                judge_model=state.judge_model,
+                context=state.sanitized_context,
+                is_coding_task=engine.is_coding_task(state.task_type),
+                known_files=state.ctx.changed_files or None,
+                gateway=state.gateway,
+                use_llm=use_llm,
+                answers=state.answers,
+                structured=state.answer_structured,
+            )
+            if state.evaluations and engine.use_llm_judge and use_llm and judge == "full":
+                await self._check_judge_quality(state)
+        finally:
+            state.guard.release("judge")
         state.panel_results = self._panel_results(state)
         return state
+
+    @staticmethod
+    def _over_cap(state: RunState) -> bool:
+        """True (with a warning) when the cost or latency cap leaves no room for the judge."""
+        assert state.strategy is not None
+        sizes = [r.output_tokens or ANSWER_OUTPUT_TOKENS for _, r in state.successful]
+        calls = judge_calls(
+            state.judge_model, state.prompt_tokens, sizes, full=state.strategy.judge == "full"
+        )
+        reason = state.guard.check("judge", calls)
+        if reason:
+            state.warnings.append(f"{reason}; answers were scored by deterministic checks only")
+        return reason is not None
 
     async def _check_judge_quality(self, state: RunState) -> None:
         first = state.evaluations[0]
@@ -451,24 +692,66 @@ class JudgeStage(_Stage):
 
 
 class AggregateStage(_Stage):
-    """Produce the final answer the way the strategy says.
+    """Produce the final answer the way the strategy says (see ``aggregate.aggregator_for``).
 
-    ``solo`` returns the one member's answer; a ``digest`` aggregator returns the panel's answers
-    and claim clusters for Claude Code to merge; ``llm`` makes one synthesizer call that sees the
-    clusters as well as the answers.
+    ``solo`` returns the one member's answer. ``digest``, ``vote`` and ``best_of`` build the answer
+    from the panel's own claims with no model call: the digest hands everything to Claude Code to
+    merge, a vote keeps the points a majority backed, best-of returns the answer the others agree
+    with most. ``llm`` makes one synthesizer call that sees the clusters as well as the answers,
+    unless the cost or latency cap leaves no room for it, in which case the digest is returned.
     """
 
     async def run(self, state: RunState) -> RunState:
         assert state.strategy is not None and state.agreement is not None
-        strategy = state.strategy
         readable = _readable_answers(state)
-        if strategy.kind == "solo":
+        kind = aggregator_for(state.strategy, cascade_exited_early=state.cascade_exited_early)
+        if kind == "solo":
             response = state.successful[0][1]
             state.synth_response = response.model_copy(update={"text": readable[0][1]})
-        elif strategy.aggregator == "digest":
+        elif kind == "digest":
             state.synth_response = build_digest(readable, state.clusters, state.agreement)
+        elif kind == "vote":
+            state.synth_response = self._vote(state, readable)
+        elif kind == "best_of":
+            state.synth_response = self._best_of(state, readable)
         else:
-            state.synth_response = await synthesize_responses(
+            state.synth_response = await self._synthesize(state, readable)
+        return state
+
+    @staticmethod
+    def _vote(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
+        assert state.agreement is not None
+        if not state.agreement.consensus:
+            if state.cascade is not None and state.cascade.stopped_by_budget:
+                state.warnings.append("No point reached a majority; returned the best answer")
+                return AggregateStage._best_of(state, readable)
+            state.warnings.append(
+                "Vote: no point was backed by a majority of the models, so nothing was kept; "
+                "use the panel-digest strategy to see every answer"
+            )
+        return build_vote(state.clusters, state.agreement, len(readable))
+
+    @staticmethod
+    def _best_of(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
+        response, picked = build_best_of(readable, state.clusters)
+        if state.routing is not None:
+            state.routing.reasons.append(
+                f"best_of picked {picked.model} (agreement with the others {picked.agreement:.2f})"
+            )
+        return response
+
+    async def _synthesize(self, state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
+        assert state.agreement is not None
+        sizes = [r.output_tokens or ANSWER_OUTPUT_TOKENS for _, r in state.successful]
+        calls = synthesis_calls(state.synthesizer_model, state.prompt_tokens, sizes)
+        reason = state.guard.check("synthesis", calls)
+        if reason:
+            state.warnings.append(
+                f"{reason}; returned the panel digest for Claude Code to merge instead"
+            )
+            return build_digest(readable, state.clusters, state.agreement)
+        try:
+            return await synthesize_responses(
                 synthesizer_model=state.synthesizer_model,
                 registry_models=self.deps.registry.models,
                 providers=self.deps.providers,
@@ -479,7 +762,8 @@ class AggregateStage(_Stage):
                 gateway=state.gateway,
                 clusters=state.clusters,
             )
-        return state
+        finally:
+            state.guard.release("synthesis")
 
 
 def _readable_answers(state: RunState) -> list[tuple[str, str]]:
@@ -746,6 +1030,8 @@ class PersistStage(_Stage):
             mode=state.mode,
             claims=state.clusters,
             agreement=state.agreement,
+            cascade=state.cascade,
+            budget=state.budget_report(),
         )
 
 
@@ -845,6 +1131,7 @@ def default_stages(deps: PipelineDeps) -> list[Stage]:
         RedactStage(deps),
         RouteStage(deps),
         ContextEvalStage(deps),
+        BudgetStage(deps),
         ShadowStartStage(deps),
         PanelStage(deps),
         RefineStage(deps),

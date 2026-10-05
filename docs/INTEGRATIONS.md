@@ -92,12 +92,17 @@ Not documented yet. One-command installers for Codex, Cursor and Claude Code are
 | `fusion_stats` | Cumulative spend vs baseline, savings and shadow A/B win-rate |
 
 Orchestration tools accept an optional `strategy` (for example `solo-cheap`, `panel-cheap`,
-`panel-refine`, `panel-digest`), or the older `budget` (`low`, `medium`, `high`, `local_only`), which
+`panel-refine`, `panel-cascade`, `panel-vote`, `panel-digest`), or the older `budget` (`low`, `medium`, `high`, `local_only`), which
 selects a strategy; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets). They also take
 `shadow_baseline: true|false` to force or suppress a shadow A/B run against the real baseline model
 for that call, and `detail`: `compact` (the default: the answer, the top five claims, confidence and
 one cost line) or `full` (every claim, the cost breakdown and all warnings). Neither is ever cut at
 a fixed length.
+
+With `panel-digest` no model merges the answers: the response lists the points several models share,
+the disputed ones and the single-model ones, then each model's answer, and the calling agent is the
+aggregator. The tool descriptions say so, so the agent keeps what the models agree on and checks the
+rest against the code before relying on it.
 
 Each tool returns top-level task-specific fields and a consistent envelope:
 

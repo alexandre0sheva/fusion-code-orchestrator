@@ -7,6 +7,8 @@ from typing import Any
 
 from fusion.benchmark.shadow import ShadowComparison
 from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelResponseEval
+from fusion.orchestration.budget_guard import BudgetReport
+from fusion.orchestration.cascade import CascadeOutcome
 from fusion.orchestration.claims import AgreementReport, ClaimCluster
 from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import RunLedger, TaskMetrics
@@ -64,6 +66,9 @@ class PipelineResult:
     mode: Mode = Mode.REAL
     claims: list[ClaimCluster] = field(default_factory=list)
     agreement: AgreementReport | None = None
+    cascade: CascadeOutcome | None = None
+    budget: BudgetReport | None = None
+    cache_hit: bool = False  # served from the response cache: no model was called
 
     @property
     def mode_settings(self) -> ModeSettings:

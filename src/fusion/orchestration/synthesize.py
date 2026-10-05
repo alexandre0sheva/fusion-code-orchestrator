@@ -1,46 +1,13 @@
-"""Synthesize panel responses into a final recommendation."""
+"""Synthesize panel responses into a final recommendation (the ``llm`` aggregator)."""
 
 from __future__ import annotations
 
 from fusion.config.loader import ModelEntry
-from fusion.orchestration.claims import AgreementReport, ClaimCluster, cluster_line, top_clusters
+from fusion.orchestration.claims import ClaimCluster
 from fusion.orchestration.ledger import CallGateway, standalone_gateway
 from fusion.orchestration.prompts import build_synthesis_prompt, get_role_prompt
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse, ProviderError
 from fusion.routing.classifier import TaskType
-
-
-def build_digest(
-    panel_responses: list[tuple[str, str]],
-    clusters: list[ClaimCluster],
-    report: AgreementReport,
-) -> ModelResponse:
-    """The panel's answers and claim clusters as one document, for Claude Code to aggregate."""
-    lines = [
-        f"## Panel digest: {len(panel_responses)} answers, no synthesis model was called",
-        "",
-        "Read the answers below, keep what several of them agree on, and check the points "
-        "where they differ before relying on them.",
-    ]
-    if report.low_information:
-        lines.append("\nOnly one answer arrived, so there is no agreement to measure.")
-    else:
-        lines.append(f"\nAgreement {report.score:.2f} across {report.n_models} models.")
-    sections = (
-        ("Shared by most models", report.consensus),
-        ("Severity disputed", report.contradicted),
-        ("Raised by one model", report.unique),
-    )
-    by_id = {c.id: c for c in clusters}
-    for title, ids in sections:
-        if not ids:
-            continue
-        lines.extend(["", f"### {title}"])
-        for cluster in top_clusters((by_id[i] for i in ids), limit=1000):
-            lines.append(f"- {cluster_line(cluster)}")
-    for model_name, content in panel_responses:
-        lines.extend(["", f"### Answer from {model_name}", content.strip()])
-    return ModelResponse(provider="fusion", model="digest", text="\n".join(lines))
 
 
 async def synthesize_responses(
