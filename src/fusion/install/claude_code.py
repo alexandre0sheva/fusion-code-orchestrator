@@ -26,10 +26,12 @@ from typing import Any, Literal
 from fusion.install.common import (
     REPO_SLUG,
     SERVER_NAME,
+    ClientCheck,
     InstallError,
     InstallReport,
     ServerSpec,
     checkout_spec,
+    is_fusion_entry,
     merge_server,
     read_json_object,
     shell_quote,
@@ -276,3 +278,56 @@ def _run_all(
             detail = done.stderr.strip() or done.stdout.strip() or f"exit code {done.returncode}"
             msg = f"`{text}` failed: {detail}"
             raise InstallError(msg)
+
+
+# -- what `fusion doctor` reads ---------------------------------------------------------------
+
+
+def inspect_claude_code(
+    *,
+    project_dir: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> list[ClientCheck]:
+    """Read-only findings about Claude Code's Fusion server (project ``.mcp.json`` and user
+    config). A server that comes from the plugin is not in these files and shows as absent."""
+    env = os.environ if environ is None else environ
+    config_dir = Path(env["CLAUDE_CONFIG_DIR"]) if env.get("CLAUDE_CONFIG_DIR") else None
+    places = (
+        (
+            (project_dir or Path.cwd()) / ".mcp.json",
+            "project",
+            "fusion install claude-code --scope project",
+        ),
+        (
+            (config_dir or home or Path.home()) / ".claude.json",
+            "user",
+            "fusion install claude-code",
+        ),
+    )
+    findings: list[ClientCheck] = []
+    for path, scope, fix in places:
+        if not path.exists():
+            findings.append(
+                ClientCheck("claude-code", str(path), "absent", f"no {scope} config", fix)
+            )
+            continue
+        try:
+            servers = read_json_object(path).get("mcpServers", {})
+        except InstallError as exc:
+            findings.append(ClientCheck("claude-code", str(path), "error", str(exc), f"fix {path}"))
+            continue
+        entry = servers.get(SERVER_NAME) if isinstance(servers, dict) else None
+        if entry is None:
+            message = f"no '{SERVER_NAME}' server in it"
+            findings.append(ClientCheck("claude-code", str(path), "absent", message, fix))
+        elif isinstance(entry, dict) and is_fusion_entry(entry.get("command"), entry.get("args")):
+            findings.append(
+                ClientCheck("claude-code", str(path), "ok", f"'{SERVER_NAME}' is registered")
+            )
+        else:
+            message = f"'{SERVER_NAME}' is registered but does not run `fusion mcp`"
+            findings.append(
+                ClientCheck("claude-code", str(path), "warn", message, f"{fix} --force")
+            )
+    return findings

@@ -23,7 +23,10 @@ dependencies = [
     "python-dotenv>=1.2",
     "pyyaml>=6.0",
     "rich>=15.0",
+    "starlette>=0.40",
+    "tomlkit>=0.15.1",
     "typer>=0.27",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +41,7 @@ Issues = "https://github.com/alexandre0sheva/fusion-code-orchestrator/issues"
 Documentation = "https://github.com/alexandre0sheva/fusion-code-orchestrator/tree/main/docs"
 
 [project.scripts]
-fusion = "fusion.cli.app:app"
+fusion = "fusion.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +49,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fusion"]
+
+# The files `fusion install` copies live in the repository's integrations/ directory; the wheel
+# carries them inside the package so `uvx --from git+... fusion install ...` can find them.
+[tool.hatch.build.targets.wheel.force-include]
+"integrations" = "fusion/_integrations"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

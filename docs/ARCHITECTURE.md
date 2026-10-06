@@ -123,6 +123,14 @@ deadline; when it passes, `SoftTimeoutRecovery` finishes the run without another
 what the panel produced (claims, deterministic scores, the digest) or halts with `timeout` when
 there were no answers.
 
+**The command line.** `src/fusion/cli/` is split by job: `main.py` (the root app, `--set`, `--verbose`,
+the error contract), `run_cmds.py` (ask, review-diff, debug, decide, plan, eval-answer),
+`runs_cmds.py`, `config_cmds.py`, `doctor.py`, `models_cmd.py`, with `common.py` (exit codes, shared
+flags, input reading) and `live.py` (the live view). `app.py` only re-exports `app`. The live view
+listens on the progress channel above plus a second one, `progress.call_observer`: the call gateway
+tells it when each model call starts and when its record is on the ledger, so a display never reads
+the ledger itself and a failing display never breaks a run.
+
 ### Installers and the plugin
 
 `src/fusion/install/` holds `fusion install <client>`. `common.py` has the server command
@@ -453,6 +461,21 @@ uv run fusion runs export --format jsonl
 over a strategy book extended with the study's arms and calls `run(..., mode=Mode.BENCHMARK)` with a
 `RunLedger` of its own, so a failed run's spending is still known; nothing in the pipeline knows it
 is being benchmarked beyond the mode.
+
+### Dashboard
+
+`src/fusion/dashboard/` is `fusion dashboard`: a Starlette app (already a dependency of FastMCP) that
+serves one static page (`static/index.html`, `app.js`, `style.css`; no build step, no CDN, no inline
+script) and a small JSON API. `api.py` holds the queries: the run database is opened through
+`ReadOnlyStore`, a `RunStore` whose connection is `mode=ro`, and a missing database is an empty
+dashboard rather than a created file. The overview reads `get_stats()` plus per-day sums; a run's
+detail reads its stored output (the `ledger.calls` records, with their `started_at_ms`, are the
+latency timeline) and returns the *sanitized* input; the stored raw input is reached only when
+`SecurityPolicy.log_raw_prompts` is true. Benchmarks reuse `fusion.bench`: `build_report` and
+`render_html` for a run's report (shown in a frame under its own CSP) and `compare_runs`. `app.py`
+adds the two defences of a login-less local service: it answers only loopback `Host` headers, and it
+sends a Content-Security-Policy that allows nothing from any other origin. Only GET and HEAD are
+routed. Usage is in [CONFIGURATION.md](CONFIGURATION.md#dashboard).
 
 ## Safety boundaries
 

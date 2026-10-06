@@ -1,0 +1,15 @@
+# Fusion MCP server for Codex. `fusion install codex` writes this for you; to do it by hand, add it
+# to ~/.codex/config.toml (or to .codex/config.toml in a trusted project).
+[mcp_servers.fusion]
+command = "uvx"
+args = [
+  "--python", ">=3.12", "--managed-python",
+  "--from", "git+https://github.com/alexandre0sheva/fusion-code-orchestrator",
+  "fusion", "mcp",
+]
+# The first start clones and builds Fusion; Codex's 10 s default is too short for that.
+startup_timeout_sec = 120
+# A call takes tens of seconds and Fusion cuts it at 90 s; Codex's 60 s default would abort it first.
+tool_timeout_sec = 180
+# Codex passes an MCP server only the variables listed here (plus a minimal default set).
+env_vars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"]

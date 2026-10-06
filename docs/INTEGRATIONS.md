@@ -110,24 +110,105 @@ After installing, in a project directory with keys set:
 
 ## Cursor
 
-Add to `.cursor/mcp.json` in this repo (or Cursor's MCP settings):
+Requirements: [uv](https://docs.astral.sh/uv/) and Cursor. One command, run in the project:
 
-```json
-{
-  "mcpServers": {
-    "fusion": {
-      "command": "uv",
-      "args": ["run", "fusion", "mcp"],
-      "cwd": "/absolute/path/to/fusion-code-orchestrator"
-    }
-  }
-}
+```bash
+uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install cursor
 ```
+
+Or, from a checkout: `uv run fusion install cursor`. It merges the `fusion` server (the same `uvx
+--from git+...` command as Claude Code) into `.cursor/mcp.json` and writes `.cursor/rules/fusion.mdc`,
+a rule that tells the agent when to call Fusion and when not to (it applies "intelligently": Cursor
+loads it when the description fits the task). Restart Cursor, then check Settings > Tools & MCP
+shows `fusion` with its tools.
+
+| Option | Meaning |
+|--------|---------|
+| `--global` | Register for every project in `~/.cursor/mcp.json`. No rule is written: Cursor has no global rules file, so paste the body of [`integrations/cursor/rules/fusion.mdc`](../integrations/cursor/rules/fusion.mdc) into Settings > Rules if you want it everywhere |
+| `--no-rules` | Register the server only |
+| `--dry-run`, `--ref TAG`, `--local-checkout PATH`, `--force`, `--no-verify` | As for [Claude Code](#choose-how-to-install) (`--force` also replaces an edited rule) |
+
+The merge keeps every other server and key in `mcp.json`, refuses a different `fusion` entry or an
+edited rule without `--force`, refuses a malformed file untouched, and does nothing when run again.
+Every refusal is decided before anything is written. By hand, the file is
+[`integrations/cursor/mcp.json`](../integrations/cursor/mcp.json). Provider keys come from the
+environment Cursor starts in (launch it from a shell that has them exported).
+
+**Smoke test.** (1) Settings > Tools & MCP lists `fusion` with eight tools. (2) In Agent chat ask
+"call fusion_stats": it answers with a spend summary and calls no model. (3) Ask "use Fusion to
+review this diff" with a staged change: the agent calls `fusion_review_diff` and reports findings.
+(4) `fusion install cursor` again says "nothing to do".
 
 ## Codex
 
-Not documented yet. One-command installers for Codex, Cursor and Claude Code are planned for 0.2.0
-(see the [roadmap](superpowers/plans/2026-10-05-v0.2.0-roadmap.md)).
+Requirements: [uv](https://docs.astral.sh/uv/) and Codex (CLI, IDE extension or the desktop app;
+they share `~/.codex/config.toml`).
+
+```bash
+uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install codex
+```
+
+Or, from a checkout: `uv run fusion install codex`. It adds `[mcp_servers.fusion]` to
+`~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and a managed block to `~/.codex/AGENTS.md`
+that tells the agent when to call Fusion. Besides `command` and `args` it sets three keys, because
+Codex's defaults do not suit Fusion:
+
+| Key | Set to | Why |
+|-----|--------|-----|
+| `startup_timeout_sec` | 120 (Codex default 10) | The first start clones and builds Fusion |
+| `tool_timeout_sec` | 180 (Codex default 60) | A call takes tens of seconds and Fusion's own soft limit is 90 s; at 60 s Codex would abort first |
+| `env_vars` | the three provider keys | Codex forwards only the variables listed here to an MCP server, so without it the server runs without keys |
+
+A larger value you already have is kept, never lowered. The file is edited with `tomlkit`, so your
+comments, ordering and other servers stay as they were; a different `fusion` entry is refused
+without `--force` (which replaces only its command, keeping `env` and other keys); a malformed file
+is refused untouched; running it again does nothing. The AGENTS.md block sits between
+`<!-- fusion:begin ... -->` and `<!-- fusion:end -->`: a re-run refreshes what is between the
+markers and never touches the rest. By hand, add
+[`integrations/codex/config.toml.snippet`](../integrations/codex/config.toml.snippet) to the config
+and [`integrations/codex/AGENTS.fusion.md`](../integrations/codex/AGENTS.fusion.md) to `AGENTS.md`.
+
+| Option | Meaning |
+|--------|---------|
+| `--project` | Use `.codex/config.toml` and `./AGENTS.md` in this project (Codex reads a project config only after you trust the project) |
+| `--no-agents-md` | Register the server only |
+| `--dry-run`, `--ref TAG`, `--local-checkout PATH`, `--force`, `--no-verify` | As for [Claude Code](#choose-how-to-install) |
+
+Export the provider keys in the shell you start Codex from.
+
+**Smoke test.** (1) `codex mcp list` shows `fusion` enabled with `startup_timeout_sec: 120` and
+`tool_timeout_sec: 180`. (2) In Codex ask "call fusion_stats": it answers without calling a model.
+(3) Ask "use Fusion to review my uncommitted diff": expect a call to `fusion_review_diff`, with no
+progress shown until it returns. (4) `fusion install codex` again says "nothing to do".
+
+## Which client supports what
+
+| | Claude Code | Cursor | Codex |
+|--|:-----------:|:------:|:-----:|
+| Tools | yes | yes | yes |
+| Progress notifications | yes | not stated in its docs | no |
+| Resources (`fusion://runs/{id}`, `fusion://stats`, `fusion://strategies`) | yes | yes | no |
+| Prompts (`review-this-diff`, `debug-this-error`, `plan-this-feature`) | not confirmed | yes | no |
+| When-to-call guidance | plugin skills | `.cursor/rules/fusion.mdc` | `AGENTS.md` block |
+
+This is what each client's documentation says (read 2026-10-06), not something exercised by driving
+the client; the smoke tests are how to check a given install. Where a feature is missing:
+
+- **No progress:** the call looks like it is hanging for up to a minute. Fusion's soft limit still
+  returns a digest after 90 s, and `strategy: "solo-cheap"` answers in a few seconds.
+- **No resources:** ask for `detail: "full"` instead of reading `fusion://runs/{run_id}`; the stats
+  come from `fusion_stats`.
+- **No prompts:** the tools are the same, and the guidance file (rule, AGENTS.md block) already says
+  when to call each one.
+
+## `fusion doctor` hook points
+
+`fusion.install.checks.inspect_clients()` returns read-only findings for every client: a
+`ClientCheck` (`client`, `location`, `status` of `ok`, `warn`, `error` or `absent`, `message` and
+the `fix` command) per config file (project and user). It reads the files and starts nothing. It
+reports a malformed file, a `fusion` entry that does not run `fusion mcp`, and for Codex a disabled
+server, timeouts below Fusion's needs, or no forwarded provider key. `absent` is only a fault if you
+use that client. `fusion doctor` shows them, with the rest of the setup checks ([CONFIGURATION.md](CONFIGURATION.md#fusion-doctor)).
 
 ## MCP tool reference
 
@@ -231,5 +312,4 @@ loopback address; another `--host` is refused unless you pass `--allow-remote`.
 
 Fusion works without any of the optional parts. A client that ignores progress sees a normal
 blocking call, one without resources gets the whole answer with `detail: full`, and one without
-prompts just uses the tools. Which client supports what is recorded with the per-client setup
-above as each is verified.
+prompts just uses the tools. [Which client supports what](#which-client-supports-what) is above.

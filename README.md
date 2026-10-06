@@ -78,7 +78,7 @@ uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-
 claude                         # then try /fusion:review, /fusion:debug or /fusion:ask
 ```
 
-Options, the server-only install, Cursor and troubleshooting: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+Options, the server-only install, Cursor (`fusion install cursor`), Codex (`fusion install codex`) and troubleshooting: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## How it works
 
@@ -111,19 +111,21 @@ Inputs, response envelope and budgets: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.
 ## Common commands
 
 ```bash
-uv run fusion review-diff --file diff.patch      # review a diff
-uv run fusion debug --error "TimeoutError: ..."  # debug an error
-uv run fusion decide --question "Redis or memcache?"
-uv run fusion plan --feature-file feature.md
-uv run fusion eval-answer --question-file q.md --answer-file a.md
-uv run fusion stats                              # cumulative spend, savings, shadow win-rate
-uv run fusion runs list                          # run history (also: runs show RUN_ID)
-uv run fusion config validate                    # check YAML config without calling providers
-uv run fusion --help                             # everything else
+uv run fusion doctor                              # is this machine ready? (keys, config, MCP server)
+uv run fusion ask "Why does this retry loop never back off?" -f src/http.py
+git diff main | uv run fusion review-diff -f -    # review a diff
+uv run fusion debug --file trace.txt              # debug an error
+uv run fusion stats                               # cumulative spend, savings, shadow win-rate
+uv run fusion dashboard                           # local web view of spend, runs, benchmarks (read-only)
+uv run fusion --help                              # everything else
 ```
 
-The review, debug, decide, plan and eval commands accept `--mock` to run offline with the
-deterministic mock provider.
+![The dashboard's overview: spend against the baseline model](docs/assets/dashboard.png)
+
+*`fusion dashboard` (synthetic demo data). Details: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#dashboard).*
+
+Every run command takes `--mock` (offline, no keys), `--json`, `--strategy` and `--max-cost`.
+Flags, exit codes, the live view and shell completion: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#command-line).
 
 ## Documentation
 
@@ -133,7 +135,7 @@ deterministic mock provider.
 | Env vars, YAML config, strategies, budgets | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | Cost and pricing methodology | [docs/COSTS.md](docs/COSTS.md) |
 | Measuring Fusion vs a single model | [docs/BENCHMARKING.md](docs/BENCHMARKING.md) |
-| Claude Code / Cursor setup, tool reference | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+| Claude Code / Cursor / Codex setup, tool reference | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
 | Manual Claude Code A/B runbook | [docs/CLAUDE_CODE_AB.md](docs/CLAUDE_CODE_AB.md) |
 | Security model | [SECURITY.md](SECURITY.md) |
 | Contributing and docs rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -155,6 +157,7 @@ src/fusion/
   security/       secret redaction
   storage/        SQLite run store
   cli/            Typer CLI
+  dashboard/      `fusion dashboard`: read-only local web UI
   install/        `fusion install`: one-command client setup
 plugin/           Claude Code plugin (commands, skills, subagent, MCP config)
 evals/            datasets and runners

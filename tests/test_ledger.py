@@ -280,3 +280,49 @@ async def test_models_without_a_context_window_are_never_trimmed() -> None:
         stage="panel", alias="big", request=ModelRequest(model_id="big-1", user_prompt=prompt)
     )
     assert provider.requests[0].user_prompt == prompt and warnings == []
+
+
+async def test_gateway_tells_an_observer_when_a_call_starts_and_finishes() -> None:
+    from fusion.orchestration.progress import call_observer
+
+    events: list[tuple[object, ...]] = []
+
+    class Observer:
+        def call_started(self, stage: str, alias: str) -> None:
+            events.append(("start", stage, alias))
+
+        def call_finished(self, record: CallRecord) -> None:
+            events.append(("end", record.stage, record.model_alias, record.ok, record.cost_usd))
+
+    clock = Clock()
+    gateway, ledger, _ = _gateway(ScriptedProvider(clock), clock)
+    request = ModelRequest(model_id="big-1", user_prompt="hi")
+    with call_observer(Observer()):
+        await gateway.call(stage="panel", alias="big", request=request)
+    assert [e[:3] for e in events] == [("start", "panel", "big"), ("end", "panel", "big")]
+    assert events[1][3] is True and events[1][4] == ledger.records[0].cost_usd
+    # Outside the block nobody is told, and the ledger is filled all the same.
+    await gateway.call(stage="panel", alias="big", request=request)
+    assert len(events) == 2 and len(ledger.records) == 2
+
+
+async def test_an_observer_that_raises_never_breaks_a_call(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from fusion.orchestration.progress import call_observer
+
+    class Broken:
+        def call_started(self, stage: str, alias: str) -> None:
+            raise RuntimeError("display bug")
+
+        def call_finished(self, record: CallRecord) -> None:
+            raise RuntimeError("display bug")
+
+    clock = Clock()
+    gateway, ledger, _ = _gateway(ScriptedProvider(clock), clock)
+    with call_observer(Broken()):
+        response = await gateway.call(
+            stage="panel", alias="big", request=ModelRequest(model_id="big-1", user_prompt="hi")
+        )
+    assert response.ok and len(ledger.records) == 1
+    assert "call observer failed" in capsys.readouterr().err

@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from fusion.cli.common import JsonOption, echo_json
 from fusion.config.catalog import FREE_PROVIDERS, Catalog, catalog_warnings, load_catalog
 from fusion.config.catalog_check import ModelCheck, check_catalog_live
 
@@ -38,10 +39,28 @@ def models_list(
     all_models: Annotated[
         bool, typer.Option("--all", help="Include disabled and mock models")
     ] = False,
+    as_json: JsonOption = False,
 ) -> None:
     """List catalog models with provider IDs, prices (per 1M tokens) and verification dates."""
     catalog = load_catalog()
     today = date.today()
+    if as_json:
+        echo_json(
+            [
+                {
+                    "alias": alias,
+                    "provider": entry.provider,
+                    "model_id": entry.model_id,
+                    "enabled": entry.enabled,
+                    "roles": list(entry.roles),
+                    "price": _price_text(catalog, alias, today)[0],
+                    "verified": _price_text(catalog, alias, today)[1] or None,
+                }
+                for alias, entry in catalog.models.items()
+                if all_models or (entry.enabled and entry.provider != "mock")
+            ]
+        )
+        return
     table = Table(title="Fusion model catalog (USD per 1M tokens: input / output)")
     for column in ("Alias", "Provider", "Model ID", "Price in/out", "Verified", "Roles"):
         table.add_column(column)
@@ -93,12 +112,14 @@ def models_check(
         ),
     ] = False,
     strict: Annotated[bool, typer.Option(help="Exit with an error if anything is flagged")] = False,
+    as_json: JsonOption = False,
 ) -> None:
     """Check the catalog for stale prices, upcoming price changes and retiring models."""
     catalog = load_catalog()
     warnings = catalog_warnings(catalog)
-    for warning in warnings:
-        console.print(f"[yellow]WARN[/yellow] {warning}")
+    if not as_json:
+        for warning in warnings:
+            console.print(f"[yellow]WARN[/yellow] {warning}")
     problems = len(warnings)
 
     if live:
@@ -108,7 +129,20 @@ def models_check(
             async with httpx.AsyncClient() as client:
                 return await check_catalog_live(catalog, keys, client)
 
-        problems += _print_live(asyncio.run(_run()))
+        checked = asyncio.run(_run())
+        if as_json:
+            problems += sum(item.status in {"unknown_id", "error"} for item in checked)
+            echo_json(
+                {
+                    "warnings": warnings,
+                    "live": [item.model_dump() for item in checked],
+                    "problems": problems,
+                }
+            )
+        else:
+            problems += _print_live(checked)
+    elif as_json:
+        echo_json({"warnings": warnings, "live": None, "problems": problems})
     elif not warnings:
         console.print(
             "[green]Catalog looks current.[/green] Use --live to verify IDs with providers."

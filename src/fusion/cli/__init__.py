@@ -1,5 +1,5 @@
 """CLI entry point."""
 
-from fusion.cli.app import app
+from fusion.cli.main import app
 
 __all__ = ["app"]

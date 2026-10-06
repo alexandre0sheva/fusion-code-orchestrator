@@ -10,9 +10,10 @@ import asyncio
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 REPO_URL = "https://github.com/alexandre0sheva/fusion-code-orchestrator"
 REPO_SLUG = "alexandre0sheva/fusion-code-orchestrator"
@@ -158,12 +159,16 @@ def _describe(entry: object) -> str:
 
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     """Write JSON next to the target and move it into place, so a crash never leaves half a file."""
+    write_text_atomic(path, json.dumps(data, indent=2) + "\n")
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write a text file next to the target and move it into place (keeps the target's mode)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            json.dump(data, stream, indent=2)
-            stream.write("\n")
+            stream.write(text)
         if path.exists():
             os.chmod(temp_name, path.stat().st_mode & 0o777)
         os.replace(temp_name, path)
@@ -172,16 +177,67 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
         raise
 
 
+# -- the files the installers copy ---------------------------------------------------------------
+
+
+def integration_text(*parts: str) -> str:
+    """A file from ``integrations/`` (the rule, the AGENTS.md block).
+
+    In a checkout it is read from the repository's ``integrations/`` directory; in an installed
+    wheel it is the copy bundled as ``fusion/_integrations`` (see ``pyproject.toml``).
+    """
+    bundled = Path(__file__).resolve().parents[1] / "_integrations"
+    root = bundled if bundled.is_dir() else Path(__file__).resolve().parents[3] / "integrations"
+    path = root.joinpath(*parts)
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        msg = f"Fusion's own file {path} is missing ({exc}); reinstall Fusion."
+        raise InstallError(msg) from exc
+
+
+def is_fusion_entry(command: object, args: object) -> bool:
+    """True when a stored server command starts Fusion (``... fusion mcp``), however it is run."""
+    words = [str(command), *map(str, args)] if isinstance(args, list) else [str(command)]
+    return words[-2:] == ["fusion", "mcp"]
+
+
+# -- what ``fusion doctor`` reads --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ClientCheck:
+    """One finding about one client's Fusion setup (the hook ``fusion doctor`` will list).
+
+    ``status``: ``ok`` (configured and sound), ``warn`` (configured but likely to misbehave),
+    ``error`` (the config cannot be used) or ``absent`` (no Fusion entry here; not a fault when
+    the client is not used). ``fix`` is the command or edit that resolves a non-``ok`` finding.
+    """
+
+    client: str
+    location: str
+    status: Literal["ok", "warn", "error", "absent"]
+    message: str
+    fix: str = ""
+
+
 # -- the launch check -------------------------------------------------------------------------
 
 
-def verify_server(spec: ServerSpec, *, timeout: float = VERIFY_TIMEOUT_S) -> list[str]:
+def verify_server(
+    spec: ServerSpec,
+    *,
+    timeout: float = VERIFY_TIMEOUT_S,
+    extra_env: Mapping[str, str] | None = None,
+) -> list[str]:
     """Start the server as a client would, list its tools and stop it. Returns the tool names.
 
     The server runs on the mock provider, so the check needs no API keys and spends nothing.
+    ``extra_env`` adds variables to the server's environment (``fusion doctor`` points the
+    database at a scratch file so the check never touches the user's own).
     """
     try:
-        return asyncio.run(asyncio.wait_for(_list_tools(spec), timeout))
+        return asyncio.run(asyncio.wait_for(_list_tools(spec, extra_env or {}), timeout))
     except InstallError:
         raise
     except TimeoutError:
@@ -192,11 +248,11 @@ def verify_server(spec: ServerSpec, *, timeout: float = VERIFY_TIMEOUT_S) -> lis
         raise InstallError(msg) from exc
 
 
-async def _list_tools(spec: ServerSpec) -> list[str]:
+async def _list_tools(spec: ServerSpec, extra_env: Mapping[str, str]) -> list[str]:
     from fastmcp import Client
     from fastmcp.client.transports import StdioTransport
 
-    env = {**os.environ, "FUSION_DEFAULT_PROVIDER": "mock"}
+    env = {**os.environ, "FUSION_DEFAULT_PROVIDER": "mock", **extra_env}
     with tempfile.TemporaryDirectory() as scratch:
         log = Path(scratch) / "server.log"  # the server's stderr: shown only when the check fails
         transport = StdioTransport(

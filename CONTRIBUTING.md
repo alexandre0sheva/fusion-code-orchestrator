@@ -42,7 +42,7 @@ Local mock workflow:
 ```bash
 export FUSION_DEFAULT_PROVIDER=mock
 uv run fusion config validate
-uv run fusion run-mock --task code_review --content "diff --git a/app.py b/app.py\n+def foo(): pass"
+uv run fusion ask "How should I retry a failed HTTP call?" --mock
 ```
 
 ## Pull request expectations
@@ -64,7 +64,7 @@ rather than copying paragraphs into a second place.
 |-----------|----------------|
 | What it is, quickstart, links | `README.md` (at most 200 lines; enforced by a test) |
 | Internals, data flow, modules | `docs/ARCHITECTURE.md` |
-| Config files, env vars, budgets, fan-out, refinement | `docs/CONFIGURATION.md` |
+| CLI commands and flags, exit codes, doctor, completion; config files, env vars, budgets, fan-out, refinement | `docs/CONFIGURATION.md` |
 | Cost and pricing methodology | `docs/COSTS.md` |
 | Benchmark methodology and how to run | `docs/BENCHMARKING.md` |
 | Dataset provenance, validity limits, licence, guidelines for writing tasks | `evals/datasets/README.md` |

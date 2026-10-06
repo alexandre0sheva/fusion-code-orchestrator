@@ -58,6 +58,123 @@ uv run fusion config validate --strict
 Strict mode fails when an enabled cloud provider is missing its API-key variable. Non-strict mode
 reports it as a warning so mock and local development stay easy.
 
+## Command line
+
+`fusion --help` lists every command and `fusion COMMAND --help` its flags and an example. From
+install to a first answer:
+
+```bash
+export ANTHROPIC_API_KEY=...          # and/or OPENAI_API_KEY, GOOGLE_API_KEY
+fusion doctor                         # checks Python, keys, config, database, the MCP server
+fusion ask "How should I retry a failed HTTP call?"
+```
+
+| Command | Does |
+|---------|------|
+| `fusion ask PROMPT [-f FILE]...` | Ask the panel any coding question; `-f` attaches files |
+| `fusion review-diff -f DIFF` | Review a diff (`git diff main \| fusion review-diff -f -`) |
+| `fusion debug [ERROR] [-f TRACE] [--logs-file LOG]` | Ranked root causes and how to check each |
+| `fusion decide [QUESTION]`, `fusion plan [FEATURE]` | An architecture decision, an implementation plan (`-f FILE` reads the text from a file) |
+| `fusion eval-answer`, `fusion compare-claude-runs` | Score an answer, compare Claude Code runs |
+| `fusion stats`, `fusion runs list\|show\|costs\|compare-baseline\|export` | Spend, savings and the stored run history |
+| `fusion config paths\|show\|validate`, `fusion strategies list`, `fusion models list\|check` | Configuration, strategies, the model catalog |
+| `fusion doctor` | Is this machine ready? See [below](#fusion-doctor) |
+| `fusion dashboard [--port 8765]` | A read-only local web view of spend, runs, benchmarks and configuration; see [Dashboard](#dashboard) |
+| `fusion bench ...`, `fusion install ...`, `fusion mcp`, `fusion init`, `fusion version` | [Benchmarks](BENCHMARKING.md), [client setup](INTEGRATIONS.md), the MCP server, a starter config |
+
+**Flags every run command shares.** The main input is an argument, `-f/--file` or stdin (`-`).
+`--context TEXT` and `--context-file F` add background the panel cannot see; `--strategy NAME` and
+`--max-cost USD` choose and cap the run (see [Strategies](#strategies-and-budgets)); `--detail
+compact|full` (default `compact`); `--json`; `--mock` runs offline on the deterministic mock
+provider; `--db-path`; `-q/--quiet`. The v0.1 spellings (`--error-file`, `--feature-file`,
+`--error`, `--question`) still work.
+
+**Output.** The answer goes to stdout, as Markdown or, with `--json`, as the same record the MCP tool
+returns (compact by default, `--detail full` adds claims, usage, cost comparison and routing).
+Progress, warnings and errors go to stderr, so `fusion ask ... --json | jq` always parses. Every
+data command has `--json` (`runs show` and `runs compare-baseline` always print JSON; `runs export`
+prints one object per line).
+
+**Exit codes.**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (a `partial` run that returned the panel's digest counts) |
+| 1 | The command failed: bad config, no provider key, unreadable file, unknown run, a failed `doctor` check |
+| 2 | The command line is wrong: missing input, unknown option, `--max-cost 0` |
+| 3 | The run finished with no answer (`halted`: not enough context, no quorum, over budget, timed out) |
+
+Failures print `Error: ...` and a hint on one or two lines, never a traceback; `fusion --verbose
+COMMAND` raises the original error with its traceback, which is what a bug report needs. With no
+provider key set and no local provider enabled, a run command stops at once and says how to fix it.
+
+**Live view.** While a run works, stderr shows what it is doing. On a terminal it is a panel with
+the current stage and one row per model call (spinner, then a tick or a cross with tokens, cost and
+latency), plus the running cost beside what the same tokens would cost on the baseline model.
+Shadow-baseline calls are shown dimmed and are not added to the cost. Anywhere else (a pipe, a file,
+CI) it is one plain line per event:
+
+```text
+panel: asking 2 models
+  ok    panel      claude-haiku       1,204 in / 310 out  $0.0012  3.4s
+  FAIL  panel      gpt-luna           TimeoutError: Timed out after 30.0s
+synthesizing
+```
+
+`-q` turns it off.
+
+### `fusion doctor`
+
+Checks, in the order to fix them: the Fusion and Python versions and whether `uv` is on `PATH`; the
+configuration files; each provider's key (shown as `…` and its last four characters, never whole);
+catalog staleness and retiring models; that the database folder is writable; that `fusion mcp`
+starts, speaks only JSON-RPC on stdout and lists its tools (it runs on the mock provider and a
+scratch database, so it needs no keys and touches nothing of yours; `--no-mcp` skips it); and each
+client's setup (Claude Code, Cursor, Codex; a client you do not use shows as `info`). A failing
+check prints a `fix:` line. `--live` also asks each provider for its model list, which is free and
+proves the key and the network work; it never sends a completion, so it costs nothing. Exit code 1
+when a check is an error (`--strict`: or a warning); `--json` prints `{ok, checks: [{name, status,
+detail, fix}]}`.
+
+### Dashboard
+
+```bash
+fusion dashboard                  # http://127.0.0.1:8765/   (--port N, --open to launch a browser)
+```
+
+A read-only web view of what Fusion has recorded, with no build step and nothing loaded from
+another site. It reads the same database as the CLI and the MCP server (`--db-path`,
+`FUSION_DB_PATH`) and the benchmark folder (`FUSION_BENCH_DIR`).
+
+| View | Shows |
+|------|-------|
+| Overview | Lifetime spend against the baseline model's estimate, what you kept, the shadow A/B win rate with its 95% interval, runs per day, and where runs go by task and strategy |
+| Runs | Every run, filterable by task, strategy, status and text; open one for its answer, its claims grouped by how many models agree, a latency timeline of every model call, cost by stage, tokens per second and the redacted input |
+| Benchmarks | Benchmark runs, each run's full report, and a comparison of two runs |
+| Config | The strategies and models in effect, prices and staleness warnings, where each setting comes from, and which provider keys are set (never their values) |
+
+It listens on 127.0.0.1 only, answers only loopback host names, and never changes your data. Run
+detail shows the **redacted** copy of what was asked, with the number of secrets replaced; the
+original is shown only when `FUSION_LOG_RAW_PROMPTS=true`, and a banner says so. Charts have a table
+view and tooltips that work from the keyboard; the page follows the system light or dark setting
+(a button overrides it). An empty database shows the command that fills it. The baseline figures are
+estimates (the same tokens at the baseline model's list price), as in [COSTS.md](COSTS.md).
+
+### Deprecated commands
+
+`fusion review`, `fusion list-runs`, `fusion run-mock` and `fusion compare-cost` print a notice on
+stderr and still work in 0.2.x; they are removed in 0.3.0. Use `fusion review-diff -f DIFF`,
+`fusion runs list`, any run command with `--mock`, and `fusion runs compare-baseline RUN_ID`.
+
+### Shell completion
+
+```bash
+fusion --install-completion     # bash, zsh, fish or PowerShell, detected from your shell
+fusion --show-completion        # print the script instead, to put where you like
+```
+
+Restart the shell afterwards. Completion covers commands, subcommands and flags.
+
 ## Environment variables
 
 | Variable | Description | Default |

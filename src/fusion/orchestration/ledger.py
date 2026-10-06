@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from fusion.config.loader import ModelEntry
+from fusion.orchestration.progress import call_finished, call_started
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.telemetry.cost import ModelUsage, PricingRegistry
 
@@ -323,6 +324,7 @@ class CallGateway:
             self.warnings.append(note)
         began = time.perf_counter()
         status: CallStatus = "success"
+        call_started(stage, alias)
         try:
             coro = provider.safe_complete(request)
             response = await (asyncio.wait_for(coro, timeout) if timeout else coro)
@@ -386,35 +388,35 @@ class CallGateway:
             list_cost = cost.amount_usd
             if response.cache_hit:  # replayed: nothing was billed, but the price is recorded
                 cost_usd, cost_known, cost_is_estimate = 0.0, True, False
-        self.ledger.add(
-            CallRecord(
-                stage=stage,
-                model_alias=alias,
-                provider=response.provider,
-                model_id=response.model,
-                input_tokens=response.input_tokens,
-                output_tokens=response.output_tokens,
-                cached_tokens=response.cached_input_tokens,
-                cache_write_tokens=response.cache_write_tokens,
-                reasoning_tokens=response.reasoning_tokens,
-                cost_usd=cost_usd,
-                cost_known=cost_known,
-                cost_is_estimate=cost_is_estimate,
-                latency_ms=response.latency_ms,
-                started_at_ms=started_ms,
-                ok=response.ok,
-                status=status,
-                error=response.error,
-                error_type=response.error_type,
-                ttft_ms=response.ttft_ms,
-                output_tokens_per_s=response.total_tokens_per_s,
-                decode_tokens_per_s=response.decode_tokens_per_s,
-                retries=response.retries,
-                trimmed=trimmed,
-                cache_hit=response.cache_hit,
-                list_cost_usd=list_cost,
-            )
+        record = CallRecord(
+            stage=stage,
+            model_alias=alias,
+            provider=response.provider,
+            model_id=response.model,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            cached_tokens=response.cached_input_tokens,
+            cache_write_tokens=response.cache_write_tokens,
+            reasoning_tokens=response.reasoning_tokens,
+            cost_usd=cost_usd,
+            cost_known=cost_known,
+            cost_is_estimate=cost_is_estimate,
+            latency_ms=response.latency_ms,
+            started_at_ms=started_ms,
+            ok=response.ok,
+            status=status,
+            error=response.error,
+            error_type=response.error_type,
+            ttft_ms=response.ttft_ms,
+            output_tokens_per_s=response.total_tokens_per_s,
+            decode_tokens_per_s=response.decode_tokens_per_s,
+            retries=response.retries,
+            trimmed=trimmed,
+            cache_hit=response.cache_hit,
+            list_cost_usd=list_cost,
         )
+        self.ledger.add(record)
+        call_finished(record)
         return response
 
 

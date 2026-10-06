@@ -23,6 +23,7 @@ that edits files and executes shell commands.
 | Deterministic safety checks | Flag secret leakage, dangerous shell commands and unsupported file references in answers |
 | Judge skepticism | LLM-judge output is self-evaluated; deterministic checks run even if the judge fails |
 | MCP boundary | MCP orchestration tools call pipelines only: no repo writes, no shell execution |
+| Local dashboard | `fusion dashboard` is read-only, listens on 127.0.0.1, answers only loopback `Host` names (so a web page elsewhere cannot reach it by DNS rebinding), sends a strict Content-Security-Policy, and shows the redacted input of a run, never the stored raw one unless `FUSION_LOG_RAW_PROMPTS` is true |
 | Benchmark sandbox | `fusion bench` runs patches and hidden tests from a dataset you chose in a limited, scrubbed sandbox; never reachable through MCP (see below) |
 
 Known limitations:
