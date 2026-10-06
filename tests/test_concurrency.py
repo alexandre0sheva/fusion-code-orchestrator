@@ -544,4 +544,8 @@ async def test_critical_path_is_the_end_of_the_last_fusion_call(tmp_path: Path) 
     metrics = result.task_metrics
     assert metrics is not None
     assert metrics.critical_path_ms == pytest.approx(max(_ends(spans)), abs=1.0)
-    assert metrics.critical_path_ms < sum(float(s["end_ms"]) - float(s["start_ms"]) for s in spans)
+    # The calls overlap, which is why the path is shorter than their sum. Checked on the calls' own
+    # timestamps: comparing against the run's wall clock fails when a busy runner stalls the loop
+    # between stages (a 250 ms gap was seen in CI).
+    panel = [s for s in spans if s["stage"] == "panel"]
+    assert max(_starts(panel)) < min(_ends(panel))  # every panel call began before any finished
