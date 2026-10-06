@@ -1,0 +1,46 @@
+id: perf-count-inversions
+category: performance
+difficulty: hard
+split: test
+tags:
+- python
+- performance
+- divide-and-conquer
+expected_pass:
+- tests.test_hidden.HiddenTests.test_equal_values_are_not_inversions
+- tests.test_hidden.HiddenTests.test_mixed_with_duplicates
+- tests.test_hidden.HiddenTests.test_empty_and_single
+- tests.test_hidden.HiddenTests.test_does_not_modify_the_input
+- tests.test_hidden.HiddenTests.test_negative_and_float_values
+- tests.test_hidden.HiddenTests.test_matches_brute_force
+solution_summary: 'Count inversions while merge sorting: every right-hand element
+  that jumps ahead of the remaining left ones adds their number'
+flaws:
+- summary: Sum a generator over every pair of positions
+- summary: Merge-sort counting that treats equal values as inversions
+perf:
+  sizes:
+  - 700
+  - 1400
+  - 2800
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

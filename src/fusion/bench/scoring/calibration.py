@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections import Counter
 from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -34,19 +36,26 @@ from fusion.routing.budget import PlannedCall
 
 __all__ = [
     "CalibrationCase",
+    "ACCURACY_FLOOR_ENV",
+    "DEFAULT_ACCURACY_FLOOR",
     "CalibrationReport",
+    "JudgeGate",
     "JudgeStats",
     "build_cases",
     "calibrate",
     "calibration_calls",
     "cases_from_file",
     "cohens_kappa",
+    "judge_floor",
+    "judge_gate",
     "load_reports",
     "save_report",
     "seeded_pair",
 ]
 
 _CALIBRATION_DIR = "calibration"
+ACCURACY_FLOOR_ENV = "FUSION_JUDGE_ACCURACY_FLOOR"
+DEFAULT_ACCURACY_FLOOR = 0.8
 _EXTRA_ANSWER_TOKENS = 1200  # the second answer a pairwise prompt carries
 
 
@@ -65,6 +74,9 @@ class JudgeStats(BaseModel):
     kappa: float  # the judge's raw calls against the truth, both orderings
     failed_calls: int = 0  # orderings that returned nothing usable (left out of kappa)
 
+    def meets(self, floor: float) -> bool:
+        return self.accuracy >= floor
+
 
 class CalibrationReport(BaseModel):
     id: str
@@ -75,6 +87,57 @@ class CalibrationReport(BaseModel):
     pair_kappa: dict[str, float] = Field(default_factory=dict)  # "judge-a|judge-b" -> κ
     cost_usd: float = 0.0
     mock: bool = False
+    # "artifact" reports calibrate the agentic judge on frontend and performance outputs
+    # (good solutions against deliberately flawed ones); they are what the headline gate reads.
+    kind: Literal["text", "artifact"] = "text"
+    floor: float = DEFAULT_ACCURACY_FLOOR
+    by_set: dict[str, dict[str, float]] = Field(default_factory=dict)  # set -> judge -> accuracy
+
+
+def judge_floor() -> float:
+    """The accuracy a judge must reach for a headline verdict, from ``FUSION_JUDGE_ACCURACY_FLOOR``
+    (default 0.8)."""
+    raw = os.environ.get(ACCURACY_FLOOR_ENV, "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_ACCURACY_FLOOR
+    except ValueError:
+        return DEFAULT_ACCURACY_FLOOR
+    return value if 0.0 <= value <= 1.0 else DEFAULT_ACCURACY_FLOOR
+
+
+class JudgeGate(BaseModel):
+    """Whether the judges a study used are trustworthy enough for a headline verdict."""
+
+    blocked: bool
+    floor: float
+    reasons: list[str] = Field(default_factory=list)
+    accuracy: dict[str, float | None] = Field(default_factory=dict)  # judge -> latest accuracy
+
+
+def judge_gate(
+    judges: list[str], reports: list[CalibrationReport], floor: float | None = None
+) -> JudgeGate:
+    """Block the headline verdict when a judge has no artifact calibration, or when its latest one
+    is below ``floor``. ``reports`` should be those of the same kind of run (simulated or live)."""
+    need = judge_floor() if floor is None else floor
+    gate = JudgeGate(blocked=False, floor=need)
+    artifact = [r for r in reports if r.kind == "artifact"]
+    for judge in judges:
+        latest = next(
+            (st for r in reversed(artifact) for st in r.judges if st.judge == judge), None
+        )
+        gate.accuracy[judge] = latest.accuracy if latest else None
+        if latest is None:
+            gate.reasons.append(
+                f"judge {judge} has not been calibrated (fusion bench calibrate-judge --artifacts)"
+            )
+        elif not latest.meets(need):
+            gate.reasons.append(
+                f"judge {judge} picked the better output {latest.accuracy:.0%} of the time, "
+                f"below the {need:.0%} floor"
+            )
+    gate.blocked = bool(gate.reasons)
+    return gate
 
 
 def cohens_kappa(first: list[str], second: list[str]) -> float:
@@ -296,11 +359,13 @@ def save_report(report: CalibrationReport, root: Path) -> Path:
 
 
 def load_reports(root: Path) -> list[CalibrationReport]:
-    """Every stored report, oldest first."""
+    """Every stored report, oldest first (by creation time, then by when the file was written, so
+    two reports saved in the same second keep their order)."""
     folder = root / _CALIBRATION_DIR
     if not folder.is_dir():
         return []
-    return [
-        CalibrationReport.model_validate_json(p.read_text(encoding="utf-8"))
-        for p in sorted(folder.glob("*.json"))
+    found = [
+        (CalibrationReport.model_validate_json(p.read_text(encoding="utf-8")), p.stat().st_mtime_ns)
+        for p in folder.glob("*.json")
     ]
+    return [r for r, _ in sorted(found, key=lambda pair: (pair[0].created, pair[1]))]

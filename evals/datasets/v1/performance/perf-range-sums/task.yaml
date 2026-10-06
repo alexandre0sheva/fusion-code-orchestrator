@@ -1,0 +1,45 @@
+id: perf-range-sums
+category: performance
+difficulty: medium
+split: test
+tags:
+- python
+- performance
+- prefix-sums
+expected_pass:
+- tests.test_hidden.HiddenTests.test_end_is_exclusive
+- tests.test_hidden.HiddenTests.test_end_past_the_list_is_clamped
+- tests.test_hidden.HiddenTests.test_negative_start_is_clamped
+- tests.test_hidden.HiddenTests.test_reversed_or_empty_range_is_zero
+- tests.test_hidden.HiddenTests.test_empty_values
+- tests.test_hidden.HiddenTests.test_floats
+solution_summary: Precompute prefix sums once and answer each query with two lookups
+flaws:
+- summary: Add up the range in a Python loop instead of slicing
+- summary: Use prefix sums without clamping the bounds or handling empty ranges
+perf:
+  sizes:
+  - 1500
+  - 3000
+  - 6000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

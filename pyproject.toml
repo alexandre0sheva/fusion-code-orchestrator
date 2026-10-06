@@ -26,6 +26,11 @@ dependencies = [
     "typer>=0.27",
 ]
 
+[project.optional-dependencies]
+# Screenshots, the console and accessibility checks of frontend benchmark tasks (roadmap Task 17).
+# After installing: `playwright install chromium`. Nothing else needs it.
+bench-visual = ["playwright>=1.49"]
+
 [project.urls]
 Homepage = "https://github.com/alexandre0sheva/fusion-code-orchestrator"
 Repository = "https://github.com/alexandre0sheva/fusion-code-orchestrator"
@@ -53,11 +58,18 @@ addopts = "-m 'not live'"
 target-version = "py312"
 line-length = 100
 src = ["src", "tests", "evals"]
-# The coding dataset's files are task material (stubs, buggy code, hidden tests), not our code.
-extend-exclude = ["evals/datasets/v1/coding"]
+# The executable datasets' files are task material (stubs, buggy code, hidden tests), not our code.
+extend-exclude = [
+    "evals/datasets/v1/coding",
+    "evals/datasets/v1/frontend",
+    "evals/datasets/v1/performance",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_sitecheck.py" = ["E501"]  # one-line HTML fixtures
 
 [tool.mypy]
 python_version = "3.12"
@@ -66,7 +78,7 @@ packages = ["fusion"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["yaml"]
+module = ["yaml", "playwright", "playwright.*"]
 ignore_missing_imports = true
 
 [dependency-groups]

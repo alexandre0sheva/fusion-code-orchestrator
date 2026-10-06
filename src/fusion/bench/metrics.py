@@ -19,6 +19,9 @@ class BenchMetrics(BaseModel):
     cost_usd: float  # every call the arm made; scorer and judge overhead is ``eval_cost_usd``
     cost_known: bool
     eval_cost_usd: float = 0.0
+    # Wall seconds spent measuring and judging the answer (tests, timings, a browser, a judge). Eval
+    # time, kept apart from ``seconds_to_complete``: it is never part of the arm's latency.
+    eval_seconds: float = 0.0
     input_tokens: int
     output_tokens: int
     reasoning_tokens: int
@@ -49,6 +52,7 @@ def build_metrics(
     *,
     wall_ms: float,
     eval_cost_usd: float = 0.0,
+    eval_seconds: float = 0.0,
     quality: float | None = None,
     solved: bool = False,
 ) -> BenchMetrics:
@@ -61,6 +65,7 @@ def build_metrics(
         cost_usd=base.cost_usd,
         cost_known=base.cost_known,
         eval_cost_usd=eval_cost_usd,
+        eval_seconds=eval_seconds,
         input_tokens=base.input_tokens,
         output_tokens=base.output_tokens,
         reasoning_tokens=base.reasoning_tokens,

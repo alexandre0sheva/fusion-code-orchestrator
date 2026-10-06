@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact us</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container narrow">
+    <h1>Contact us</h1>
+    <form action="#" method="post">
+      <p class="field">
+        <label for="name">Your name</label>
+        <input id="name" name="name" type="text" autocomplete="name" required>
+      </p>
+      <p class="field">
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+      </p>
+      <div class="group"><b>What is this about?</b>
+        <label class="choice"><input type="radio" name="topic" value="sales" checked> Sales</label>
+        <label class="choice"><input type="radio" name="topic" value="support"> Support</label>
+        <label class="choice"><input type="radio" name="topic" value="press"> Press</label>
+      </div>
+      <p class="field">
+        <textarea id="message" name="message" rows="6" placeholder="Message"></textarea>
+      </p>
+      <button class="btn" type="submit">Send message</button>
+    </form>
+  </main>
+</body>
+</html>

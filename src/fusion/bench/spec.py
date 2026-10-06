@@ -34,14 +34,20 @@ __all__ = [
     "BenchConfig",
     "BenchTask",
     "Category",
+    "ArtifactTruth",
     "CodingFlaw",
     "CodingTruth",
+    "Criterion",
+    "EvidenceKind",
     "DatasetError",
     "DebugTruth",
+    "Gate",
+    "PerfSpec",
     "ReviewTruth",
     "RubricItem",
     "RubricTruth",
     "SeededBug",
+    "SiteSpec",
     "Split",
     "Truth",
     "TruthPoint",
@@ -246,6 +252,118 @@ class CodingTruth(BaseModel):
     flaws: list[CodingFlaw] = Field(default_factory=list)
 
 
+EvidenceKind = Literal[
+    "tests", "build", "static", "perf", "screenshot", "a11y", "console", "diff_stats"
+]
+CriterionSource = Literal["tests", "static", "perf", "a11y", "visual", "judge"]
+ARTIFACT_KEYS = frozenset({"evaluators", "hard_gates", "soft_criteria", "perf", "site"})
+
+
+class Gate(BaseModel):
+    """A hard gate: a fact about the answer's artefacts that must hold, or it completes nothing.
+
+    With no ``metric`` the evidence's own verdict (``ok``) must be true. With one, that metric
+    must be at most ``max`` and at least ``min``. A gate whose evidence could not be taken (a
+    browser that is not installed) is *unverified*, which does not fail it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    evidence: EvidenceKind
+    metric: str | None = None
+    max: float | None = None
+    min: float | None = None
+    description: str = ""
+
+    @model_validator(mode="after")
+    def _bounds_need_a_metric(self) -> Gate:
+        if self.metric is None and (self.max is not None or self.min is not None):
+            msg = f"gate '{self.id}': max/min need a metric"
+            raise ValueError(msg)
+        if self.metric is not None and self.max is None and self.min is None:
+            msg = f"gate '{self.id}': a metric needs a max or a min"
+            raise ValueError(msg)
+        return self
+
+
+class Criterion(BaseModel):
+    """A weighted soft criterion. ``source`` says what measures it without a judge; a criterion
+    whose source is ``judge`` (or ``visual``, without a browser) is scored by the judge only and
+    left out when there is none."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    description: str = ""
+    weight: float = Field(default=1.0, gt=0)
+    source: CriterionSource = "judge"
+
+
+class PerfSpec(BaseModel):
+    """How a performance task is measured.
+
+    ``script`` is a hidden file defining ``setup(size)`` (build the input) and ``run(state)`` (the
+    workload being timed). It runs for each of ``sizes``, in a fresh process, after ``warmup``
+    unmeasured runs and ``samples`` measured ones. The answer must stay within ``max_ratio`` of the
+    reference solution's median at the largest size and must not scale worse than the reference
+    by more than ``scaling_slack`` (the exponent of time against size).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    script: str = "tests/bench_workload.py"
+    sizes: list[int] = Field(min_length=2)
+    samples: int = Field(default=5, ge=5)
+    warmup: int = Field(default=1, ge=0)
+    timeout_s: float = Field(default=60.0, gt=0)
+    max_ratio: float = Field(default=2.5, gt=1.0)
+    scaling_slack: float = Field(default=0.5, ge=0.0)
+    max_noise: float = Field(default=0.35, gt=0.0)  # MAD / median above this is "unstable"
+
+    @field_validator("sizes")
+    @classmethod
+    def _increasing(cls, sizes: list[int]) -> list[int]:
+        if sorted(set(sizes)) != sizes or sizes[0] < 1:
+            msg = "perf sizes must be positive and strictly increasing"
+            raise ValueError(msg)
+        return sizes
+
+
+class SiteSpec(BaseModel):
+    """A frontend task's page: where it starts and how it is looked at."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entry: str = "index.html"
+    timeout_s: float = Field(default=20.0, gt=0)
+
+
+class ArtifactTruth(BaseModel):
+    """What an executable frontend or performance task is judged on, beside its hidden tests.
+
+    ``evaluators`` names the evaluators to run (default: by category). ``hard_gates`` must all
+    hold; ``soft_criteria`` are weighted. Both live in ``truth`` of the compiled task.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    evaluators: list[str] = Field(default_factory=list)
+    hard_gates: list[Gate] = Field(default_factory=list)
+    soft_criteria: list[Criterion] = Field(default_factory=list)
+    perf: PerfSpec | None = None
+    site: SiteSpec | None = None
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> ArtifactTruth:
+        ids = [g.id for g in self.hard_gates] + [c.id for c in self.soft_criteria]
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        if dupes:
+            msg = f"gate and criterion ids must be unique; repeated: {', '.join(dupes)}"
+            raise ValueError(msg)
+        return self
+
+
 def _keyword_in(text: str, keywords: list[str]) -> str:
     """The first keyword that ``text`` contains (the text itself when there are none)."""
     return next((k for k in keywords if k.lower() in text.lower()), text)
@@ -298,6 +416,8 @@ class BenchTask(BaseModel):
             RubricTruth.model_validate(self.truth)
         if "expected_pass" in self.truth:
             CodingTruth.model_validate(self.truth)
+        if ARTIFACT_KEYS & self.truth.keys():
+            ArtifactTruth.model_validate(self.truth)
         return self
 
     @property
@@ -308,6 +428,10 @@ class BenchTask(BaseModel):
     def expects_patch(self) -> bool:
         """Whether the answer is a code patch (an executable coding task) rather than prose."""
         return "expected_pass" in self.truth
+
+    def artifact_truth(self) -> ArtifactTruth:
+        """The gates, criteria and measurement settings of a frontend or performance task."""
+        return ArtifactTruth.model_validate(self.truth)
 
     def parsed_truth(self) -> Truth:
         return Truth.model_validate(self.truth)
@@ -381,7 +505,6 @@ class BenchTask(BaseModel):
                     {"id": item.id, "keywords": [_keyword_in(said, item.keywords)], "text": said}
                 )
         return Truth.model_validate({"points": points, "decoys": decoys})
-
 
     def _simulated_coding_truth(self) -> Truth:
         """The fix as a point a model finds and each flaw as a decoy it falls for: simulated

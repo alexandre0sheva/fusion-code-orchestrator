@@ -1,0 +1,69 @@
+id: fe-data-table
+category: frontend
+difficulty: hard
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- tables
+expected_pass:
+- tests.test_hidden.HiddenTests.test_table_has_a_caption
+- tests.test_hidden.HiddenTests.test_column_and_row_headers_are_scoped
+- tests.test_hidden.HiddenTests.test_each_column_has_a_named_sort_button
+- tests.test_hidden.HiddenTests.test_exactly_one_column_reports_its_sort
+- tests.test_hidden.HiddenTests.test_script_sorts_and_updates_aria_sort
+- tests.test_hidden.HiddenTests.test_table_scrolls_inside_a_focusable_wrapper
+- tests.test_hidden.HiddenTests.test_five_data_rows_and_a_fluid_page
+solution_summary: A captioned table with scoped headers, sort buttons that maintain
+  aria-sort and an overflow-x wrapper that takes focus
+flaws:
+- summary: A table with no caption or scopes, and no scrolling wrapper, so it widens
+    the page on phones
+- summary: The same table, but even rows are pale grey on near-white and a stylesheet
+    is requested from another host
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a bordered table with a tinted header row and zebra rows, header buttons
+    that look like text, a caption on top
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: sorting works for text and numbers, the sorted column is reported,
+    the table scrolls inside its wrapper on phones
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

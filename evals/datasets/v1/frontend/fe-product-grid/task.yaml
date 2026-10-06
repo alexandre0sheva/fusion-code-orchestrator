@@ -1,0 +1,68 @@
+id: fe-product-grid
+category: frontend
+difficulty: medium
+split: dev
+tags:
+- html
+- css
+- javascript
+- frontend
+- e-commerce
+expected_pass:
+- tests.test_hidden.HiddenTests.test_six_products_in_a_list
+- tests.test_hidden.HiddenTests.test_every_image_has_alt_text
+- tests.test_hidden.HiddenTests.test_each_product_has_a_heading_a_price_and_a_button
+- tests.test_hidden.HiddenTests.test_buttons_say_which_product
+- tests.test_hidden.HiddenTests.test_grid_adapts_without_a_media_query
+- tests.test_hidden.HiddenTests.test_the_products_are_the_briefed_ones
+solution_summary: A list of cards in an auto-fill grid, each image with alt text and
+  each button named after its product
+flaws:
+- summary: Images without alt text and identical Add buttons that do not name the
+    product
+- summary: Correct cards with pale grey prices and a positive tabindex on the first
+    button
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: square image on top, name, price and an Add to cart button at the bottom
+    of each equal-height card; as many columns as fit
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: prices stand out, buttons align across cards, the grid reflows without
+    horizontal scrolling
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create your account</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container narrow">
+    <h1>Create your account</h1>
+    <h4 class="visually-hidden">Account form</h4>
+    <form id="signup" action="#" method="post">
+      <p class="field">
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="email" required aria-describedby="email-hint">
+        <span id="email-hint" class="hint">We only use it to sign you in.</span>
+      </p>
+      <p class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8" aria-describedby="password-hint">
+        <span id="password-hint" class="hint">Use at least 8 characters.</span>
+      </p>
+      <p class="check">
+        <input id="terms" name="terms" type="checkbox" required>
+        <label for="terms">I accept the terms of service</label>
+      </p>
+      <button class="btn" type="submit">Create account</button>
+    </form>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

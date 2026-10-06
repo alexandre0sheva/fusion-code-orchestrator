@@ -23,10 +23,12 @@ from pydantic import BaseModel
 
 from fusion.bench.arms import arm_book
 from fusion.bench.cache import CachingProvider, ResponseDiskCache
+from fusion.bench.evaluators import EvaluatorSet
 from fusion.bench.metrics import build_metrics
 from fusion.bench.plan import estimate_job
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoreResult, get_scorer, is_solved
 from fusion.bench.scoring.coding import coding_verifier
+from fusion.bench.scoring.pairwise import providers_of
 from fusion.bench.spec import (
     BenchConfig,
     BenchTask,
@@ -357,6 +359,7 @@ async def run_bench(
                 )
 
     rid = run_id or new_bench_run_id()
+    evaluators = EvaluatorSet(store.run_dir(rid) / "evidence")  # one set: its caches span the run
     existing = store.get_run(rid)
     if existing is None:
         store.create_run(rid, cfg, len(jobs))
@@ -379,7 +382,9 @@ async def run_bench(
                 return
             item: BenchItem | None = None
             try:
-                item = await _execute(job, rid, cfg, pipeline, env, clock)
+                item = await _execute(
+                    job, rid, cfg, pipeline, env, clock, strategies[job.arm], evaluators
+                )
             finally:
                 actual = item.metrics.cost_usd + item.metrics.eval_cost_usd if item else 0.0
                 if spend is not None and actual > 0:
@@ -463,6 +468,8 @@ async def _execute(
     pipeline: BasePipeline,
     env: BenchEnv,
     clock: Callable[[], float],
+    strategy: Strategy,
+    evaluators: EvaluatorSet,
 ) -> BenchItem:
     """Run one job and score it. Never raises for a failed run: that becomes an ``error`` item."""
     task = job.task
@@ -510,8 +517,19 @@ async def _execute(
     score: ScoreResult | None = None
     error: str | None = None
     try:
+        aliases = [m.model for m in strategy.members]
+        if strategy.aggregator_model:
+            aliases.append(strategy.aggregator_model)
         score = await get_scorer(task.category).score(
-            task, view, ScoreEnv(gateway=gateway, judge_models=cfg.judge_models)
+            task,
+            view,
+            ScoreEnv(
+                gateway=gateway,
+                judge_models=cfg.judge_models,
+                exclude_providers=providers_of(aliases, env.registry.models),
+                artifacts_dir=evaluators.cache.out_dir,
+                evaluators=evaluators,
+            ),
         )
     except Exception as exc:  # noqa: BLE001 — the answer is kept; a resume scores it again
         error = f"scoring failed: {type(exc).__name__}: {exc}"
@@ -520,6 +538,7 @@ async def _execute(
         ledger,
         wall_ms=result.total_latency_ms,
         eval_cost_usd=scoring.total_cost().usd,
+        eval_seconds=score.eval_seconds if score else 0.0,
         quality=quality,
         solved=is_solved(task.category, quality),
     )

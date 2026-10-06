@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +23,9 @@ from fusion.bench.spec import BenchTask, Category
 from fusion.orchestration.ledger import CallGateway
 from fusion.providers.base import ModelRequest
 from fusion.routing.budget import PlannedCall, estimate_tokens
+
+if TYPE_CHECKING:
+    from fusion.bench.evaluators import EvaluatorSet
 
 __all__ = [
     "JUDGE_ROLE",
@@ -115,6 +119,12 @@ class ScoreEnv:
     gateway: CallGateway
     judge_models: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)  # judge calls that failed, for the details
+    # Providers that serve the arm being scored: a judge from one of them is not impartial, so the
+    # agentic judge leaves it out (the cross-family rule).
+    exclude_providers: set[str] = field(default_factory=set)
+    # Where screenshots and other evidence files are kept, and the evaluators that make them.
+    artifacts_dir: Path | None = None
+    evaluators: EvaluatorSet | None = None
 
     def spent_usd(self) -> float:
         return self.gateway.ledger.total_cost().usd
@@ -125,6 +135,11 @@ class ScoreResult(BaseModel):
     scorer: str
     details: dict[str, Any] = Field(default_factory=dict)
     cost_usd: float = 0.0  # what this score's judge calls cost; never part of the arm's cost
+    # Measured by evaluators (frontend and performance tasks): ``Evidence`` dumps, the judge's
+    # tool-call trail, and the wall seconds taking and judging them. Eval time, never the arm's.
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    trail: list[dict[str, Any]] = Field(default_factory=list)
+    eval_seconds: float = 0.0
 
 
 class Scorer(Protocol):

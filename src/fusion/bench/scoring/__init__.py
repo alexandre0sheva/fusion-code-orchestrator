@@ -6,6 +6,7 @@ datasets use and falls back to ``PointsScorer`` for a task whose truth is in ``p
 
 from __future__ import annotations
 
+from fusion.bench.scoring.artifact import ArtifactScorer
 from fusion.bench.scoring.base import (
     PASS_THRESHOLDS,
     AnswerView,
@@ -29,6 +30,7 @@ __all__ = [
     "PASS_THRESHOLDS",
     "SCORERS",
     "AnswerView",
+    "ArtifactScorer",
     "CodingScorer",
     "DebugScorer",
     "Evidence",
@@ -49,17 +51,18 @@ __all__ = [
 
 _POINTS = PointsScorer()
 _RUBRIC = RubricScorer()
-# Coding is scored by running its hidden tests (``CodingScorer``). Frontend and performance have
-# their executable evaluators in roadmap Task 17; until then a task in ``points`` format is all
-# they can be scored on.
+# Coding is scored by running its hidden tests (``CodingScorer``). Frontend and performance tasks
+# are scored on what their answers build (``ArtifactScorer``: evaluators, hard gates and weighted
+# criteria, with an agentic judge when the study names judges); a task of either category written
+# in ``points`` format still falls back to that scorer.
 SCORERS: dict[Category, Scorer] = {
     "code_review": ReviewScorer(),
     "debugging": DebugScorer(),
     "architecture": _RUBRIC,
     "planning": _RUBRIC,
     "coding": CodingScorer(),
-    "frontend": _POINTS,
-    "performance": _POINTS,
+    "frontend": ArtifactScorer(),
+    "performance": ArtifactScorer(),
 }
 
 

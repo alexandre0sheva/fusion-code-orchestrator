@@ -1,13 +1,14 @@
 """How a simulated model plays the benchmark judge (``role == "bench_judge"``).
 
 A judge call carries the data it is about in ``request.metadata["judge"]``, as ``kind`` and
-``payload`` (real providers ignore it; the payload is what the prompt shows, never ground
-truth). The
-simulated judge reads the payload and decides by word overlap, the way a middling judge would, then
-errs in proportion to ``1 - skill``. Pairwise it also knows the task's truth (through the world)
-so that a better answer really is better, leans towards answer A by ``position_bias``, and
-calls a tie when the two are close. Every draw is a hash of the seed, the model and the inputs:
-reruns are identical.
+``payload`` (real providers ignore it; the payload is what the prompt shows, never ground truth).
+The simulated judge reads the payload and decides by word overlap, the way a middling judge would,
+then errs in proportion to ``1 - skill``. Pairwise it also knows the task's truth (through the
+world) so that a better answer really is better, leans towards answer A by ``position_bias``, and
+calls a tie when the two are close. The agentic judge (``kind == "agentic"``) plays the tool
+protocol of ``fusion.bench.scoring.agentic``: it fetches the evidence of each output, then submits
+the measured scores plus noise. Every draw is a hash of the seed, the model and the inputs: reruns
+are identical.
 """
 
 from __future__ import annotations
@@ -59,6 +60,8 @@ def judge_reply(
         return json.dumps(_rubric(payload, model, spec, world, seed))
     if kind == "pairwise":
         return json.dumps(_pairwise(payload, model, spec, world, seed))
+    if kind == "agentic":
+        return json.dumps(_agentic(payload, model, spec, world, seed))
     return None
 
 
@@ -152,3 +155,90 @@ def _pairwise(
     margin = _quality(task, a) - _quality(task, b) + _PAIR_NOISE * noise + spec.position_bias
     winner = "tie" if abs(margin) < _TIE_MARGIN else "A" if margin > 0 else "B"
     return {"winner": winner, "reason": "simulated judgement"}
+
+
+_EVIDENCE_ORDER = ("tests", "perf", "a11y", "screenshot", "static")
+_FETCHES_PER_OUTPUT = 4
+_AGENTIC_NOISE = 0.12  # spread of a score's error at skill 0
+_AGENTIC_TIE = 0.05
+
+
+def _agentic(
+    payload: dict[str, Any], model: str, spec: SimModel, world: SimWorld, seed: int | None
+) -> dict[str, Any]:
+    """One turn of the agentic judge: fetch the next piece of evidence, or submit the verdict.
+
+    It reads only what the conversation shows (the evidence it fetched), like a real judge: it
+    scores each criterion with the measured score plus noise that shrinks with skill, and a
+    criterion nothing measures with the average of the ones that are measured.
+    """
+    labels: list[str] = payload["labels"]
+    observed: list[dict[str, Any]] = payload["observations"]
+    index: list[dict[str, str]] = payload["evidence_index"]
+    step, cap = int(payload["step"]), int(payload["max_steps"])
+    fetched = {
+        (o["args"].get("label"), o["args"].get("kind"))
+        for o in observed
+        if o["tool"] == "get_evidence" and not o.get("error")
+    }
+    if step < cap:
+        for label in labels:
+            kinds = [
+                k
+                for k in _EVIDENCE_ORDER
+                if any(e["label"] == label and e["kind"] == k for e in index)
+            ]
+            for kind in kinds[:_FETCHES_PER_OUTPUT]:
+                if (label, kind) not in fetched:
+                    return {"tool": "get_evidence", "args": {"label": label, "kind": kind}}
+    return _agentic_verdict(payload, model, spec, world, seed)
+
+
+def _agentic_verdict(
+    payload: dict[str, Any], model: str, spec: SimModel, world: SimWorld, seed: int | None
+) -> dict[str, Any]:
+    from fusion.bench.evaluators.base import Evidence
+    from fusion.bench.scoring.completion import by_kind, measured_score
+    from fusion.bench.spec import Criterion
+
+    labels: list[str] = payload["labels"]
+    criteria = [Criterion.model_validate(c) for c in payload["criteria"]]
+    seen: dict[str, list[Evidence]] = {label: [] for label in labels}
+    for o in payload["observations"]:
+        if o["tool"] in ("get_evidence", "run_evaluator") and not o.get("error"):
+            label = o["args"].get("label")
+            for dump in o.get("evidence", []):
+                if label in seen:
+                    seen[label] = [e for e in seen[label] if e.id != dump["id"]]
+                    seen[label].append(Evidence.model_validate(dump))
+    spread = _AGENTIC_NOISE * (1.0 - spec.skill)
+    scores: dict[str, dict[str, float]] = {}
+    for label in labels:
+        kinds = by_kind(seen[label])
+        measured = {c.id: measured_score(c, kinds) for c in criteria}
+        known = [v for v in measured.values() if v is not None]
+        proxy = sum(known) / len(known) if known else 0.5
+        scores[label] = {}
+        for c in criteria:
+            value = measured[c.id]
+            base = proxy if value is None else value
+            noise = (
+                world.normal("jagentic", model, seed, label, c.id, payload["task"][:40]) * spread
+            )
+            scores[label][c.id] = round(min(max(base + noise, 0.0), 1.0), 3)
+    cited = sorted({e.id for items in seen.values() for e in items})
+    text = "Judged from the evidence" + (f" {', '.join(cited)}" if cited else "") + "."
+    args: dict[str, Any] = {
+        "scores": scores if payload["mode"] == "pairwise" else scores[labels[0]],
+        "justification": text + " The outputs were compared on the measured results.",
+        "evidence": cited,
+    }
+    if payload["mode"] == "pairwise":
+        weights = {c.id: c.weight for c in criteria}
+
+        def total(label: str) -> float:
+            return sum(weights[k] * v for k, v in scores[label].items()) / sum(weights.values())
+
+        margin = total("A") - total("B") + spec.position_bias
+        args["winner"] = "tie" if abs(margin) < _AGENTIC_TIE else "A" if margin > 0 else "B"
+    return {"tool": "submit_verdict", "args": args}

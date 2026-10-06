@@ -1,0 +1,69 @@
+id: fe-article-layout
+category: frontend
+difficulty: easy
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- typography
+expected_pass:
+- tests.test_hidden.HiddenTests.test_semantic_article_structure
+- tests.test_hidden.HiddenTests.test_publication_date_is_machine_readable
+- tests.test_hidden.HiddenTests.test_figure_has_alt_and_caption
+- tests.test_hidden.HiddenTests.test_three_sections_and_a_quote
+- tests.test_hidden.HiddenTests.test_readable_line_length
+- tests.test_hidden.HiddenTests.test_generous_line_height
+- tests.test_hidden.HiddenTests.test_fluid_layout
+solution_summary: article, header, time, figure and blockquote with a 68ch column
+  and a 1.7 line height
+flaws:
+- summary: Divs instead of semantic elements, a plain-text date and no measure or
+    line-height limits
+- summary: The right elements with a very pale caption and a section heading that
+    skips to an h4
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a single centred reading column, a prominent title, a full-width captioned
+    picture and a pull quote set apart with a rule
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: line length in ch units, line height of at least 1.5, muted but readable
+    caption and byline
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

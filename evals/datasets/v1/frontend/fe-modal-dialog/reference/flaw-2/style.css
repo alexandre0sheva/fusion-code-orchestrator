@@ -1,0 +1,99 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1b1f24;
+  background: #ffffff;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: #0b4fd6;
+}
+
+:focus-visible {
+  outline: 3px solid #0b5fff;
+  outline-offset: 2px;
+}
+
+.container {
+  width: min(100% - 2rem, 70rem);
+  margin-inline: auto;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.2rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  color: #ffffff;
+  background: #0b5fff;
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+main {
+  padding-block: 2rem;
+}
+
+dialog {
+  width: min(92vw, 26rem);
+  padding: 1.5rem;
+  border: 1px solid #d7dce1;
+  border-radius: 0.75rem;
+}
+
+dialog::backdrop {
+  background: rgba(15, 20, 28, 0.55);
+}
+
+dialog h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+input[type="email"] {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #5b6672;
+  border-radius: 0.4rem;
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.ghost {
+  color: #9cb4e8;
+  background: #ffffff;
+  border: 1px solid #0b4fd6;
+}

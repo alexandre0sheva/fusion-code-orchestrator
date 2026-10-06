@@ -401,18 +401,19 @@ uv run fusion runs export --format jsonl
 | Module | Role |
 |--------|------|
 | `spec.py`, `arms.py` | `BenchTask`, `Arm`, `BenchConfig`, the truth formats, dataset loading and splits; arms resolved to strategies, with overrides |
-| `datasets/` | `build` (authoring YAML to JSONL, and spend-capped draft generation), `validate` (checks and statistics; it runs every coding task), `generate`, `coding` (reads a coding-task directory into a `BenchTask`); sources in `evals/datasets/authoring/` |
+| `datasets/` | `build` (authoring YAML to JSONL, and spend-capped draft generation), `validate` (checks and statistics; it runs every coding task), `generate`, `coding` (reads a coding, frontend or performance task directory into a `BenchTask`), `helpers/sitecheck.py` (the test helper copied into frontend tasks); sources in `evals/datasets/authoring/` |
 | `runner.py` | `run_bench`: jobs keyed by hash, run concurrently under the per-provider limiters, resumable; a governor reserves each job's worst case against `max_usd` and the spend ledger |
 | `plan.py` | the cost and time estimator, built on `budget_guard.plan_calls`, and the fit-to-budget suggestion |
 | `store.py` | `results.jsonl` per run plus the `bench_runs` and `bench_items` tables (migration 5) in `bench-results/bench.db` |
 | `cache.py`, `spend.py` | the disk response cache (a provider wrapper that flags replays with `ModelResponse.cache_hit`) and the live-spend ledger |
-| `scoring/` | the `Scorer` protocol (`base`) and the scorers: `points`, `review`, `debug`, `rubric`, `coding` (hidden tests in the sandbox); `pairwise` (the A/B judge) and `calibration` (judge accuracy and κ); see [BENCHMARKING.md](BENCHMARKING.md#scoring) |
+| `scoring/` | the `Scorer` protocol (`base`) and the scorers: `points`, `review`, `debug`, `rubric`, `coding` (hidden tests in the sandbox), `artifact` (frontend and performance: evaluators, gates and criteria, `completion`); `pairwise` (the A/B judge), `agentic` (the tool-using judge) and `calibration` and `artifact_calibration` (judge accuracy, κ and the accuracy floor); see [BENCHMARKING.md](BENCHMARKING.md#scoring) |
+| `evaluators/` | what an answer's files measure: `Evidence` and the evaluators `tests`, `build`, `static`, `diff_stats`, `perf` (with its stdlib-only harness `_perf_harness.py`), `visual`, `console` and `a11y` (Playwright optional, in-page rules in `assets/`); `EvaluatorSet` holds a study's instances and caches; see [BENCHMARKING.md](BENCHMARKING.md#frontend-and-performance-tasks-evidence-and-the-agentic-judge) |
 | `calibrate.py`, `metrics.py`, `summary.py` | running a judge calibration with the spend cap; `BenchMetrics` built from a run's ledger; per-arm summary rows |
 | `sandbox.py`, `patch.py` | the `Sandbox` context manager (limits, scrubbed environment, isolation) and patch extraction and application; used only by benchmark scorers and the verifier, never by MCP, see [SECURITY.md](../SECURITY.md#benchmark-sandbox) |
 | `virtual.py` | an event loop with a virtual clock, used for simulated runs, and `offload` for blocking work |
 | `cli.py` | the `fusion bench` commands |
 
-`providers/simulated.py` holds the simulated models, `providers/simulated_judge.py` the way they play a judge and `providers/simulated_coding.py` the patches they write for coding tasks. The runner builds an ordinary `BasePipeline`
+`providers/simulated.py` holds the simulated models, `providers/simulated_judge.py` the way they play a judge (including the agentic tool protocol) and `providers/simulated_coding.py` the patches they write for coding tasks. The runner builds an ordinary `BasePipeline`
 over a strategy book extended with the study's arms and calls `run(..., mode=Mode.BENCHMARK)` with a
 `RunLedger` of its own, so a failed run's spending is still known; nothing in the pipeline knows it
 is being benchmarked beyond the mode.

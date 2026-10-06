@@ -23,6 +23,8 @@ class ArmSummary(BaseModel):
     mean_cost_usd: float | None
     cost_per_solved_usd: float | None  # total cost of the arm's items / items solved
     eval_cost_usd: float
+    mean_eval_cost_usd: float | None  # per item: what measuring and judging it cost
+    mean_eval_seconds: float | None  # per item; never part of ``seconds_p50`` or ``seconds_p90``
     seconds_p50: float | None  # items replayed from the cache are left out: not a measurement
     seconds_p90: float | None
     output_tokens_per_s: float | None  # mean effective rate
@@ -70,6 +72,8 @@ def summarize(items: list[BenchItem]) -> list[ArmSummary]:
                 mean_cost_usd=total_cost / len(group),
                 cost_per_solved_usd=total_cost / solved if solved else None,
                 eval_cost_usd=sum(i.metrics.eval_cost_usd for i in group),
+                mean_eval_cost_usd=_mean([i.metrics.eval_cost_usd for i in group]),
+                mean_eval_seconds=_mean([i.metrics.eval_seconds for i in group]),
                 seconds_p50=_percentile(timed, 0.5),
                 seconds_p90=_percentile(timed, 0.9),
                 output_tokens_per_s=_mean(rates),

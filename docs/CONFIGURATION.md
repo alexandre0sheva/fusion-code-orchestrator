@@ -74,6 +74,8 @@ reports it as a warning so mock and local development stay easy.
 | `FUSION_DATA_DIR` | Directory holding `runs.db` | platform data dir |
 | `FUSION_PROJECT_DIR` | Directory whose `.fusion/config.yaml` is the project layer | working directory |
 | `FUSION_BENCH_DIR` | Where benchmark runs, their database, the response cache and `spend.json` live | `bench-results` under the project directory |
+| `FUSION_BROWSER_PATH` | Chromium or Chrome binary the optional `[bench-visual]` evaluators use instead of Playwright's own download | Playwright's Chromium |
+| `FUSION_JUDGE_ACCURACY_FLOOR` | Accuracy (0 to 1) the agentic judge must reach in its latest `calibrate-judge --artifacts` run for a study to get a headline verdict ([BENCHMARKING.md](BENCHMARKING.md#frontend-and-performance-tasks-evidence-and-the-agentic-judge)) | `0.8` |
 | `FUSION_SANDBOX_ISOLATION` | Benchmark sandbox: `auto` uses network and write isolation when the platform has it, `require` refuses to run without it, `off` disables it ([SECURITY.md](../SECURITY.md#benchmark-sandbox)) | `auto` |
 | `FUSION__<SECTION>__<KEY>` | Override one config key (see [Layers and locations](#layers-and-locations)) | unset |
 | `FUSION_SHADOW_MODE` | Shadow A/B against the real baseline: `off`, `sampled`, `always` | `off` |

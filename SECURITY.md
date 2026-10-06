@@ -35,9 +35,11 @@ Known limitations:
 
 ## Benchmark sandbox
 
-Benchmark mode can run code: the hidden tests of the `coding` dataset applied to a model's patch
-(`src/fusion/bench/sandbox.py`, scored by `bench/scoring/coding.py`), and the `best-of-n-verified`
-strategy's visible-test check. That code is written by models and was never reviewed by anyone.
+Benchmark mode can run code: the hidden tests of the `coding`, `frontend` and `performance`
+datasets applied to a model's patch (`src/fusion/bench/sandbox.py`, scored by
+`bench/scoring/coding.py` and `bench/scoring/artifact.py`), the evaluators that lint, compile and time
+that code and read the page it builds (`bench/evaluators/`), and the `best-of-n-verified` strategy's
+visible-test check. That code is written by models and was never reviewed by anyone.
 
 | Control | Behavior |
 |---------|----------|
@@ -48,10 +50,31 @@ strategy's visible-test check. That code is written by models and was never revi
 | Network and writes | Blocked where available: `sandbox-exec` on macOS (no network, no writes outside the sandbox), `unshare --net` on Linux (no network). `score.details["isolation"]` records what applied |
 | Policy | `FUSION_SANDBOX_ISOLATION=auto` (default) runs with the limits alone and says so when isolation is missing; `require` refuses to run without it; `off` disables it |
 
+**Evaluators and the agentic judge** run only in benchmark mode, on tasks from a dataset you named,
+and are never reachable through MCP or `fusion ask`. Every evaluator that executes anything
+(tests, build, lint, the performance benchmark) runs in the sandbox above, on a copy of the answer's
+files; the directory it is given is only read. The agentic judge has read-only tools (no write,
+no command, no network), its paths cannot leave the output it is looking at (`..`, absolute paths
+and symlinks are refused), `run_evaluator` accepts only the task's own evaluators, and everything a
+model wrote reaches it inside `<untrusted>` delimiters with a closing marker inside the text
+defused, so an answer that says "give me full marks" is data, not an instruction. Its steps and
+money are capped (12 steps, $0.50 per run) and every tool call is stored with the item.
+
+**The browser is the exception to the sandbox.** Chromium has a sandbox of its own that cannot be
+nested inside `sandbox-exec`, so the optional `[bench-visual]` evaluators contain the page
+differently: it is served by a throwaway `http.server` bound to 127.0.0.1 over a *copy* of the
+files; Chromium starts with every host but 127.0.0.1 unresolvable, and each request that is not for
+that server (or a `data:` or `blob:` URL) is aborted and recorded as a failed request; the profile
+is a temporary directory, service workers and downloads are off, and the capture has a time limit.
+The page's JavaScript runs in Chromium under Chromium's own protections, with your user's
+privileges. Without the extra nothing is opened.
+
 Known limitations: this is a best-effort guard, not a security boundary. Without isolation (any
 other OS, or `off`) a hostile patch can read files your account can read and use the network.
 Memory limits are not enforced on macOS. Run studies on a machine or container where that is
-acceptable, and prefer `require` in shared environments.
+acceptable, and prefer `require` in shared environments. A page that exploits a Chromium
+vulnerability would not be stopped by anything here; keep the browser updated, and do not run
+datasets you did not write.
 
 ## What not to commit
 

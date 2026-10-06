@@ -1,0 +1,46 @@
+id: perf-anagram-groups
+category: performance
+difficulty: medium
+split: test
+tags:
+- python
+- performance
+- grouping
+expected_pass:
+- tests.test_hidden.HiddenTests.test_members_keep_input_order
+- tests.test_hidden.HiddenTests.test_groups_in_order_of_first_word
+- tests.test_hidden.HiddenTests.test_case_matters
+- tests.test_hidden.HiddenTests.test_repeated_words_stay_in_the_group
+- tests.test_hidden.HiddenTests.test_empty_string_is_its_own_group
+- tests.test_hidden.HiddenTests.test_singletons
+solution_summary: Group by the sorted letters of each word in a dict, which keeps
+  first-appearance order
+flaws:
+- summary: Keep a list of group keys and look each word's key up with index
+- summary: Sort the words inside each group, losing their input order
+perf:
+  sizes:
+  - 600
+  - 1200
+  - 2400
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

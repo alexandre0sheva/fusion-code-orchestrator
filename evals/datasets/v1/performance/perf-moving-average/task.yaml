@@ -1,0 +1,46 @@
+id: perf-moving-average
+category: performance
+difficulty: medium
+split: test
+tags:
+- python
+- performance
+- sliding-window
+expected_pass:
+- tests.test_hidden.HiddenTests.test_window_longer_than_list
+- tests.test_hidden.HiddenTests.test_window_equal_to_length
+- tests.test_hidden.HiddenTests.test_window_zero_is_an_error
+- tests.test_hidden.HiddenTests.test_negative_window_is_an_error
+- tests.test_hidden.HiddenTests.test_floats
+- tests.test_hidden.HiddenTests.test_empty_list
+solution_summary: 'Keep a running sum: add the value entering the window and subtract
+  the one leaving it'
+flaws:
+- summary: Average each window with statistics.fmean over a fresh slice
+- summary: Running sum that forgets to reject a window below 1
+perf:
+  sizes:
+  - 2000
+  - 4000
+  - 8000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

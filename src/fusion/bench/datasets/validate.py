@@ -9,7 +9,8 @@ share no task, prompt or file set. ``Rules(release=True)`` adds the coverage a p
 promises: size per category, a language mix, clean changes among the reviews, both splits and all
 difficulties in every category, and the size of each task.
 
-Executable coding tasks (``evals/datasets/v1/coding/<id>/``) are checked by running them: the
+Executable tasks (``evals/datasets/v1/{coding,frontend,performance}/<id>/``) are checked by running
+them. For frontend and performance tasks see ``_check_artifact_variants``. For coding tasks: the
 reference solution must pass every hidden test (twice, to catch flakiness), the unpatched files
 must fail some, every flawed fix must apply and fail some, and the hidden files must not collide
 with the files the model is shown. That is the proof the tests tell a right fix from a wrong one.
@@ -29,6 +30,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoringError, get_scorer
+from fusion.bench.scoring.artifact import answer_tree, assess, shared_evaluators, workspace
 from fusion.bench.scoring.calibration import seeded_pair
 from fusion.bench.scoring.coding import run_hidden_tests, visible_pass_fraction
 from fusion.bench.spec import (
@@ -77,6 +79,12 @@ class Rules:
     min_languages: int = 3
     min_clean_share: float = 0.2  # of code-review tasks
     min_coding: int = 30  # executable coding tasks
+    min_artifact: int = 12  # executable frontend tasks, and performance tasks, each
+    min_per_split_artifact: int = 4  # per split, for those two categories (they are smaller)
+    # A flawed answer that passes every test must still score at least this much lower than the
+    # reference solution's completion score to count as wrong (frontend tasks).
+    flaw_margin: float = 0.04
+    min_solution_completion: float = 0.85
     run_code: bool = True  # run each coding task's solution, flaws and tests (under a second each)
     min_lines: int = 30  # a review's diff, a debugging task's code, trace and logs
     max_lines: int = 400
@@ -263,8 +271,11 @@ async def _scorability(tasks: list[BenchTask], add: Any) -> None:
             add("error", task.id, f"a flawed answer still scores {flawed:.2f}")
 
 
-def _check_coding_task(task: BenchTask) -> list[tuple[Literal["error", "warning"], str]]:
-    """Run one coding task's reference solution, unpatched files and flaws; return the problems."""
+def _check_coding_task(
+    task: BenchTask, rules: Rules
+) -> list[tuple[Literal["error", "warning"], str]]:
+    """Run one executable task's reference solution, unpatched files and flaws; return the
+    problems."""
     found: list[tuple[Literal["error", "warning"], str]] = []
     truth = CodingTruth.model_validate(task.truth)
     clash = sorted(set(truth.hidden_files) & set(task.files))
@@ -291,6 +302,8 @@ def _check_coding_task(task: BenchTask) -> list[tuple[Literal["error", "warning"
     again = run_hidden_tests(task, truth.solution, cache=False)  # a real second run
     if again.failed:
         found.append(("error", "the reference solution passes once and fails on a rerun"))
+    if task.category in ("frontend", "performance"):
+        return [*found, *_check_artifact_variants(task, truth, rules)]
     bare = run_hidden_tests(task, None)
     if not bare.failed:
         found.append(("error", "the unpatched files already pass every hidden test"))
@@ -306,13 +319,116 @@ def _check_coding_task(task: BenchTask) -> list[tuple[Literal["error", "warning"
     return found
 
 
-def _check_coding(tasks: list[BenchTask], add: Any) -> None:
+def _check_artifact_variants(
+    task: BenchTask, truth: CodingTruth, rules: Rules | None = None
+) -> list[tuple[Literal["error", "warning"], str]]:
+    """Frontend and performance tasks: measure the reference solution, the unpatched files and each
+    flaw with the task's evaluators, and require what tells a right answer from a wrong one.
+
+    * the solution passes every gate (and scores at least ``min_solution_completion``);
+    * the unpatched files do not: they fail a hidden test (frontend) or the benchmark (performance,
+      where slow code is correct code);
+    * every flaw fails a hidden test or a gate, or (frontend) scores measurably lower.
+
+    A measurement that was too noisy to decide is a warning, not an error.
+    """
+    rules = rules or Rules()
+    found: list[tuple[Literal["error", "warning"], str]] = []
+    spec = task.artifact_truth()
+    evaluators = shared_evaluators()
+    performance = task.category == "performance"
+    if performance:
+        if spec.perf is None:
+            return [("error", "a performance task needs a perf block")]
+        if spec.perf.script not in truth.hidden_files:
+            return [("error", f"perf.script {spec.perf.script} is not among the hidden files")]
+    produced = set(evaluators.names_for(task))
+    for gate in spec.hard_gates:
+        kinds = {"screenshot": "visual"}.get(gate.evidence, gate.evidence)
+        if kinds not in produced:
+            found.append(
+                (
+                    "error",
+                    f"gate '{gate.id}' reads {gate.evidence} evidence that "
+                    "no evaluator of the task makes",
+                )
+            )
+
+    async def measure(patch: str | None) -> Any:
+        with workspace(answer_tree(task, patch)) as workdir:
+            return await assess(task, workdir, evaluators)
+
+    def run(patch: str | None) -> Any:
+        return asyncio.run(measure(patch))
+
+    right = run(truth.solution)
+    failed = [g.id for g in right.gates if g.passed is False]
+    if failed:
+        found.append(("error", f"the reference solution fails gate(s): {', '.join(failed)}"))
+    elif right.completion < rules.min_solution_completion:
+        found.append(("error", f"the reference solution completes only {right.completion:.2f}"))
+    solution_perf = next((e for e in right.evidence if e.kind == "perf"), None)
+    if solution_perf is not None and solution_perf.status == "unstable":
+        found.append(("warning", "the reference solution's timing was too noisy to verify"))
+    bare = run(None)
+    bare_failed = [g.id for g in bare.gates if g.passed is False]
+    if performance:
+        perf = next((e for e in bare.evidence if e.kind == "perf"), None)
+        if perf is not None and perf.status == "unstable":
+            found.append(("warning", "the unpatched code's timing was too noisy to verify"))
+        elif "fast-enough" not in bare_failed and not _is_slow(bare):
+            found.append(
+                (
+                    "error",
+                    "the unpatched code already meets the benchmark: it cannot tell fast from slow",
+                )
+            )
+    elif not bare_failed:
+        found.append(("error", "the unpatched files already pass every gate"))
+    for n, flaw in enumerate(truth.flaws, 1):
+        got = run(flaw.patch)
+        tests = next((e for e in got.evidence if e.kind == "tests"), None)
+        applied = tests is None or tests.metrics.get("applied", 1.0) == 1.0
+        if not applied:
+            found.append(("error", f"flaw {n} does not apply: {tests.summary if tests else ''}"))
+        elif any(g.passed is False for g in got.gates):
+            continue  # a gate catches it
+        elif not performance and got.completion <= right.completion - rules.flaw_margin:
+            continue  # measurably worse
+        else:
+            found.append(
+                (
+                    "error",
+                    f"flaw {n} passes every gate and scores {got.completion:.2f} "
+                    f"(the solution {right.completion:.2f}), so it is not wrong",
+                )
+            )
+    if visible_pass_fraction(task, None) is None:
+        found.append(("warning", "no visible tests: the verified arm cannot check this task"))
+    return found
+
+
+def _is_slow(assessment: Any) -> bool:
+    """Whether a performance task's perf evidence says the code is too slow."""
+    perf = next((e for e in assessment.evidence if e.kind == "perf"), None)
+    return perf is not None and perf.ok is False
+
+
+def _check_coding(tasks: list[BenchTask], rules: Rules, add: Any) -> None:
     if not tasks:
         return
+    # Timing needs a quiet machine: performance tasks are checked one at a time, after the rest.
+    quick = [t for t in tasks if t.category != "performance"]
+    timed = [t for t in tasks if t.category == "performance"]
     with ThreadPoolExecutor(max_workers=6) as pool:
-        for task, problems in zip(tasks, pool.map(_check_coding_task, tasks), strict=True):
+        for task, problems in zip(
+            quick, pool.map(lambda t: _check_coding_task(t, rules), quick), strict=True
+        ):
             for level, message in problems:
                 add(level, task.id, message)
+    for task in timed:
+        for level, message in _check_coding_task(task, rules):
+            add(level, task.id, message)
 
 
 def _check_splits(tasks: list[BenchTask], rules: Rules, add: Any) -> None:
@@ -340,13 +456,14 @@ def _check_splits(tasks: list[BenchTask], rules: Rules, add: Any) -> None:
     if rules.release:
         for category in sorted({t.category for t in labelled}):
             counts = Counter(t.split for t in labelled if t.category == category)
+            need = (
+                rules.min_per_split_artifact
+                if category in ("frontend", "performance")
+                else rules.min_per_split
+            )
             for split in ("dev", "test"):
-                if counts[split] < rules.min_per_split:
-                    add(
-                        "error",
-                        category,
-                        f"{counts[split]} {split} tasks; at least {rules.min_per_split} needed",
-                    )
+                if counts[split] < need:
+                    add("error", category, f"{counts[split]} {split} tasks; at least {need} needed")
 
 
 def _check_coverage(tasks: list[BenchTask], stats: DatasetStats, rules: Rules, add: Any) -> None:
@@ -367,6 +484,18 @@ def _check_coverage(tasks: list[BenchTask], stats: DatasetStats, rules: Rules, a
     coding = stats.by_category.get("coding", 0)
     if coding < rules.min_coding:
         add("error", "coding", f"{coding} tasks; at least {rules.min_coding} needed")
+    for category in ("frontend", "performance"):
+        n = stats.by_category.get(category, 0)
+        if n < rules.min_artifact:
+            add("error", category, f"{n} tasks; at least {rules.min_artifact} needed")
+        for difficulty in ("easy", "medium", "hard"):
+            have = stats.by_difficulty.get(category, {}).get(difficulty, 0)
+            if have < rules.min_per_difficulty:
+                add(
+                    "error",
+                    category,
+                    f"{have} {difficulty} tasks; at least {rules.min_per_difficulty} needed",
+                )
     if len(stats.languages) < rules.min_languages:
         add(
             "error",
@@ -447,7 +576,7 @@ def validate_dataset(path: str | Path, rules: Rules | None = None) -> Report:
         _check_task(task, rules, add)
     asyncio.run(_scorability(tasks, add))
     if rules.run_code:
-        _check_coding([t for t in tasks if t.expects_patch], add)
+        _check_coding([t for t in tasks if t.expects_patch], rules, add)
     _check_splits(tasks, rules, add)
     report.tasks = tasks
     report.stats = _stats(tasks)

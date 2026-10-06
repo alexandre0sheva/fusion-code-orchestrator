@@ -370,22 +370,28 @@ def patch_as_blobs(files: Mapping[str, str], patch: str) -> str:
     return "\n".join(parts)
 
 
-def diff_files(before: Mapping[str, str], after: Mapping[str, str]) -> str:
-    """A unified diff taking the tree ``before`` to ``after`` (changed and created files)."""
+def diff_files(
+    before: Mapping[str, str], after: Mapping[str, str], *, delete_missing: bool = False
+) -> str:
+    """A unified diff taking the tree ``before`` to ``after`` (changed and created files).
+
+    With ``delete_missing`` a file in ``before`` that ``after`` lacks is a deletion in the diff.
+    """
     import difflib
 
     chunks: list[str] = []
-    for path in sorted(after):
-        new = after[path]
+    paths = sorted({*after, *before} if delete_missing else after)
+    for path in paths:
         old = before.get(path)
+        new = after.get(path)
         if old == new:
             continue
         diff = list(
             difflib.unified_diff(
                 (old or "").splitlines(),
-                new.splitlines(),
+                (new or "").splitlines(),
                 fromfile=f"a/{path}" if old is not None else "/dev/null",
-                tofile=f"b/{path}",
+                tofile=f"b/{path}" if new is not None else "/dev/null",
                 lineterm="",
                 n=3,
             )

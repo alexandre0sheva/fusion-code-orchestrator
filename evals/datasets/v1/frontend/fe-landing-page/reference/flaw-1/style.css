@@ -1,0 +1,126 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1b1f24;
+  background: #ffffff;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: #0b4fd6;
+}
+
+:focus-visible {
+  outline: 3px solid #0b5fff;
+  outline-offset: 2px;
+}
+
+.container {
+  width: 1100px;
+  margin-inline: auto;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.2rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  color: #ffffff;
+  background: #0b5fff;
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  padding-block: 0.75rem;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.25rem;
+  text-decoration: none;
+  color: #0a2a5e;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hero {
+  padding-block: clamp(2.5rem, 8vw, 6rem);
+  background: #eaf1ff;
+}
+
+.hero h1 {
+  max-width: 20ch;
+  margin: 0 0 1rem;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  line-height: 1.1;
+}
+
+.lead {
+  max-width: 40rem;
+  margin: 0 0 1.5rem;
+  font-size: 1.15rem;
+  color: #2d3a4a;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 340px);
+  gap: 1rem;
+}
+
+.card {
+  padding: 1.25rem;
+  border: 1px solid #d7dce1;
+  border-radius: 0.6rem;
+}
+
+.card h3 {
+  margin-top: 0;
+}
+
+.site-footer {
+  margin-top: 3rem;
+  padding-block: 1.5rem;
+  color: #ffffff;
+  background: #0a2a5e;
+}
+
+.site-footer a {
+  color: #ffffff;
+}
+

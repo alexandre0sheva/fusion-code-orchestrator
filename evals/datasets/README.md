@@ -4,17 +4,21 @@ Two kinds live here.
 
 - **`v1/`: the ground-truth benchmark dataset** that `fusion bench` studies run on. Methodology,
   scoring and commands are in [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#datasets). It has
-  two parts: text tasks scored by keywords and judges (Dataset A, the rest of this file) and
-  [executable coding tasks](#dataset-b-executable-coding-tasks) scored by running tests (`v1/coding/`).
+  three parts: text tasks scored by keywords and judges (Dataset A, the rest of this file),
+  [executable coding tasks](#dataset-b-executable-coding-tasks) scored by running tests (`v1/coding/`)
+  and [frontend and performance tasks](#dataset-c-frontend-and-performance-tasks) scored on what the
+  answer builds (`v1/frontend/`, `v1/performance/`).
 - `*_cases.jsonl`: the older, unscored cases used by `evals/runners/run_offline_eval.py`.
 
 ## `v1` at a glance
 
 Dataset A: 100 tasks: 25 each of code review, debugging, architecture decisions and implementation
 planning, in easy, medium and hard, in Python, TypeScript and Go where code is involved
-(review and debugging). Dataset B: 33 executable coding tasks in Python. Each task is in exactly
-one split: `dev` (15 per text category and 16 coding tasks, for tuning thresholds and prompts) or
-`test` (10 per text category and 17 coding tasks, touched only by the final study).
+(review and debugging). Dataset B: 33 executable coding tasks in Python. Dataset C: 12 frontend tasks
+(HTML, CSS and JavaScript) and 12 performance tasks (Python). Each task is in exactly one split:
+`dev` (15 per text category, 16 coding tasks and 6 each of frontend and performance, for tuning
+thresholds and prompts) or `test` (10 per text category, 17 coding tasks and 6 each of frontend and
+performance, touched only by the final study).
 
 ```bash
 uv run fusion bench dataset validate evals/datasets/v1 --release   # checks everything below
@@ -135,6 +139,63 @@ tasks:
    of the reported problem for a bug-fix task. They must pass with the solution.
 6. No secrets, real people or companies. Run the validator, and add the task to `dev` or `test`,
    never both.
+
+## Dataset C: frontend and performance tasks
+
+`v1/frontend/<task_id>/` (12 tasks) and `v1/performance/<task_id>/` (12) use the directory layout of
+the coding tasks, with the keys `category`, `helpers`, `hard_gates`, `soft_criteria`, `perf` and `site`
+in `task.yaml` ([the table](../../docs/BENCHMARKING.md#frontend-and-performance-tasks-evidence-and-the-agentic-judge)).
+They are scored by evaluators that run tests, lint, time the code and open the page, and by an
+agentic judge; the methodology, the evaluators and their limits are in
+[docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#frontend-and-performance-tasks-evidence-and-the-agentic-judge).
+
+- **Frontend:** a design brief and an empty page (`index.html` with a TODO). The answer is HTML, CSS
+  and JavaScript, offline, in one patch. Hidden tests (`tests/test_hidden.py`, using the shared
+  `sitecheck` helper) check structure, accessibility and responsiveness from the parsed source.
+  Reference screenshots are not shipped: the brief is text.
+- **Performance:** slow but correct code, visible tests, hidden behavioural tests and a hidden
+  benchmark (`tests/bench_workload.py`: `setup(size)`, `run(state)`). The reference solution is the
+  yardstick: an answer must be within 3x of it at the largest size and scale no worse than 0.5 above
+  its exponent.
+- **Each task's two flaws.** For a page: a broken one (the structure, labels or responsiveness the
+  brief asks for are missing) and one that passes every hidden test but is measurably worse (low
+  contrast, a positive tabindex, a skipped heading, a stylesheet fetched from another host). For
+  code: a correct but still slow solution and a fast but wrong one that passes the visible tests.
+  These are what the judge calibration uses.
+
+`fusion bench dataset validate` proves each task sound by measuring it: the reference solution
+passes every gate and completes at least 0.85; the unpatched files do not (for a page: they fail the
+gates; for performance: they pass the tests and fail the benchmark, because slow code is correct
+code); every flaw fails a gate or, for a page, scores at least 0.04 below the solution. A timing too
+noisy to decide is a warning.
+
+**Provenance and validity.** Synthetic, written by an LLM (Claude) and not yet reviewed by a person
+(`llm-authored` in every tag list). Besides the cautions about the other datasets:
+
+- Frontend tests read source; they cannot run JavaScript, so a script that breaks at run time passes
+  them. A screenshot judges the look, not the intent, and no screenshots exist without Playwright.
+- The pages are small and the briefs say what to build. Real front-end work has a design system,
+  existing code and a browser matrix.
+- Performance tasks are classic algorithm exercises where a data structure decides the answer; they
+  say little about profiling a real service. Timings are relative to the reference on the same
+  machine, which is also why a very loaded machine yields `unstable` measurements.
+- Simulated models know the reference fix and its flaws: `--mock` results test the harness only.
+
+### Guidelines for adding or reviewing a frontend or performance task
+
+1. State in the brief or the prompt everything a test checks (names, structure, behaviour, the
+   shape of the answer). A page test that a reasonable page would fail is a bug in the test.
+2. A frontend test checks one thing and names it; use the `Page` helper, which does not run
+   scripts. Pages must pass their own hidden tests *and* the static accessibility rules (the
+   validator runs both).
+3. A performance task needs a workload where the reference is at least a few times faster than the
+   starter at the largest size and a different complexity class from it, with sizes whose slowest
+   variant takes well under a second, so that a measurement is not noise. Check the noise with
+   `fusion bench dataset validate`.
+4. Give two flaws as above. Each must apply and be caught: by a failing test or gate, or (pages
+   only) by a measurably lower completion score.
+5. Offline, no secrets, no real people or companies. Add the task to `dev` or `test`, never both,
+   with its own starter file contents (the validator rejects file sets shared between splits).
 
 ## Licence
 

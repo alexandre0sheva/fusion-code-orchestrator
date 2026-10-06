@@ -1,0 +1,67 @@
+id: fe-contact-form
+category: frontend
+difficulty: medium
+split: dev
+tags:
+- html
+- css
+- javascript
+- frontend
+- forms
+expected_pass:
+- tests.test_hidden.HiddenTests.test_every_control_has_a_label
+- tests.test_hidden.HiddenTests.test_name_and_email_help_autofill
+- tests.test_hidden.HiddenTests.test_radio_group_has_a_legend
+- tests.test_hidden.HiddenTests.test_message_box_has_a_limit
+- tests.test_hidden.HiddenTests.test_send_button
+- tests.test_hidden.HiddenTests.test_form_fits_small_screens
+solution_summary: Labelled controls, a fieldset and legend around the radios, native
+  required and maxlength, a stacked mobile layout
+flaws:
+- summary: Radios grouped by a plain div and an unlabelled message box that uses a
+    placeholder
+- summary: A correct form that loads a web font from another host and has a pale legend
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a narrow single-column form, grouped radio choices in a bordered set,
+    a roomy message box
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: choices stack on phones, fields are clearly labelled, required fields
+    are marked natively
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

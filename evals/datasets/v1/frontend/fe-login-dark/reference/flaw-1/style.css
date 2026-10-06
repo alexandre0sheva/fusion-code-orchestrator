@@ -1,0 +1,86 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #e8ecf1;
+  background: #12161c;
+}
+
+.stage {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.card {
+  width: min(100%, 24rem);
+  padding: 1.75rem;
+  border: 1px solid #3a4452;
+  border-radius: 0.75rem;
+  color: #5c6673;
+  background: #1b222b;
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0 0 1rem;
+}
+
+label {
+  font-weight: 600;
+}
+
+input[type="text"],
+input[type="password"] {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #8a96a6;
+  border-radius: 0.4rem;
+  font: inherit;
+  color: #ffffff;
+  background: #0f1319;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 700;
+  color: #0b1220;
+  background: #7fb0ff;
+  cursor: pointer;
+}
+
+.more {
+  margin: 1rem 0 0;
+  text-align: center;
+}
+
+a {
+  color: #9cc2ff;
+}
+
+input:focus,
+button:focus,
+a:focus {
+  outline: none;
+}

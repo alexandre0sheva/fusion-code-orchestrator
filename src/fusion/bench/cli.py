@@ -14,7 +14,7 @@ from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from fusion.bench.arms import arm_book, parse_arms
-from fusion.bench.calibrate import default_mock_judges, run_calibration
+from fusion.bench.calibrate import default_mock_judges, run_artifact_calibration, run_calibration
 from fusion.bench.datasets.build import (
     AUTHORING_DIR,
     CATEGORY_FILES,
@@ -28,10 +28,14 @@ from fusion.bench.datasets.validate import Rules, validate_dataset
 from fusion.bench.plan import BenchPlan, make_plan
 from fusion.bench.runner import BenchEnv, BenchProgress, BenchRun, build_env, run_bench
 from fusion.bench.scoring import ScoringError
+from fusion.bench.scoring.artifact_calibration import artifact_cases
 from fusion.bench.scoring.calibration import (
     CalibrationReport,
+    JudgeGate,
     build_cases,
     cases_from_file,
+    judge_gate,
+    load_reports,
     save_report,
 )
 from fusion.bench.spec import (
@@ -265,20 +269,25 @@ def _report(run: BenchRun) -> None:
     if run.failed_jobs:
         console.print(f"Errors are tried again by: fusion bench resume {run.run_id}")
     _print_arms(run.items)
+    _print_gate(_gate_for(run.items, run.config.judge_models, run.config.mock))
     console.print(f"Details: fusion bench show {run.run_id}")
 
 
 def _print_arms(items: list[BenchItem]) -> None:
+    measured = any(i.metrics.eval_seconds > 0 or i.metrics.eval_cost_usd > 0 for i in items)
     table = Table(title="Arms")
     table.add_column("Arm", no_wrap=True)
-    for column in ("N", "Solved", "Quality", "$/task", "$/solved", "p50 s", "p90 s", "Calls"):
+    columns = ["N", "Solved", "Quality", "$/task", "$/solved", "p50 s", "p90 s", "Calls"]
+    if measured:  # what measuring and judging cost, next to what the arm cost, never added to it
+        columns += ["Eval $", "Eval s"]
+    for column in columns:
         table.add_column(column, justify="right")
 
     def fmt(value: float | None, spec: str) -> str:
         return "-" if value is None else format(value, spec)
 
     for row in summarize(items):
-        table.add_row(
+        cells = [
             row.arm,
             str(row.items),
             fmt(None if row.solved_rate is None else row.solved_rate * 100, ".0f") + "%",
@@ -288,8 +297,86 @@ def _print_arms(items: list[BenchItem]) -> None:
             fmt(row.seconds_p50, ".1f"),
             fmt(row.seconds_p90, ".1f"),
             fmt(row.mean_calls, ".1f"),
-        )
+        ]
+        if measured:
+            cells += [fmt(row.mean_eval_cost_usd, ".4f"), fmt(row.mean_eval_seconds, ".1f")]
+        table.add_row(*cells)
     console.print(table)
+
+
+def _gate_for(items: list[BenchItem], judges: list[str], mock: bool) -> JudgeGate | None:
+    """The judge-reliability gate of a run, or None when no judge scored an artifact in it."""
+    judged = any(
+        i.category in ("frontend", "performance") and i.score is not None and i.score.trail
+        for i in items
+    )
+    if not judges or not judged:
+        return None
+    reports = [r for r in load_reports(bench_results_dir()) if r.mock == mock]
+    return judge_gate(judges, reports)
+
+
+def _print_gate(gate: JudgeGate | None) -> None:
+    if gate is None:
+        return
+    if gate.blocked:
+        console.print(
+            "[bold red]Headline verdict blocked:[/bold red] "
+            "the judges are not shown to be reliable."
+        )
+        for reason in gate.reasons:
+            console.print(f"  - {reason}")
+        console.print(
+            "Calibrate them with: fusion bench calibrate-judge --artifacts --dataset v1 "
+            "--judge-models <judges>"
+        )
+        return
+    shown = ", ".join(f"{j} {a:.0%}" for j, a in gate.accuracy.items() if a is not None)
+    console.print(f"Judge reliability: {shown} (floor {gate.floor:.0%}); headline verdict allowed.")
+
+
+def _print_evidence(items: list[BenchItem], task_id: str) -> None:
+    """Every item of one task: the gates, the criteria, the evidence and the judge's reasoning."""
+    chosen = [i for i in items if i.task_id == task_id]
+    if not chosen:
+        known = ", ".join(sorted({i.task_id for i in items})[:8])
+        msg = f"No items for task '{task_id}' in this run (tasks: {known} ...)"
+        raise ConfigError(msg)
+    for item in chosen:
+        score = item.score
+        console.print(
+            f"\n[bold]{item.task_id}[/bold] arm {item.arm} repeat {item.repeat}: "
+            + (f"completion {score.quality:.2f}" if score else "not scored")
+            + (
+                f"; eval {item.metrics.eval_seconds:.1f}s, ${item.metrics.eval_cost_usd:.4f} "
+                "(not part of the arm's cost or time)"
+            )
+        )
+        if score is None:
+            continue
+        for gate in score.details.get("gates", []):
+            state = {True: "pass", False: "FAIL", None: "unverified"}[gate["passed"]]
+            extra = f": {gate['detail']}" if gate.get("detail") else ""
+            console.print(f"  gate {gate['id']}: {state}{extra}", markup=False)
+        for crit in score.details.get("criteria", []):
+            value = "-" if crit["score"] is None else f"{crit['score']:.2f}"
+            console.print(
+                f"  criterion {crit['id']} (w {crit['weight']:g}): {value} [{crit['basis']}]",
+                markup=False,
+            )
+        for line in score.details.get("evidence", []):
+            console.print(f"  {line}", markup=False)
+        judge = score.details.get("judge")
+        if judge:
+            console.print(f"  judge: {judge.get('justification', '')}", markup=False)
+            if judge.get("disagreement"):
+                console.print(
+                    f"  judges disagreed on: {', '.join(judge['disagreement'])}", markup=False
+                )
+        if score.trail:
+            console.print(
+                f"  trail: {len(score.trail)} judge tool calls (see results.jsonl)", markup=False
+            )
 
 
 # ---------------------------------------------------------------------------------- commands
@@ -437,6 +524,10 @@ def list_cmd(limit: Annotated[int, typer.Option(help="Runs to show")] = 20) -> N
 def show_cmd(
     run_id: Annotated[str, typer.Argument(help="Run to show")],
     as_json: Annotated[bool, typer.Option("--json", help="Print JSON")] = False,
+    task: Annotated[
+        str | None,
+        typer.Option("--task", help="Show the evidence, gates and judge reasoning of one task"),
+    ] = None,
 ) -> None:
     """Show a run: its state and one summary row per arm."""
     store = BenchStore(bench_results_dir())
@@ -446,10 +537,12 @@ def show_cmd(
         msg = f"No benchmark run '{run_id}' (recent runs: {known})"
         raise ConfigError(msg)
     items = store.items(run_id)
+    gate = _gate_for(items, record.config.judge_models, record.mock)
     if as_json:
         payload = {
             "run": json.loads(record.model_dump_json()),
             "arms": [row.model_dump() for row in summarize(items)],
+            "judge_gate": json.loads(gate.model_dump_json()) if gate else None,
         }
         typer.echo(json.dumps(payload, indent=2))
         return
@@ -462,6 +555,9 @@ def show_cmd(
     if record.stop_reason:
         console.print(f"Stopped: {record.stop_reason}")
     _print_arms(items)
+    _print_gate(gate)
+    if task:
+        _print_evidence(items, task)
 
 
 @bench_app.command("calibrate-judge")
@@ -474,6 +570,26 @@ def calibrate_judge_cmd(
         Path | None,
         typer.Option(
             help="JSONL of {task_id, good, flawed}; default: seeded from each task's truth"
+        ),
+    ] = None,
+    artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--artifacts",
+            help="Calibrate the agentic judge on frontend and performance outputs "
+            "(solutions against deliberately broken pages and known-slow code)",
+        ),
+    ] = False,
+    cases_per_set: Annotated[
+        int | None,
+        typer.Option(help="With --artifacts: cases per set (visual, perf); default 6"),
+    ] = None,
+    accuracy_floor: Annotated[
+        float | None,
+        typer.Option(
+            "--accuracy-floor",
+            help="With --artifacts: accuracy a judge needs for a headline verdict "
+            "(default FUSION_JUDGE_ACCURACY_FLOOR, else 0.8)",
         ),
     ] = None,
     max_usd: _MaxUsd = None,
@@ -492,7 +608,9 @@ def calibrate_judge_cmd(
     probe = BenchConfig(
         dataset=Path(dataset), arms=parse_arms("solo-cheap"), max_usd=max_usd or 1.0, mock=mock
     )
-    tasks = select_tasks(load_dataset(dataset, split or "dev"), limit, base_seed)
+    tasks = load_dataset(dataset, split or "dev")
+    if not artifacts:
+        tasks = select_tasks(tasks, limit, base_seed)
     try:
         env = build_env(probe.model_copy(update={"dataset": resolve_dataset(dataset)}), tasks)
     except RuntimeError as exc:  # no provider is configured
@@ -503,10 +621,21 @@ def calibrate_judge_cmd(
     if not judges:
         err.print("Name the judges with --judge-models (catalog aliases, comma-separated).")
         raise typer.Exit(2)
-    pairs = cases_from_file(cases) if cases else build_cases(tasks)
 
     async def study() -> CalibrationReport:
         try:
+            if artifacts:
+                return await run_artifact_calibration(
+                    env,
+                    tasks,
+                    artifact_cases(tasks, per_set=cases_per_set or 6, seed=base_seed),
+                    judges,
+                    max_usd=max_usd,
+                    seed=base_seed,
+                    mock=mock,
+                    floor=accuracy_floor,
+                )
+            pairs = cases_from_file(cases) if cases else build_cases(tasks)
             return await run_calibration(
                 env,
                 tasks,
@@ -534,7 +663,9 @@ def calibrate_judge_cmd(
 
 def _print_calibration(report: CalibrationReport, path: Path) -> None:
     table = Table(title=f"Judge calibration {report.id} ({report.cases} cases)")
-    for column in ("judge", "accuracy", "ties", "order flips", "kappa", "failed calls"):
+    sets = sorted(report.by_set)
+    columns = ["judge", "accuracy", "ties", "order flips", "kappa", "failed calls"]
+    for column in [*columns, *(f"{s} acc." for s in sets)]:
         table.add_column(column, justify="left" if column == "judge" else "right")
     for j in report.judges:
         table.add_row(
@@ -544,12 +675,22 @@ def _print_calibration(report: CalibrationReport, path: Path) -> None:
             f"{j.inconsistent_rate:.0%}",
             f"{j.kappa:.2f}",
             str(j.failed_calls),
+            *(f"{report.by_set[s].get(j.judge, 0.0):.0%}" for s in sets),
         )
     console.print(table)
     if report.agreement is not None:
         console.print(f"Judges agree on {report.agreement:.0%} of cases.")
         for pair, kappa in report.pair_kappa.items():
             console.print(f"  kappa {pair}: {kappa:.2f}")
+    if report.kind == "artifact":
+        below = [j.judge for j in report.judges if not j.meets(report.floor)]
+        if below:
+            console.print(
+                f"[bold red]Below the {report.floor:.0%} accuracy floor:[/bold red] "
+                f"{', '.join(below)}. Studies that use them get no headline verdict."
+            )
+        else:
+            console.print(f"Every judge meets the {report.floor:.0%} accuracy floor.")
     console.print(
         f"Cost ${report.cost_usd:.4f}"
         + (" (simulated judges: not a measurement)" if report.mock else "")
