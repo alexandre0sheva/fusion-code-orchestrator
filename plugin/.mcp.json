@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--python",
-        ">=3.12",
+        ">=3.11",
         "--managed-python",
         "--from",
         "git+https://github.com/alexandre0sheva/fusion-code-orchestrator",

@@ -4,15 +4,17 @@ version = "0.2.0"
 description = "Multi-model orchestration and evaluation engine for coding workflows"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 authors = [{ name = "Oleksandr Shevchenko" }]
 keywords = ["mcp", "llm", "orchestration", "code-review", "claude-code"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 dependencies = [
@@ -65,7 +67,7 @@ markers = ["live: calls real provider APIs and costs money; skipped unless run w
 addopts = "-m 'not live'"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 src = ["src", "tests", "evals"]
 # The executable datasets' files are task material (stubs, buggy code, hidden tests), not our code.
@@ -85,7 +87,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 "src/fusion/bench/report/html.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 strict = true
 packages = ["fusion"]
 mypy_path = "src"

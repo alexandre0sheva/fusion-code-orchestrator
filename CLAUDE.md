@@ -9,7 +9,7 @@ what each task changed are in `docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.
 ## Commands
 
 ```bash
-uv sync --all-groups                      # install (Python 3.12+)
+uv sync --all-groups                      # install (Python 3.11+)
 uv run pytest -q                          # offline tests, no API keys (mock provider)
 uv run ruff check src tests evals         # lint
 uv run mypy                               # strict typing
@@ -28,7 +28,7 @@ Also: `plugin/` Claude Code plugin, `install/` client installers (`fusion instal
 
 ## Conventions
 
-- Python 3.12+, Pydantic v2 models, full type hints (mypy strict), async for all provider I/O.
+- Python 3.11+, Pydantic v2 models, full type hints (mypy strict), async for all provider I/O.
 - Never `print` to stdout in code reachable from `fusion mcp`: stdout carries JSON-RPC. Log to stderr.
 - MCP orchestration tools stay side-effect free (no repo writes, no shell).
 - Tests must run offline. Use `MockProvider` or `httpx.MockTransport`; mark real-API tests `@pytest.mark.live`.

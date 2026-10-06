@@ -335,8 +335,12 @@ def test_the_current_commands_do_not_warn(runner: CliRunner) -> None:
     assert "Deprecated" not in result.output
 
 
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def test_help_names_every_deprecated_command_as_such(runner: CliRunner) -> None:
-    text = runner.invoke(app, ["--help"], terminal_width=200).stdout
+    # GitHub Actions sets GITHUB_ACTIONS, which makes Typer colour its help even when piped.
+    text = ANSI.sub("", runner.invoke(app, ["--help"], terminal_width=200).stdout)
     for command in ("review", "run-mock", "list-runs", "compare-cost"):
         line = next(ln for ln in text.splitlines() if re.search(rf"│ {command}\s", ln))
         assert "Deprecated" in line

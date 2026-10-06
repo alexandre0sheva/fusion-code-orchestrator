@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from typing import TypeVar
 
 from fusion.config.catalog import load_catalog
 from fusion.config.env import is_test_mode
@@ -27,6 +28,8 @@ from fusion.routing.policy import RoutingPolicy, build_routing
 from fusion.security.policy import SecurityPolicy
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.cost import PricingRegistry
+
+_PipelineT = TypeVar("_PipelineT", bound=BasePipeline)
 
 ProviderSet = dict[str, ModelProvider]
 
@@ -112,7 +115,7 @@ def build_deps(settings: Settings, providers: ProviderSet | None = None) -> Pipe
     )
 
 
-def _pipeline[P: BasePipeline](cls: type[P], deps: PipelineDeps) -> P:
+def _pipeline(cls: type[_PipelineT], deps: PipelineDeps) -> _PipelineT:
     return cls(
         registry=deps.registry,
         routing=deps.routing,

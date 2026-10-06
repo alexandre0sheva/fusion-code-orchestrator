@@ -11,6 +11,7 @@ import socket
 import sqlite3
 import threading
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -155,7 +156,7 @@ def test_the_unsanitized_prompt_is_never_served_by_default(
     assert run["prompt"]["raw"] is False and "[REDACTED]" in run["prompt"]["primary"]["text"]
     assert any(get(client, f"/api/runs/{i}")["prompt"]["redaction_count"] for i in seeded[1])
     # And it is stored, so the guarantee is the dashboard's, not an empty column's.
-    with sqlite3.connect(seeded[0]) as conn:
+    with closing(sqlite3.connect(seeded[0])) as conn:
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM runs WHERE input_json LIKE ?", (f"%{RAW_SECRET}%",)

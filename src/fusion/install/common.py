@@ -20,10 +20,10 @@ REPO_SLUG = "alexandre0sheva/fusion-code-orchestrator"
 SERVER_NAME = "fusion"
 # Tools every Fusion server must list; the launch check looks for the first one.
 REQUIRED_TOOL = "fusion_ask"
-# Fusion needs Python 3.12. Without this, uvx uses the machine's default Python (often older) and
+# Fusion needs Python 3.11. Without this, uvx uses the machine's default Python (often older) and
 # the server dies at start-up where nobody sees it; a uv-managed Python is also immune to a broken
 # interpreter earlier on PATH.
-UVX_PYTHON = ("--python", ">=3.12", "--managed-python")
+UVX_PYTHON = ("--python", ">=3.11", "--managed-python")
 VERIFY_TIMEOUT_S = 180.0  # the first uvx run clones and builds the package
 
 
@@ -65,7 +65,7 @@ def shell_quote(part: str) -> str:
 def uvx_spec(ref: str | None = None) -> ServerSpec:
     """Run Fusion straight from GitHub with uvx: no clone, no PyPI release needed.
 
-    ``ref`` pins a tag, branch or commit (``git+URL@ref``). A uv-managed Python 3.12 or newer is
+    ``ref`` pins a tag, branch or commit (``git+URL@ref``). A uv-managed Python 3.11 or newer is
     used (downloaded once if needed).
     """
     source = f"git+{REPO_URL}" + (f"@{ref}" if ref else "")

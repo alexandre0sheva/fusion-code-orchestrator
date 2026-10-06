@@ -15,11 +15,11 @@ uv run python evals/runners/compare_pipelines.py
 ## Claude Code
 
 Requirements: [uv](https://docs.astral.sh/uv/) and Claude Code. Fusion runs straight from GitHub
-with `uvx`: there is nothing to clone or publish. It needs Python 3.12 or newer, and `uvx` fetches
+with `uvx`: there is nothing to clone or publish. It needs Python 3.11 or newer, and `uvx` fetches
 one (`--managed-python`) when the machine's default is older. Install it with one command, then give it keys.
 
 ```bash
-uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install claude-code --plugin
+uvx --python '>=3.11' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install claude-code --plugin
 ```
 
 Or, from a checkout: `uv run fusion install claude-code --plugin`. Restart Claude Code, then check
@@ -61,7 +61,7 @@ would be a shorter command; it is not published, so none is documented.
 By hand, the equivalent of the server-only install is:
 
 ```bash
-claude mcp add --scope user fusion -- uvx --python '>=3.12' --managed-python --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion mcp
+claude mcp add --scope user fusion -- uvx --python '>=3.11' --managed-python --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion mcp
 ```
 
 and, from a local clone, `claude mcp add --scope user fusion -- uv run --directory /path/to/fusion-code-orchestrator fusion mcp`.
@@ -113,7 +113,7 @@ After installing, in a project directory with keys set:
 Requirements: [uv](https://docs.astral.sh/uv/) and Cursor. One command, run in the project:
 
 ```bash
-uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install cursor
+uvx --python '>=3.11' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install cursor
 ```
 
 Or, from a checkout: `uv run fusion install cursor`. It merges the `fusion` server (the same `uvx
@@ -145,7 +145,7 @@ Requirements: [uv](https://docs.astral.sh/uv/) and Codex (CLI, IDE extension or 
 they share `~/.codex/config.toml`).
 
 ```bash
-uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install codex
+uvx --python '>=3.11' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install codex
 ```
 
 Or, from a checkout: `uv run fusion install codex`. It adds `[mcp_servers.fusion]` to

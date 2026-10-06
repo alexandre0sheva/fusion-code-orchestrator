@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import threading
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +23,8 @@ def _create(store: RunStore, label: str = "x") -> str:
     return store.create_run(task_type="ask", input_data={"q": label}, sanitized_input={"q": label})
 
 
-def _raw(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(path)
+def _raw(path: Path) -> closing[sqlite3.Connection]:
+    return closing(sqlite3.connect(path))
 
 
 def test_database_uses_wal_mode(tmp_path: Path) -> None:
@@ -51,7 +52,7 @@ def test_a_v3_database_is_upgraded_in_place(tmp_path: Path) -> None:
     from fusion.storage import migrations
 
     db = tmp_path / "old.db"
-    conn = _raw(db)
+    conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
     for version, sql in migrations._MIGRATIONS.items():
         if version <= 3:
@@ -214,7 +215,7 @@ def _legacy_db(path: Path, runs: int = 2) -> Path:
         _create(store, f"legacy-{i}")
     store.close()
     # Pretend it is an old rollback-journal database, as v0.1.0 wrote it.
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         conn.execute("PRAGMA journal_mode=DELETE")
     return path
 

@@ -21,7 +21,7 @@ import os
 import sys
 from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar
 
 import typer
 from rich.console import Console
@@ -30,6 +30,8 @@ from fusion.cli.live import RunView
 from fusion.config.catalog import load_catalog
 from fusion.config.env import is_local_provider_enabled
 from fusion.mcp_server.tools import FusionTools
+
+T = TypeVar("T")
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -161,7 +163,7 @@ def make_tools(db_path: str | None, mock: bool) -> FusionTools:
     return FusionTools(db_path=db_path, use_mock=True if mock else None)
 
 
-def run_tool[T](
+def run_tool(
     tools: FusionTools,
     call: Callable[[FusionTools], Coroutine[Any, Any, T]],
     *,

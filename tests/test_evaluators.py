@@ -270,6 +270,37 @@ def test_the_harness_times_with_the_clock_it_is_given_and_drops_warmup() -> None
     assert taken == [1.0, 2.0, 3.0]
 
 
+def test_the_harness_keeps_sampling_a_fast_workload_until_the_series_spans_enough_time() -> None:
+    # A run of 1 ms and 1 ms of setup between runs: five samples span 10 ms, so a 50 ms series
+    # needs about twenty-five (a stall on a shared machine must not cover the whole series).
+    ticks = {"now": 0.0}
+
+    def setup(size: int) -> int:
+        ticks["now"] += 0.001
+        return size
+
+    def run(state: object) -> None:
+        ticks["now"] += 0.001
+
+    taken = measure(
+        setup, run, 10, 5, 1, clock=lambda: ticks["now"], collect=lambda: None, min_span_s=0.05
+    )
+    assert 24 <= len(taken) <= 26
+    assert taken == pytest.approx([0.001] * len(taken))
+    capped = measure(
+        setup,
+        run,
+        10,
+        5,
+        0,
+        clock=lambda: ticks["now"],
+        collect=lambda: None,
+        min_span_s=100.0,
+        max_samples=12,
+    )
+    assert len(capped) == 12
+
+
 async def test_a_slow_answer_is_flagged_against_the_reference(tmp_path: Path) -> None:
     times = {"fast": [0.001] * 5, "slow": [0.01] * 5}
     ev = PerfEvaluator(fake_sampler(times))
@@ -280,6 +311,33 @@ async def test_a_slow_answer_is_flagged_against_the_reference(tmp_path: Path) ->
     assert slow.metrics["scaling_exponent"] == pytest.approx(2.0)
     assert slow.metrics["scaling_excess"] == pytest.approx(1.0)
     assert "10" in slow.summary or "40" in slow.summary
+
+
+async def test_a_good_answer_that_stalled_once_passes_on_the_confirming_series(
+    tmp_path: Path,
+) -> None:
+    series = {"answer": 0}
+
+    def sampler(files: dict[str, str], spec: Any, size: int) -> SizeSample:
+        t = 0.001 * size / spec.sizes[0]
+        if files["unique.py"].endswith("# reference\n"):
+            return SizeSample(size, [t] * 5)
+        series["answer"] += 1
+        stalled = series["answer"] <= len(spec.sizes)
+        return SizeSample(size, [t * (8.0 if stalled else 1.0)] * 5)
+
+    task = perf_task()
+    task.truth["solution"] = diff_files({"unique.py": SLOW}, {"unique.py": FAST + "# reference\n"})
+    ev = PerfEvaluator(sampler)
+    found = await ev.run(put(tmp_path / "g", {"unique.py": FAST}), task)
+    assert series["answer"] == 2 * len(task.artifact_truth().perf.sizes)  # measured twice
+    assert found.ok is True and found.metrics["ratio_vs_reference"] == pytest.approx(1.0)
+
+
+async def test_a_really_slow_answer_still_fails_after_the_confirming_series(tmp_path: Path) -> None:
+    ev = PerfEvaluator(fake_sampler({"fast": [0.001] * 5, "slow": [0.01] * 5}))
+    slow = await ev.run(put(tmp_path / "s", {"unique.py": SLOW}), perf_task())
+    assert slow.ok is False and slow.metrics["ratio_vs_reference"] == pytest.approx(40.0)
 
 
 async def test_fast_on_small_inputs_but_quadratic_fails_on_scaling_alone(tmp_path: Path) -> None:

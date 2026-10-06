@@ -86,9 +86,10 @@ in [docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md](docs/superpowers/plans/
 
 ### Changed
 
+- Python 3.11 to 3.14 are supported and tested in CI (the floor was 3.12): generic functions use `TypeVar` instead of the 3.12-only `def f[T]` syntax; `uvx --python '>=3.11'` is what the plugin and installers pass.
 - **Run commands print the MCP tool's record, not the raw pipeline output.** `fusion review-diff`, `debug`, `decide`, `plan` and `eval-answer` used to print the whole internal result as JSON; they now print the answer as Markdown, and with `--json` the compact record the MCP tools return (`--detail full` adds the claims, usage, cost comparison and routing). Their errors are one line (`Error: ...` and a hint) instead of a traceback, and a missing input is exit code 2 where it was 1. With no provider key and no local provider, a run command stops at once with the fix.
 - The CLI module `fusion.cli.app` is split into `fusion.cli.main`, `run_cmds`, `runs_cmds`, `config_cmds`, `doctor`, `models_cmd`, `common` and `live`; `fusion.cli.app` still exports `app`, and the console script now points at `fusion.cli.main:app`. `fusion init` ends with `fusion doctor` and `fusion ask`.
-- **The server runs with `uvx --python '>=3.12' --managed-python --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion mcp`** in the plugin and the docs, instead of `uv run fusion mcp` with a `cwd` in a clone: no clone is needed to use Fusion from Claude Code. The plugin's skill and command names changed with its layout (`/fusion-review` is now `/fusion:review`), and the skills no longer list output fields (the tool reference has them).
+- **The server runs with `uvx --python '>=3.11' --managed-python --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion mcp`** in the plugin and the docs, instead of `uv run fusion mcp` with a `cwd` in a clone: no clone is needed to use Fusion from Claude Code. The plugin's skill and command names changed with its layout (`/fusion-review` is now `/fusion:review`), and the skills no longer list output fields (the tool reference has them).
 - **The default strategy is now `panel-duo`** (Claude Haiku 4.5 + GPT-6 Luna, merged by Haiku), what `budget: medium` and an unspecified strategy run, instead of the three-model `panel-cheap`. The v0.2.0 study chose it: it scored the same as the three-model panel (within noise) at about 20% lower cost per task, and the dev ablation preferred it by the stated rule. Two models leave no spare: if one fails there is no quorum, so the run returns a diagnostic; use `panel-cheap` when that matters. See [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md).
 - Benchmark reports count a response-cache replay at its price-list cost (`CallRecord.list_cost_usd`, `BenchMetrics.replayed_cost_usd`); only the spend ledger uses what was billed. Before, an arm whose calls another arm had already made looked cheaper.
 
@@ -141,6 +142,7 @@ in [docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md](docs/superpowers/plans/
 
 ### Fixed
 
+- A performance benchmark task could fail its reference solution on a busy machine: a fast workload finished its five timed runs inside one scheduler stall. The timer now keeps sampling until the series spans 0.1 s (at most 99 samples) and a comparison that fails is measured once more, each side keeping its faster series.
 - `fusion_review_diff` ignored `context` and `file_snippets`, `fusion_debug_error` dropped `stack_trace` and `file_snippets` (and `context` when `code_context` was set), and `fusion_decide_architecture` and `fusion_plan_feature` dropped `file_snippets`; all now reach the models.
 - A panel call still pending at the global timeout is attributed to its own model; it used to be attributed to the first model that had not finished.
 - OpenAI-compatible requests no longer break on models that reject `max_tokens` or `temperature`.

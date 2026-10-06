@@ -8,6 +8,7 @@ every call passes through, so it is where the guarantee lives.
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import date
 
 import pytest
@@ -218,7 +219,7 @@ def _stored_text(db_path: str) -> str:
     """Every row of the run database as text, so a leak cannot hide in any column."""
     import sqlite3
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         return "\n".join(conn.iterdump())
 
 
@@ -253,7 +254,7 @@ async def test_the_run_database_keeps_the_raw_input_only_when_the_owner_asks(
     await pipeline.run(_secret_task())
     import sqlite3
 
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn:
         query = "SELECT input_json, sanitized_input_json FROM runs"
         raw, sanitized = conn.execute(query).fetchone()
     assert SECRET in raw

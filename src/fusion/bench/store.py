@@ -102,6 +102,12 @@ class BenchStore:
             if conn is not None:
                 conn.close()
 
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:  # noqa: BLE001 — interpreter shutdown
+            return
+
     def run_dir(self, run_id: str) -> Path:
         return self.root / run_id
 

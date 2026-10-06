@@ -32,7 +32,7 @@ from fusion.install.checks import inspect_clients
 from fusion.install.common import InstallError, ServerSpec, verify_server
 
 Status = Literal["ok", "warn", "error", "info", "skip"]
-MIN_PYTHON = (3, 12)
+MIN_PYTHON = (3, 11)
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ def _runtime() -> list[Check]:
             "python",
             "error",
             f"Python {version}; Fusion needs {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer",
-            "uv python install 3.12, then run Fusion with `uvx --python '>=3.12' ...`",
+            "uv python install 3.12, then run Fusion with `uvx --python '>=3.11' ...`",
         )
     )
     uv = shutil.which("uv")

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -184,7 +185,7 @@ def seed_runs(db_path: Path, *, runs: int = 48, days: int = 18, seed: int = 7) -
                 )
             )
     store.close()
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         for run_id, stamp in stamps.items():
             conn.execute("UPDATE runs SET created_at = ? WHERE run_id = ?", (stamp, run_id))
     return list(reversed(ids))

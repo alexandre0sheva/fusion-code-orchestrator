@@ -18,12 +18,14 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from statistics import fmean, stdev
-from typing import Literal
+from typing import Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
 from fusion.bench.costing import full_cost_usd
 from fusion.bench.store import BenchItem
+
+T = TypeVar("T")
 
 __all__ = [
     "DEFAULT_BOOTSTRAP",
@@ -151,7 +153,7 @@ class Interval(BaseModel):
         return f"{self.estimate:{spec}} [{self.low:{spec}}, {self.high:{spec}}]"
 
 
-def bootstrap_interval[T](
+def bootstrap_interval(
     cells: Sequence[T],
     statistic: Callable[[Sequence[T]], float | None],
     *,

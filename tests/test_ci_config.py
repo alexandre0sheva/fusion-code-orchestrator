@@ -107,6 +107,21 @@ def triggers(workflow: dict[str, Any]) -> dict[str, Any]:
     return found
 
 
+def test_ci_tests_every_python_version_the_package_claims() -> None:
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    claimed = {
+        c.rsplit(" :: ", 1)[-1]
+        for c in project["classifiers"]
+        if re.fullmatch(r"Programming Language :: Python :: 3\.\d+", c)
+    }
+    matrix = {str(v) for v in ci()["jobs"]["test"]["strategy"]["matrix"]["python-version"]}
+    assert claimed == matrix
+    floor = project["requires-python"].removeprefix(">=")
+    assert min(matrix, key=lambda v: tuple(map(int, v.split(".")))) == floor  # the floor is tested
+
+
 def test_ci_builds_the_package_and_smoke_tests_the_wheel() -> None:
     package = ci()["jobs"]["package"]
     text = "\n".join(str(s.get("run", "")) for s in package["steps"])

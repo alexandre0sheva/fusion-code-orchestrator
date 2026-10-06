@@ -9,8 +9,11 @@ reference solution, measured the same way: ``ratio_vs_reference`` at the largest
 ``scaling_excess`` (the answer's exponent minus the reference's).
 
 A measurement whose noise is above the task's ``max_noise`` is marked ``unstable`` and carries no
-verdict (``ok`` is None): it is measured again next time, never scored. Measurements are taken one
-at a time, because a benchmark that shares the machine with another is measuring the other.
+verdict (``ok`` is None): it is measured again next time, never scored. A comparison that fails the
+gates is confirmed once: both sides are measured again and each size keeps its faster series (noise
+only ever adds time), so a stall on a shared machine does not fail a good answer while a really slow
+one fails twice. Measurements are taken one at a time, because a benchmark that shares the machine
+with another is measuring the other.
 """
 
 from __future__ import annotations
@@ -120,6 +123,15 @@ def sandbox_sampler(tree: dict[str, str], spec: PerfSpec, size: int) -> SizeSamp
         return SizeSample(size, error=f"the workload did not report ({detail or 'no output'})")
 
 
+def _faster(first: list[SizeSample], second: list[SizeSample]) -> list[SizeSample]:
+    """Per size, the series with the lower median (a failed or empty series never wins)."""
+
+    def key(sample: SizeSample) -> float:
+        return median(sample.samples) if sample.samples and not sample.error else math.inf
+
+    return [min(pair, key=key) for pair in zip(first, second, strict=False)] or first
+
+
 class PerfEvaluator:
     """Runtime, memory and scaling against the reference solution."""
 
@@ -143,11 +155,11 @@ class PerfEvaluator:
             return [self._sampler(full, spec, size) for size in spec.sizes]
 
     def _reference_samples(
-        self, task: BenchTask, truth: CodingTruth, spec: PerfSpec
+        self, task: BenchTask, truth: CodingTruth, spec: PerfSpec, *, fresh: bool = False
     ) -> list[SizeSample]:
         key = task_hash(task)
         cached = self._reference.get(key)
-        if cached is not None:
+        if cached is not None and not fresh:
             return cached
         try:
             changes = apply_patch(task.files, truth.solution)
@@ -162,7 +174,8 @@ class PerfEvaluator:
             noisy = any(summarize(s.samples).noise > spec.max_noise for s in samples)
             if noisy:  # one more try: a loaded machine usually settles
                 samples = self._sample(tree, truth, spec)
-            self._reference[key] = samples
+            if not fresh:
+                self._reference[key] = samples
         return samples
 
     def _measure(self, tree: dict[str, str], task: BenchTask) -> Evidence:
@@ -187,7 +200,14 @@ class PerfEvaluator:
                 kind="perf", name=self.name, ok=False, metrics={"failed": 1.0}, summary=reason[:400]
             )
         reference = self._reference_samples(task, truth, spec)
-        return self._compare(spec, answer, reference)
+        found = self._compare(spec, answer, reference)
+        if found.ok is False and reference:
+            # Confirm before failing anyone: the machine may have stalled during either series.
+            answer = _faster(answer, self._sample(tree, truth, spec))
+            reference = _faster(reference, self._reference_samples(task, truth, spec, fresh=True))
+            self._reference[task_hash(task)] = reference
+            found = self._compare(spec, answer, reference)
+        return found
 
     def _compare(
         self, spec: PerfSpec, answer: list[SizeSample], reference: list[SizeSample]

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/alexandre0sheva/fusion-code-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre0sheva/fusion-code-orchestrator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](pyproject.toml)
+[![Python 3.11 | 3.12 | 3.13 | 3.14](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](pyproject.toml)
 
 A panel of small, cheap LLMs that answers coding questions for Claude Code (and Cursor) over MCP,
 plus the instrumentation to find out whether that panel can match a single frontier model on cost,
@@ -68,7 +68,7 @@ The full list is in the [changelog](CHANGELOG.md#known-limitations) and [SECURIT
 
 ## Quickstart
 
-Requirements: Python 3.12+, [uv](https://docs.astral.sh/uv/), and at least one of
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and at least one of
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`.
 
 ```bash
@@ -90,7 +90,7 @@ uv run fusion review-diff --file path/to/diff.patch       # review a diff
 
 ```bash
 export ANTHROPIC_API_KEY=...   # and/or OPENAI_API_KEY, GOOGLE_API_KEY
-uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install claude-code --plugin
+uvx --python '>=3.11' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install claude-code --plugin
 claude                         # then try /fusion:review, /fusion:debug or /fusion:ask
 ```
 

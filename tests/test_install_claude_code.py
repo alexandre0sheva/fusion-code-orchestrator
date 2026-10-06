@@ -134,7 +134,7 @@ def run(
 
 def test_the_server_runs_from_github_with_uvx_and_can_be_pinned() -> None:
     assert SPEC.shell() == (
-        "uvx --python '>=3.12' --managed-python "
+        "uvx --python '>=3.11' --managed-python "
         "--from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion mcp"
     )
     assert uvx_spec("v0.2.0").args[-3].endswith("fusion-code-orchestrator@v0.2.0")
@@ -143,7 +143,7 @@ def test_the_server_runs_from_github_with_uvx_and_can_be_pinned() -> None:
 def test_the_server_always_gets_a_python_it_can_run_on() -> None:
     """Without this uvx picks the machine's default Python (3.9 on a stock Mac) and the server
     dies at start-up with nobody watching."""
-    assert SPEC.args[:3] == ("--python", ">=3.12", "--managed-python")
+    assert SPEC.args[:3] == ("--python", ">=3.11", "--managed-python")
 
 
 def test_a_local_checkout_runs_with_uv_and_must_be_a_checkout(tmp_path: Path) -> None:

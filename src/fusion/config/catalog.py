@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from fusion.config.layers import ResolvedConfig
 
 _CONFIG_DIR = Path(__file__).parent
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 CostTier = Literal["low", "medium", "high"]
 LatencyTier = Literal["low", "medium", "high"]
@@ -152,7 +153,7 @@ def catalog_from_raw(
         msg = f"Expected a 'models' mapping in {source}"
         raise ValueError(msg)
 
-    def build[T: BaseModel](kind: type[T], section: str, data: dict[str, Any]) -> T:
+    def build(kind: type[_ModelT], section: str, data: dict[str, Any]) -> _ModelT:
         try:
             return kind.model_validate(data)
         except ValidationError as exc:

@@ -7,7 +7,7 @@ Summarise a Fusion benchmark run: $ARGUMENTS
 
 Benchmark results are files in the `bench-results/` directory of the project where the study was
 run. Run the commands there, using `fusion` if it is installed and otherwise
-`uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion`.
+`uvx --python '>=3.11' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion`.
 
 1. `fusion bench list --limit 5` lists runs, newest first. If it lists none, say that no benchmark
    has been run here and point to `docs/BENCHMARK_RESULTS.md` in the Fusion repository for the
