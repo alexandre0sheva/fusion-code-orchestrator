@@ -255,7 +255,7 @@
   ],
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.01106,
+    "baseline_estimated_cost_usd": 0.012232,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -266,7 +266,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.01106
+    "savings_usd": 0.012232
   },
   "cost_latency": {
     "steps": [
@@ -274,7 +274,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 272,
+        "input_tokens": 331,
         "model_name": "mock-fast",
         "output_tokens": 95,
         "provider": "mock",
@@ -284,7 +284,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 267,
+        "input_tokens": 326,
         "model_name": "mock-security",
         "output_tokens": 90,
         "provider": "mock",
@@ -294,7 +294,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 272,
+        "input_tokens": 331,
         "model_name": "mock-weak",
         "output_tokens": 26,
         "provider": "mock",
@@ -304,7 +304,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 514,
+        "input_tokens": 630,
         "model_name": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
@@ -313,7 +313,7 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 1325,
+    "total_input_tokens": 1618,
     "total_output_tokens": 288,
     "warnings": [
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
@@ -587,14 +587,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 272,
+        "input_tokens": 331,
         "model_alias": "mock-fast",
         "output_tokens": 95,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 367
+        "total_tokens": 426
       },
       {
         "actual_cost_usd": null,
@@ -605,11 +605,29 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 267,
+        "input_tokens": 326,
         "model_alias": "mock-security",
         "output_tokens": 90,
         "provider": "mock",
         "provider_model_id": "mock-security",
+        "reasoning_tokens": null,
+        "success": true,
+        "total_tokens": 416
+      },
+      {
+        "actual_cost_usd": null,
+        "cache_write_tokens": null,
+        "cached_input_tokens": null,
+        "cost_is_estimate": true,
+        "cost_known": true,
+        "error": null,
+        "error_type": null,
+        "estimated_cost_usd": 0.0,
+        "input_tokens": 331,
+        "model_alias": "mock-weak",
+        "output_tokens": 26,
+        "provider": "mock",
+        "provider_model_id": "mock-weak",
         "reasoning_tokens": null,
         "success": true,
         "total_tokens": 357
@@ -623,38 +641,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 272,
-        "model_alias": "mock-weak",
-        "output_tokens": 26,
-        "provider": "mock",
-        "provider_model_id": "mock-weak",
-        "reasoning_tokens": null,
-        "success": true,
-        "total_tokens": 298
-      },
-      {
-        "actual_cost_usd": null,
-        "cache_write_tokens": null,
-        "cached_input_tokens": null,
-        "cost_is_estimate": true,
-        "cost_known": true,
-        "error": null,
-        "error_type": null,
-        "estimated_cost_usd": 0.0,
-        "input_tokens": 514,
+        "input_tokens": 630,
         "model_alias": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
         "provider_model_id": "mock-judge",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 591
+        "total_tokens": 707
       }
     ],
     "successful_model_calls": 4,
-    "total_input_tokens": 1325,
+    "total_input_tokens": 1618,
     "total_output_tokens": 288,
-    "total_tokens": 1613
+    "total_tokens": 1906
   },
   "warnings": []
 }

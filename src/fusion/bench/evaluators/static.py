@@ -46,7 +46,19 @@ DEFAULT_TOOLS = ("ruff",)
 # Only credentials with a recognisable shape: the redaction module's looser rules (``password = x``)
 # would flag ordinary code, such as ``const password = document.getElementById(...)``.
 _SECRET_RULES = frozenset(
-    {"aws_key", "github_token", "jwt", "private_key", "sk_key", "anthropic_key"}
+    {
+        "aws_key",
+        "github_token",
+        "jwt",
+        "private_key",
+        "sk_key",
+        "anthropic_key",
+        "google_key",
+        "google_oauth",
+        "slack_token",
+        "stripe_key",
+        "npm_token",
+    }
 )
 _SECRETS = [pattern for name, pattern in _REDACTION_PATTERNS if name in _SECRET_RULES]
 _LINT_TIMEOUT_S = 60.0

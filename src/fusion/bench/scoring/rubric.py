@@ -33,6 +33,7 @@ from fusion.bench.scoring.base import (
 from fusion.bench.scoring.points import points_fallback
 from fusion.bench.spec import BenchTask, RubricItem, RubricTruth
 from fusion.routing.budget import PlannedCall
+from fusion.security.untrusted import wrap_untrusted
 
 __all__ = ["GATE_CAP", "RubricScorer"]
 
@@ -142,7 +143,8 @@ class RubricScorer:
             "Judge whether the answer below meets each checklist item. An item is met only if "
             "the answer actually says it (or the evidence shows it); quote the exact words of the "
             "answer that meet it. Do not credit what the answer merely implies.\n\n"
-            f"Task:\n{task_text(task, files=False)}\n\nAnswer:\n{answer}{measured}\n\n"
+            f"Task:\n{task_text(task, files=False)}\n\n"
+            f"Answer:\n{wrap_untrusted(answer)}{measured}\n\n"
             f"Checklist:\n{listing}\n\n"
             'Answer: {"items": [{"id": "r1", "met": true, "quote": "..."}]}'
         )

@@ -60,6 +60,7 @@ from fusion.providers.limits import ProviderLimiter
 from fusion.providers.simulated import SimulatedProvider, SimWorld, sim_models_from_catalog
 from fusion.routing.model_registry import ModelRegistry
 from fusion.routing.policy import RoutingPolicy
+from fusion.security.redaction import redact_error
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.cost import PricingRegistry
 
@@ -511,7 +512,7 @@ async def _execute(
             repeat=job.repeat,
             seed=job.seed,
             status="error",
-            error=f"{type(exc).__name__}: {exc}",
+            error=redact_error(f"{type(exc).__name__}: {exc}"),
             calls=list(ledger.records),
             metrics=build_metrics(ledger, wall_ms=wall_ms),
         )
@@ -530,6 +531,7 @@ async def _execute(
         truncate_prompts=False,
         temperature=0.0,
         seed=job.seed,
+        redact=cfg.redact,
     )
     score: ScoreResult | None = None
     error: str | None = None
@@ -549,7 +551,7 @@ async def _execute(
             ),
         )
     except Exception as exc:  # noqa: BLE001 — the answer is kept; a resume scores it again
-        error = f"scoring failed: {type(exc).__name__}: {exc}"
+        error = redact_error(f"scoring failed: {type(exc).__name__}: {exc}")
     quality = score.quality if score else None
     metrics = build_metrics(
         ledger,

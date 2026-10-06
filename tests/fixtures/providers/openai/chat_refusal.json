@@ -1,0 +1,42 @@
+{
+  "provenance": "hand-written from the public API reference (https://platform.openai.com/docs/api-reference/chat); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "A refusal arrives as null content plus a refusal field: the answer text is empty.",
+  "alias": "gpt-luna",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "id": "chatcmpl-CQ3xYzRefuse",
+      "object": "chat.completion",
+      "created": 1760000001,
+      "model": "gpt-6-luna-2026-09-15",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "refusal": "I can't help with that.",
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 14,
+        "completion_tokens": 9,
+        "total_tokens": 23
+      }
+    }
+  },
+  "expect": {
+    "text": "",
+    "output_tokens": 9,
+    "finish_reason": "stop"
+  }
+}

@@ -23,6 +23,7 @@ from fusion.bench.spec import BenchTask, Category
 from fusion.orchestration.ledger import CallGateway
 from fusion.providers.base import ModelRequest
 from fusion.routing.budget import PlannedCall, estimate_tokens
+from fusion.security.untrusted import UNTRUSTED_RULES
 
 if TYPE_CHECKING:
     from fusion.bench.evaluators import EvaluatorSet
@@ -242,7 +243,10 @@ async def ask_judge(
         return None
     request = ModelRequest(
         model_id=entry.model_id,
-        system_prompt="You are a strict, impartial evaluation judge. Answer with JSON only.",
+        system_prompt=(
+            "You are a strict, impartial evaluation judge. Answer with JSON only. "
+            + UNTRUSTED_RULES
+        ),
         user_prompt=prompt,
         max_tokens=max_tokens,
         json_mode=entry.supports_json,

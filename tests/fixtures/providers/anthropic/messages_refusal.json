@@ -1,0 +1,31 @@
+{
+  "provenance": "hand-written from the public API reference (https://docs.claude.com/en/api/messages); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "A refusal has no content; the adapter returns empty text and says why.",
+  "alias": "claude-haiku",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-haiku-4-5-20251001",
+      "content": [],
+      "stop_reason": "refusal",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 0
+      }
+    }
+  },
+  "expect": {
+    "text": "",
+    "output_tokens": 0,
+    "finish_reason": "refusal"
+  }
+}

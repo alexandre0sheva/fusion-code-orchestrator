@@ -1,0 +1,32 @@
+{
+  "provenance": "hand-written from the public API reference (https://ai.google.dev/api/generate-content); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "Google reports an invalid key as 400, not 401; it is not retried.",
+  "alias": "gemini-flash",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 400,
+    "json": {
+      "error": {
+        "code": 400,
+        "message": "API key not valid. Please pass a valid API key.",
+        "status": "INVALID_ARGUMENT",
+        "details": [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "reason": "API_KEY_INVALID",
+            "domain": "googleapis.com"
+          }
+        ]
+      }
+    }
+  },
+  "expect": {
+    "error_type": "BadRequest",
+    "error_contains": "API key not valid",
+    "retries": 0
+  }
+}

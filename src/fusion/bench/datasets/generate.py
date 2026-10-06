@@ -186,6 +186,7 @@ async def run_generation(
         pricing=env.pricing,
         truncate_prompts=False,
         temperature=0.7,
+        redact=False,  # drafted tasks may contain planted secrets on purpose
     )
     try:
         return await generate_candidates(

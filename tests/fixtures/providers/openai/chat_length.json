@@ -1,0 +1,45 @@
+{
+  "provenance": "hand-written from the public API reference (https://platform.openai.com/docs/api-reference/chat); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "A cut-off answer is a success with finish_reason length.",
+  "alias": "gpt-luna",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "id": "chatcmpl-CQ3xYzAbCdEf",
+      "object": "chat.completion",
+      "created": 1760000000,
+      "model": "gpt-6-luna-2026-09-15",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Retry on 429 and",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 14,
+        "completion_tokens": 256,
+        "total_tokens": 270
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_3f1a9c"
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and",
+    "input_tokens": 14,
+    "output_tokens": 256,
+    "finish_reason": "length"
+  }
+}

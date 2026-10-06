@@ -71,7 +71,9 @@ and kept on `RunState` and `PipelineResult`. `MODE_SETTINGS` holds what a mode c
 lifetime footer and shadow A/B are allowed, whether prompts are trimmed to the context window,
 whether secrets are redacted, whether calls stream, and a fixed temperature and seed. `CallGateway`
 applies the sampling and streaming defaults for every call of the run (a request or member that sets
-its own temperature wins). `run()` also takes `seed`, `redact` and `ledger` for one run, and a
+its own temperature wins) and, unless the run turned redaction off, removes secrets from every
+outbound request, so the prompts that quote model output are covered as well as the task
+([SECURITY.md](../SECURITY.md#secret-redaction)). `run()` also takes `seed`, `redact` and `ledger` for one run, and a
 halted run's `PipelineResult.halt_reason` says why it stopped. The table is in
 [CONFIGURATION.md](CONFIGURATION.md#modes).
 

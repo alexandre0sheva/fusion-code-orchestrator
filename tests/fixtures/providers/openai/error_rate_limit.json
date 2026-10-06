@@ -1,0 +1,28 @@
+{
+  "provenance": "hand-written from the public API reference (https://platform.openai.com/docs/api-reference/chat); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "429 honours Retry-After and is retried before it is reported.",
+  "alias": "gpt-luna",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 429,
+    "headers": {
+      "retry-after": "1"
+    },
+    "json": {
+      "error": {
+        "message": "Rate limit reached for gpt-6-luna in organization org-x on requests per min.",
+        "type": "requests",
+        "param": null,
+        "code": "rate_limit_exceeded"
+      }
+    }
+  },
+  "expect": {
+    "error_type": "RateLimit",
+    "error_contains": "Rate limit"
+  }
+}

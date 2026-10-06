@@ -1,0 +1,26 @@
+{
+  "provenance": "hand-written from the public API reference (https://platform.openai.com/docs/api-reference/chat); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "400 is never retried and keeps the provider's message.",
+  "alias": "gpt-luna",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 400,
+    "json": {
+      "error": {
+        "message": "Unsupported parameter: 'temperature' is not supported with this model.",
+        "type": "invalid_request_error",
+        "param": "temperature",
+        "code": "unsupported_parameter"
+      }
+    }
+  },
+  "expect": {
+    "error_type": "BadRequest",
+    "error_contains": "temperature",
+    "retries": 0
+  }
+}

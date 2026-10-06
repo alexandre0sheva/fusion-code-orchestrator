@@ -1,0 +1,25 @@
+{
+  "provenance": "hand-written from the public API reference (https://docs.claude.com/en/api/messages); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "529 is transient: retried, then reported as a server error.",
+  "alias": "claude-haiku",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 529,
+    "json": {
+      "type": "error",
+      "error": {
+        "type": "overloaded_error",
+        "message": "Overloaded"
+      },
+      "request_id": "req_011CTe1xz7Kp"
+    }
+  },
+  "expect": {
+    "error_type": "Server",
+    "error_contains": "529"
+  }
+}

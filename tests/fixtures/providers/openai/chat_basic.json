@@ -1,0 +1,57 @@
+{
+  "provenance": "hand-written from the public API reference (https://platform.openai.com/docs/api-reference/chat); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "prompt_tokens includes cached tokens; completion_tokens includes reasoning.",
+  "alias": "gpt-luna",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "id": "chatcmpl-CQ3xYzAbCdEf",
+      "object": "chat.completion",
+      "created": 1760000000,
+      "model": "gpt-6-luna-2026-09-15",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts.",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1200,
+        "completion_tokens": 340,
+        "total_tokens": 1540,
+        "prompt_tokens_details": {
+          "cached_tokens": 1024,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 256,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "service_tier": "default",
+      "system_fingerprint": "fp_3f1a9c"
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts.",
+    "input_tokens": 1200,
+    "cached_input_tokens": 1024,
+    "output_tokens": 340,
+    "reasoning_tokens": 256,
+    "finish_reason": "stop"
+  }
+}

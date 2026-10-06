@@ -31,6 +31,7 @@ from fusion.bench.scoring.base import (
 from fusion.bench.scoring.points import points_fallback
 from fusion.bench.spec import BenchTask, ReviewTruth, SeededBug
 from fusion.routing.budget import PlannedCall
+from fusion.security.untrusted import wrap_untrusted
 
 __all__ = ["ReviewScorer", "extract_findings"]
 
@@ -261,7 +262,8 @@ class ReviewScorer:
             "A code review should have found the defects below. For each defect, say which of "
             "the reviewer's findings reports it (the same defect, wherever the reviewer put it), "
             "or null when none does. A finding may report at most one defect.\n\n"
-            f"Defects:\n{_lines(bug_lines)}\n\nReviewer's findings:\n{_lines(finding_lines)}\n\n"
+            f"Defects:\n{_lines(bug_lines)}\n\n"
+            f"Reviewer's findings:\n{wrap_untrusted(_lines(finding_lines))}\n\n"
             'Answer: {"matches": [{"defect": "b1", "finding": 3 or null, "quote": "..."}]}'
         )
         data = await ask_judge(

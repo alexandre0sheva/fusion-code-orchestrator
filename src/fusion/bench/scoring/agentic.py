@@ -59,6 +59,7 @@ from fusion.bench.scoring.completion import (
 from fusion.bench.scoring.pairwise import NoEligibleJudgeError, eligible_judges
 from fusion.bench.spec import BenchTask, Criterion
 from fusion.providers.base import ImagePart, Message, ModelRequest, ModelResponse
+from fusion.security.untrusted import wrap_untrusted
 
 __all__ = [
     "DEFAULT_MAX_STEPS",
@@ -88,7 +89,6 @@ _PATTERN_CHARS = 200
 _LINE_CHARS = 500
 _MAX_RERUNS = 2
 _NESTED_QUANTIFIER = re.compile(r"\([^)]*[+*][^)]*\)[+*{]")
-_UNTRUSTED_END = re.compile(r"</\s*untrusted\s*>", re.IGNORECASE)
 
 TOOLS: list[ToolSpec] = [
     ToolSpec(
@@ -232,11 +232,6 @@ class JudgeVerdict(BaseModel):
 
 
 # -- the tools ----------------------------------------------------------------------------------
-
-
-def wrap_untrusted(text: str) -> str:
-    """``text`` between ``<untrusted>`` markers, with any closing marker inside it defused."""
-    return "<untrusted>\n" + _UNTRUSTED_END.sub("<\\/untrusted>", text) + "\n</untrusted>"
 
 
 @dataclass

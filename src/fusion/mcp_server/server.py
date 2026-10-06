@@ -35,6 +35,7 @@ from fusion.mcp_server.schemas import (
 )
 from fusion.mcp_server.tools import FusionTools
 from fusion.orchestration.progress import progress_sink
+from fusion.security.output import harden
 
 Transport = Literal["stdio", "http"]
 DEFAULT_HTTP_HOST = "127.0.0.1"
@@ -250,7 +251,8 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     )
     async def run_resource(run_id: str) -> str:
         record = await asyncio.to_thread(tools.run_record, run_id)
-        return json.dumps(record, indent=2, default=str)
+        cleaned, _ = harden(json.loads(json.dumps(record, default=str)))
+        return json.dumps(cleaned, indent=2)
 
     @mcp.resource(
         "fusion://stats",

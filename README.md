@@ -154,7 +154,7 @@ src/fusion/
   benchmark/      shadow A/B baseline comparison
   bench/          `fusion bench`: ground-truth studies, planner, simulated models
   telemetry/      usage, cost, baseline comparison
-  security/       secret redaction
+  security/       secret redaction, untrusted-text delimiters, output cleaning
   storage/        SQLite run store
   cli/            Typer CLI
   dashboard/      `fusion dashboard`: read-only local web UI

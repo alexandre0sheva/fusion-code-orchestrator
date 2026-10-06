@@ -28,6 +28,7 @@ from fusion.bench.scoring.base import (
 from fusion.bench.scoring.points import points_fallback
 from fusion.bench.spec import BenchTask, DebugTruth
 from fusion.routing.budget import PlannedCall
+from fusion.security.untrusted import wrap_untrusted
 
 __all__ = ["DebugScorer", "rank_credit"]
 
@@ -119,7 +120,8 @@ class DebugScorer:
         listing = "\n".join(f"{c['id']}. {c['text']}" for c in shown)
         prompt = (
             f"The true root cause of the bug is: {cause}\n\nA reviewer proposed these "
-            f"hypotheses, in order:\n{listing}\n\nWhich hypotheses state the same root cause "
+            f"hypotheses, in order:\n{wrap_untrusted(listing)}\n\n"
+            "Which hypotheses state the same root cause "
             "(the same mechanism, in any words)? Naming a symptom or a different mechanism does "
             'not count.\nAnswer: {"equivalent": [ids]}'
         )

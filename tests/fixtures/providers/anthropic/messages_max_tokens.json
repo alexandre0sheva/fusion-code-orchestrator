@@ -1,0 +1,37 @@
+{
+  "provenance": "hand-written from the public API reference (https://docs.claude.com/en/api/messages); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "A cut-off answer is a success with finish_reason max_tokens.",
+  "alias": "claude-haiku",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-haiku-4-5-20251001",
+      "content": [
+        {
+          "type": "text",
+          "text": "Retry on 429 and 5xx with"
+        }
+      ],
+      "stop_reason": "max_tokens",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 256,
+        "service_tier": "standard"
+      }
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and 5xx with",
+    "output_tokens": 256,
+    "finish_reason": "max_tokens"
+  }
+}

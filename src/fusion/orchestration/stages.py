@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from fusion.benchmark.shadow import (
     call_shadow_baseline,
@@ -62,7 +62,7 @@ from fusion.orchestration.synthesize import synthesize_responses
 from fusion.providers.base import ModelResponse
 from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, PlannedCall, estimate_tokens
 from fusion.routing.classifier import canonical_task_key
-from fusion.security.redaction import redact_secrets
+from fusion.security.redaction import redact_secrets, redact_value
 from fusion.storage.run_store import ShadowComparisonRecord
 from fusion.telemetry.cost import CostComparison, compare_to_baseline
 from fusion.telemetry.traces import OrchestrationTrace, StepTrace
@@ -109,16 +109,7 @@ class RedactStage(_Stage):
 
         state.run_id = await self.deps.run_store.acreate_run(
             task_type=ctx.task_type.value,
-            input_data={
-                "primary_content": ctx.primary_content,
-                "context": ctx.context,
-                "file_snippets": ctx.file_snippets,
-                "changed_files": ctx.changed_files,
-                "metadata": ctx.metadata,
-                "budget": ctx.budget.value,
-                "strategy": ctx.strategy,
-                "mode": state.mode.value,
-            },
+            input_data=self._stored_input(state),
             sanitized_input={
                 "primary_content": state.sanitized_primary,
                 "context": state.sanitized_context,
@@ -129,6 +120,32 @@ class RedactStage(_Stage):
         )
         state.trace = OrchestrationTrace(run_id=state.run_id, task_type=ctx.task_type.value)
         return state
+
+
+    def _stored_input(self, state: RunState) -> dict[str, Any]:
+        """The run's input as the database keeps it. The original text is stored only when the
+        owner set ``FUSION_LOG_RAW_PROMPTS``; otherwise the same record holds the redacted copy,
+        so a secret in a prompt is never written to disk."""
+        ctx = state.ctx
+        record: dict[str, Any] = {
+            "primary_content": ctx.primary_content,
+            "context": ctx.context,
+            "file_snippets": ctx.file_snippets,
+            "changed_files": ctx.changed_files,
+            "metadata": ctx.metadata,
+            "budget": ctx.budget.value,
+            "strategy": ctx.strategy,
+            "mode": state.mode.value,
+        }
+        if self.deps.security.log_raw_prompts:
+            return record
+        record.update(
+            primary_content=state.sanitized_primary,
+            context=state.sanitized_context,
+            file_snippets=state.sanitized_snippets,
+            metadata=redact_value(ctx.metadata) if state.redact else ctx.metadata,
+        )
+        return record
 
 
 # ---------------------------------------------------------------------------------------- route

@@ -75,8 +75,10 @@ def _first_changed_file(prompt: str) -> str | None:
     marker = "## Changed Files\n"
     if marker not in prompt:
         return None
-    first = prompt.split(marker, 1)[1].splitlines()[0]
-    return first.removeprefix("- ").strip() or None
+    for line in prompt.split(marker, 1)[1].splitlines():
+        if line.strip() != "<untrusted>":  # the list sits inside an untrusted block
+            return line.removeprefix("- ").strip() or None
+    return None
 
 
 class MockProvider(ModelProvider):

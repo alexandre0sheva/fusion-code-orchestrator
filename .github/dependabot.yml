@@ -1,0 +1,25 @@
+# Weekly pull requests for newer dependencies and newer (SHA-pinned) GitHub Actions. Dependabot
+# rewrites the commit SHA and the version comment together. Review each update like any change:
+# the quality gate in CI runs on it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        update-types: [minor, patch]

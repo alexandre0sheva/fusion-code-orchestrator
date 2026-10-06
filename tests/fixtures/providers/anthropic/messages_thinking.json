@@ -1,0 +1,43 @@
+{
+  "provenance": "hand-written from the public API reference (https://docs.claude.com/en/api/messages); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "Thinking blocks are not part of the answer text.",
+  "alias": "claude-haiku",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-haiku-4-5-20251001",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The caller wants a retry policy. Consider idempotency first.",
+          "signature": "EqQBCkYIBxgCKkDmZ0q1"
+        },
+        {
+          "type": "text",
+          "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts."
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 41,
+        "output_tokens": 310,
+        "service_tier": "standard"
+      }
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts.",
+    "input_tokens": 41,
+    "output_tokens": 310,
+    "finish_reason": "end_turn"
+  }
+}

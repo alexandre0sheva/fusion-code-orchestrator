@@ -1,0 +1,52 @@
+{
+  "provenance": "hand-written from the public API reference (https://ai.google.dev/api/generate-content); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "Thinking tokens are billed as output but reported outside candidatesTokenCount.",
+  "alias": "gemini-flash",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts."
+              }
+            ],
+            "role": "model"
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 900,
+        "candidatesTokenCount": 120,
+        "totalTokenCount": 1180,
+        "cachedContentTokenCount": 512,
+        "thoughtsTokenCount": 160,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 900
+          }
+        ]
+      },
+      "modelVersion": "gemini-3.8-flash",
+      "responseId": "kV3xaN7hJ8"
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts.",
+    "input_tokens": 900,
+    "cached_input_tokens": 512,
+    "output_tokens": 280,
+    "reasoning_tokens": 160,
+    "finish_reason": "STOP"
+  }
+}

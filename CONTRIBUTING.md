@@ -17,6 +17,19 @@ cp .env.example .env          # only needed for live runs
 `uv sync --all-groups`, the quality gate below, and `uv run pytest -W error` (our code should not
 emit warnings). Keep the minimum versions in `pyproject.toml` at versions that were actually tested.
 
+Dependabot proposes updates weekly (`.github/dependabot.yml`). CI audits the locked set with
+`pip-audit`; to run the same check locally:
+
+```bash
+uv export --locked --no-emit-project --all-groups -o /tmp/requirements-audit.txt
+uvx pip-audit@2.10.1 --disable-pip -r /tmp/requirements-audit.txt
+```
+
+Every GitHub Action in `.github/workflows/` is pinned to a full commit SHA with its version in a
+comment (`uses: owner/repo@<sha> # v1.2.3`); `tests/test_ci_config.py` fails on a tag or branch.
+To add or bump one, resolve the SHA of the release tag (`git ls-remote https://github.com/owner/repo
+refs/tags/v1.2.3`, and the `^{}` line if the tag is annotated) rather than copying a moving tag.
+
 ## Quality gate
 
 All three must pass before a change is ready (CI runs the same commands):
@@ -25,6 +38,16 @@ All three must pass before a change is ready (CI runs the same commands):
 uv run pytest -q
 uv run ruff check src tests evals
 uv run mypy
+```
+
+CI also enforces a **coverage gate**: at least 85% line coverage on each of `src/fusion/orchestration`,
+`src/fusion/providers` and `src/fusion/bench`. To check it locally:
+
+```bash
+uv run pytest -q --cov=fusion --cov-report=
+for p in orchestration providers bench; do
+  uv run coverage report --include="src/fusion/$p/*" --fail-under=85 | tail -1
+done
 ```
 
 ## Tests
@@ -36,6 +59,19 @@ uv run mypy
 - A test that calls a real provider must be marked `@pytest.mark.live`. It is skipped by default
   and runs with `uv run pytest -m live`. Live tests cost money; run them only deliberately.
 - Add or update tests for routing, fan-out, costs, evals, MCP output and storage changes.
+- **Property tests** (`tests/test_properties.py`, Hypothesis) state what must hold for any input:
+  claim clustering and agreement, cost arithmetic, the benchmark statistics, redaction and output
+  cleaning. When one fails, Hypothesis prints the smallest input; fix the code or, if the property
+  was wrong, fix the property, and keep the failing example as an ordinary test.
+- **Provider contract tests** replay wire fixtures from `tests/fixtures/providers/` through each
+  adapter (`tests/test_providers_recorded.py`). The fixtures in the repository are written from
+  each provider's API reference and say so; `evals/runners/record_provider_fixtures.py --max-usd N`
+  records real exchanges (about a cent each, an invalid-key call is free) as `recorded_*.json`
+  next to them. Review the `expect` block and the diff before committing, and never commit a
+  recording with a secret in it (the recorder refuses, and a test checks).
+- **Live smoke tests** (`tests/test_live_smoke.py`) call each real API once and check the response
+  still has the shape the fixtures record. They cost money, skip when a key is missing, and go
+  through the live-spend ledger: `uv run pytest -m live`.
 
 Local mock workflow:
 

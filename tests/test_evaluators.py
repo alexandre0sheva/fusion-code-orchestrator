@@ -175,6 +175,15 @@ async def test_static_reports_lint_complexity_dependencies_and_secrets(tmp_path:
     assert "requests" in found.summary and "secret" in found.summary
 
 
+async def test_static_flags_the_other_credential_shapes_redaction_knows(tmp_path: Path) -> None:
+    stripe = "sk_" + "live_" + "Ab3dE6gH9jK2mN5pQ8sT1vW4"
+    slack = "xoxb-" + "123456789012-1234567890123-Ab3dE6gH9jK2mN5pQ8sT1vW4"
+    google = "AIza" + "SyA-Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0e"
+    files = tree(FIXED, {"cfg.py": f"A = '{stripe}'\nB = '{slack}'\nC = '{google}'\n"})
+    found = await StaticEvaluator().run(put(tmp_path / "s", files), coding_task())
+    assert found.metrics["secrets"] == 3
+
+
 async def test_static_is_clean_on_clean_code_and_does_not_mistake_code_for_secrets(
     tmp_path: Path,
 ) -> None:

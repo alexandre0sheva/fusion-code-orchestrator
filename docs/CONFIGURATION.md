@@ -197,7 +197,10 @@ Restart the shell afterwards. Completion covers commands, subcommands and flags.
 | `FUSION__<SECTION>__<KEY>` | Override one config key (see [Layers and locations](#layers-and-locations)) | unset |
 | `FUSION_SHADOW_MODE` | Shadow A/B against the real baseline: `off`, `sampled`, `always` | `off` |
 | `FUSION_SHADOW_SAMPLE_RATE` | Fraction of runs shadowed in `sampled` mode | `0.2` |
-| `FUSION_LOG_RAW_PROMPTS` | Log unsanitized prompts (dangerous) | `false` |
+| `FUSION_LOG_RAW_PROMPTS` | Keep the original input, secrets included, in the run database; by default only the redacted copy is stored (dangerous) | `false` |
+| `FUSION_REDACT_ENTROPY` | Redact long random-looking tokens that match no known key shape: `on` or `off` ([SECURITY.md](../SECURITY.md#secret-redaction)) | `on` |
+| `FUSION_REDACT_ENTROPY_THRESHOLD` | Bits of Shannon entropy per character a token needs for the entropy rule to redact it | `4.5` |
+| `FUSION_REDACT_ENTROPY_MIN_LENGTH` | Shortest token, in characters, the entropy rule considers | `32` |
 | `FUSION_DEFAULT_PROVIDER` | Set to `mock` for offline mode | unset (live) |
 | `FUSION_TOOL_SOFT_TIMEOUT_S` | Seconds an MCP tool call may run before it returns the panel's digest with a warning; `0` or `off` disables ([INTEGRATIONS.md](INTEGRATIONS.md#progress-cancellation-and-the-soft-time-limit)) | `90` |
 

@@ -207,6 +207,7 @@ class RunState:
         warnings: list[str] = []
         ledger = ledger or RunLedger(deps.clock)
         settings = MODE_SETTINGS[mode]
+        redact_run = settings.redact if redact is None else redact
         gateway = CallGateway(
             ledger=ledger,
             models=deps.registry.models,
@@ -217,6 +218,7 @@ class RunState:
             temperature=settings.temperature,
             seed=settings.seed if seed is None else seed,
             stream=settings.stream,
+            redact=redact_run,
         )
         strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
         if ctx.max_cost_usd is not None:
@@ -250,5 +252,5 @@ class RunState:
                 pricing=deps.pricing,
             ),
             warnings=warnings,
-            redact=settings.redact if redact is None else redact,
+            redact=redact_run,
         )

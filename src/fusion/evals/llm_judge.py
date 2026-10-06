@@ -8,6 +8,7 @@ from typing import Any
 
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.model_registry import ModelRegistry
+from fusion.security.untrusted import UNTRUSTED_RULES
 
 
 async def judge_response(
@@ -35,7 +36,7 @@ async def judge_response(
     )
     request = ModelRequest(
         model_id=model_entry.model_id,
-        system_prompt="You are an evaluation judge. Return only valid JSON.",
+        system_prompt="You are an evaluation judge. Return only valid JSON. " + UNTRUSTED_RULES,
         user_prompt=prompt,
         max_tokens=1024,
         json_mode=model_entry.supports_json,

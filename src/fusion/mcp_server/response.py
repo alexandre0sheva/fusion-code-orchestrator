@@ -17,6 +17,7 @@ from fusion.mcp_server.schemas import (
     ToolEnvelope,
 )
 from fusion.routing.budget import CHARS_PER_TOKEN
+from fusion.security.output import harden
 
 if TYPE_CHECKING:
     from fastmcp.tools import ToolResult
@@ -55,6 +56,26 @@ def cap_markdown(text: str, run_id: str, *, max_tokens: int = COMPACT_MAX_TOKENS
     )
 
 
+def hardened(fields: dict[str, Any]) -> dict[str, Any]:
+    """The response fields with terminal escapes and bidi overrides removed from every string and
+    sizes capped (``security.output``). Model text is untrusted: it reaches Claude Code's context
+    and, through the CLI, a terminal. Says so in ``warnings`` when it changed anything."""
+    cleaned, report = harden(fields)
+    notes: list[str] = []
+    if report.removed_chars:
+        notes.append(
+            f"Removed {report.removed_chars:,} terminal control characters from model output."
+        )
+    if report.truncated:
+        notes.append(
+            "Output truncated to bound the response size; the complete run is stored "
+            f"(see {cleaned.get('details_uri', 'fusion://runs/{run_id}')})."
+        )
+    if notes:
+        cleaned["warnings"] = [*cleaned.get("warnings", []), *notes]
+    return dict(cleaned)
+
+
 def present_run(output: dict[str, Any], detail: str) -> FusionToolResult:
     """The tool response for one pipeline output (a ``model_dump`` of its output model)."""
     run_id = str(output["run_id"])
@@ -78,23 +99,31 @@ def present_run(output: dict[str, Any], detail: str) -> FusionToolResult:
     }
     if full:
         fields.update({name: output.get(name) for name in _FULL_FIELDS})
-    return FusionToolResult(**fields)
+    return FusionToolResult(**hardened(fields))
 
 
 def present_stats(output: dict[str, Any]) -> StatsToolResult:
     return StatsToolResult(
-        display_markdown=str(output["display_markdown"]),
-        warnings=list(output.get("warnings", [])),
-        result=output["result"],
+        **hardened(
+            {
+                "display_markdown": str(output["display_markdown"]),
+                "warnings": list(output.get("warnings", [])),
+                "result": output["result"],
+            }
+        )
     )
 
 
 def present_comparison(output: dict[str, Any]) -> CompareToolResult:
     return CompareToolResult(
-        display_markdown=str(output["display_markdown"]),
-        warnings=list(output.get("warnings", [])),
-        result=output["result"],
-        evals=output["evals"],
+        **hardened(
+            {
+                "display_markdown": str(output["display_markdown"]),
+                "warnings": list(output.get("warnings", [])),
+                "result": output["result"],
+                "evals": output["evals"],
+            }
+        )
     )
 
 

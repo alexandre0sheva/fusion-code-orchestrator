@@ -1,0 +1,42 @@
+{
+  "provenance": "hand-written from the public API reference (https://ai.google.dev/api/generate-content); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "A cut-off answer is a success with finishReason MAX_TOKENS.",
+  "alias": "gemini-flash",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "Retry on 429 and"
+              }
+            ],
+            "role": "model"
+          },
+          "finishReason": "MAX_TOKENS",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 14,
+        "candidatesTokenCount": 256,
+        "totalTokenCount": 270
+      },
+      "modelVersion": "gemini-3.8-flash",
+      "responseId": "kV3xaN7hJ8"
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and",
+    "input_tokens": 14,
+    "output_tokens": 256,
+    "finish_reason": "MAX_TOKENS"
+  }
+}

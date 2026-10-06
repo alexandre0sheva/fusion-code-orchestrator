@@ -92,6 +92,7 @@ async def run_calibration(
         truncate_prompts=False,
         temperature=0.0,
         seed=seed,
+        redact=False,  # calibration cases are written to be judged as they are
     )
     score_env = ScoreEnv(gateway=gateway, judge_models=judges)
     try:
@@ -151,6 +152,7 @@ async def run_artifact_calibration(
         truncate_prompts=False,
         temperature=0.0,
         seed=seed,
+        redact=False,  # calibration cases are written to be judged as they are
     )
     score_env = ScoreEnv(gateway=gateway, judge_models=judges)
     kit = evaluators or EvaluatorSet(env.store.root / "calibration" / "evidence")

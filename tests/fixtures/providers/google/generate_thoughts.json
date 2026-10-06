@@ -1,0 +1,48 @@
+{
+  "provenance": "hand-written from the public API reference (https://ai.google.dev/api/generate-content); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "Parts marked thought are not part of the answer text.",
+  "alias": "gemini-flash",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "The caller wants a retry policy; think about idempotency.",
+                "thought": true
+              },
+              {
+                "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts."
+              }
+            ],
+            "role": "model"
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "usageMetadata": {
+        "promptTokenCount": 40,
+        "candidatesTokenCount": 30,
+        "totalTokenCount": 120,
+        "thoughtsTokenCount": 50
+      },
+      "modelVersion": "gemini-3.8-flash",
+      "responseId": "kV3xaN7hJ8"
+    }
+  },
+  "expect": {
+    "text": "Retry on 429 and 5xx with exponential backoff and jitter, honour Retry-After, and cap the attempts.",
+    "input_tokens": 40,
+    "output_tokens": 80,
+    "reasoning_tokens": 50,
+    "finish_reason": "STOP"
+  }
+}

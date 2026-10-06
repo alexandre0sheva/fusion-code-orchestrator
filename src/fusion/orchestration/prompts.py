@@ -6,11 +6,12 @@ import json
 from typing import TYPE_CHECKING
 
 from fusion.routing.classifier import TaskType, canonical_task_key
+from fusion.security.untrusted import UNTRUSTED_RULES, wrap_untrusted
 
 if TYPE_CHECKING:
     from fusion.orchestration.claims import ClaimCluster
 
-_STRUCTURED_OUTPUT_RULES = """
+_STRUCTURED_OUTPUT_RULES = f"""
 Rules for your response:
 - Use ONLY the context provided below; do not invent files, APIs, or behaviors not in context.
 - State assumptions explicitly when information is missing.
@@ -18,7 +19,13 @@ Rules for your response:
 - Identify uncertainty and caveats; do not overstate confidence.
 - For coding tasks, include a test strategy and risk notes.
 - Return valid JSON matching the requested schema exactly.
+- {UNTRUSTED_RULES}
 """
+
+# Task types whose main input is material to analyse (a diff, an error, an answer to grade), not
+# the caller's own instruction. An ask, an architecture question or a feature request is the
+# instruction itself and is left outside the delimiters.
+_MATERIAL_TASKS = frozenset({"code_review", "debugging", "answer_eval"})
 
 _CLAIM_RULES = """
 ## Output Format
@@ -179,17 +186,20 @@ def build_user_prompt(
     ``claims`` asks for the panel's claim format; the shadow baseline gets the task alone, in free
     form, so its answer can be compared as plain text.
     """
-    parts = [f"## Task: {canonical_task_key(task_type)}\n", primary_content]
+    key = canonical_task_key(task_type)
+    primary = wrap_untrusted(primary_content) if key in _MATERIAL_TASKS else primary_content
+    parts = [f"## Task: {key}\n", primary]
     if context:
-        parts.append(f"\n## Additional Context\n{context}")
+        parts.append(f"\n## Additional Context\n{wrap_untrusted(context)}")
     files = changed_files or []
     if files:
-        parts.append("\n## Changed Files\n" + "\n".join(f"- {f}" for f in files))
+        listing = "\n".join(f"- {f}" for f in files)
+        parts.append(f"\n## Changed Files\n{wrap_untrusted(listing)}")
     snippets = file_snippets or []
     if snippets:
         parts.append("\n## File Snippets")
         for i, snippet in enumerate(snippets, 1):
-            parts.append(f"\n### Snippet {i}\n{snippet}")
+            parts.append(f"\n### Snippet {i}\n{wrap_untrusted(snippet)}")
     parts.append(
         _CLAIM_RULES
         if claims
@@ -229,9 +239,9 @@ def build_synthesis_prompt(
         parts.append(_render_clusters(clusters))
     parts.append(f"Agreement summary: {json.dumps(disagreement_analysis, default=str)}\n")
     if original_task:
-        parts.append(f"\n## Original Task\n{original_task}\n")
+        parts.append(f"\n## Original Task\n{wrap_untrusted(original_task)}\n")
     for model_name, content in panel_responses:
-        parts.append(f"\n## Response from {model_name}\n{content}")
+        parts.append(f"\n## Response from {model_name}\n{wrap_untrusted(content)}")
     parts.append(f"\n## Required JSON Schema\n{json.dumps(schema, indent=2)}")
     parts.append(_STRUCTURED_OUTPUT_RULES)
     parts.append(
@@ -251,7 +261,7 @@ def _render_clusters(clusters: list[ClaimCluster]) -> str:
             f"- [{cluster.id}] {cluster.status}, {cluster.support} model(s) "
             f"({', '.join(cluster.models)}), {cluster.kind}{severity}{where}: {cluster.text}"
         )
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines[:1] + [wrap_untrusted("\n".join(lines[1:]))]) + "\n"
 
 
 def build_refinement_prompt(
@@ -272,11 +282,11 @@ def build_refinement_prompt(
         "other expert models to the same task, together with your own answer.",
         "Critique all answers, adopt correct points you missed, and discard mistakes. "
         "Then produce a single improved final answer.",
-        f"\n## Original Task\n{original_task}",
-        f"\n## Your Answer\n{own_answer}",
+        f"\n## Original Task\n{wrap_untrusted(original_task)}",
+        f"\n## Your Answer\n{wrap_untrusted(own_answer)}",
     ]
     for label, content in peer_answers:
-        parts.append(f"\n## Response {label}\n{content}")
+        parts.append(f"\n## Response {label}\n{wrap_untrusted(content)}")
     parts.append(
         "\n## Refinement Instructions\n"
         "- Keep everything correct from your answer; integrate insights you missed.\n"
@@ -301,5 +311,6 @@ def build_judge_prompt(
         "Return JSON with keys: specificity, groundedness, actionability, "
         "correctness_likelihood, risk_awareness, unsupported_claims (lower=better), "
         "codebase_awareness, novelty, overall_score, notes.\n\n"
-        f"Context:\n{context}\n\nResponse:\n{response_content}"
+        f"{UNTRUSTED_RULES}\n\n"
+        f"Context:\n{wrap_untrusted(context)}\n\nResponse:\n{wrap_untrusted(response_content)}"
     )

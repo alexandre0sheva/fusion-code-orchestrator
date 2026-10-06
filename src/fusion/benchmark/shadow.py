@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field
 
 from fusion.config.loader import BaselineEntry, ModelEntry, load_baseline
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
+from fusion.security.redaction import redact_request
+from fusion.security.untrusted import UNTRUSTED_RULES, wrap_untrusted
 from fusion.telemetry.cost import PricingRegistry
 
 if TYPE_CHECKING:
@@ -86,9 +88,10 @@ def _build_blind_judge_prompt(task: str, answer_1: str, answer_2: str) -> str:
         "You are comparing two anonymous answers to the same task. You do not "
         "know which system produced which answer. Judge only on quality: "
         "correctness, groundedness, specificity, actionability, and risk awareness.\n\n"
-        f"## Task\n{task}\n\n"
-        f"## Answer 1\n{answer_1}\n\n"
-        f"## Answer 2\n{answer_2}\n\n"
+        f"{UNTRUSTED_RULES}\n\n"
+        f"## Task\n{wrap_untrusted(task)}\n\n"
+        f"## Answer 1\n{wrap_untrusted(answer_1)}\n\n"
+        f"## Answer 2\n{wrap_untrusted(answer_2)}\n\n"
         "Return ONLY valid JSON with keys: "
         '{"winner": "1" | "2" | "tie", '
         '"answer_1_score": float 0-1, "answer_2_score": float 0-1, '
@@ -151,8 +154,8 @@ async def call_shadow_baseline(
             request=request,
             provider_name=entry.provider,
         )
-    else:
-        response = await provider.safe_complete(request)
+    else:  # no gateway to redact for us
+        response = await provider.safe_complete(redact_request(request)[0])
     if response.latency_ms <= 0:
         response.latency_ms = (time.perf_counter() - started) * 1000
     if response.error or not response.content.strip():
@@ -215,7 +218,9 @@ async def finish_shadow_comparison(
     )
     judge_request = ModelRequest(
         model_id=judge_entry.model_id,
-        system_prompt="You are an impartial evaluation judge. Return only valid JSON.",
+        system_prompt=(
+            "You are an impartial evaluation judge. Return only valid JSON. " + UNTRUSTED_RULES
+        ),
         user_prompt=_build_blind_judge_prompt(task_prompt, answer_1, answer_2),
         max_tokens=1024,
         json_mode=judge_entry.supports_json,
@@ -227,7 +232,7 @@ async def finish_shadow_comparison(
             stage="shadow_judge", alias=judge_model_alias, request=judge_request
         )
     else:
-        judge_response = await judge_provider.safe_complete(judge_request)
+        judge_response = await judge_provider.safe_complete(redact_request(judge_request)[0])
     verdict = (
         judge_response.parsed_json
         if judge_response.parsed_json and "winner" in judge_response.parsed_json

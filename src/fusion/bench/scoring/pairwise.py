@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from fusion.bench.scoring.base import ScoreEnv, ScoringError, ask_judge, task_text
 from fusion.bench.spec import BenchTask
 from fusion.config.catalog import ModelEntry
+from fusion.security.untrusted import wrap_untrusted
 
 __all__ = [
     "NoEligibleJudgeError",
@@ -166,8 +167,9 @@ class PairwiseJudge:
             "specific to the task, and more useful to the person who asked. Do not prefer an "
             "answer for its length, its position or its tone. If they are equally good, say "
             "tie.\n\n"
-            f"Task:\n{task_text(task)}\n\n=== ANSWER A ===\n{shown_a}\n\n=== ANSWER B ===\n"
-            f'{shown_b}\n\nAnswer: {{"winner": "A" | "B" | "tie", "reason": "..."}}'
+            f"Task:\n{task_text(task)}\n\n=== ANSWER A ===\n{wrap_untrusted(shown_a)}\n\n"
+            f"=== ANSWER B ===\n{wrap_untrusted(shown_b)}\n\n"
+            'Answer: {"winner": "A" | "B" | "tie", "reason": "..."}'
         )
         data = await ask_judge(
             env,

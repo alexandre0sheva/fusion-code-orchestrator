@@ -1,0 +1,35 @@
+{
+  "provenance": "hand-written from the public API reference (https://ai.google.dev/api/generate-content); replace with a real recording using evals/runners/record_provider_fixtures.py",
+  "note": "A prompt blocked by safety filters returns no candidates: empty text, usage kept.",
+  "alias": "gemini-flash",
+  "request": {
+    "user_prompt": "How should I retry a failed HTTP call?",
+    "max_tokens": 256,
+    "stream": false
+  },
+  "http": {
+    "status": 200,
+    "json": {
+      "promptFeedback": {
+        "blockReason": "SAFETY",
+        "safetyRatings": [
+          {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "probability": "HIGH",
+            "blocked": true
+          }
+        ]
+      },
+      "usageMetadata": {
+        "promptTokenCount": 50,
+        "totalTokenCount": 50
+      },
+      "modelVersion": "gemini-3.8-flash",
+      "responseId": "bL0xaPqRs"
+    }
+  },
+  "expect": {
+    "text": "",
+    "input_tokens": 50
+  }
+}

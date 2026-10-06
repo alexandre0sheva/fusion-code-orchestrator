@@ -130,7 +130,7 @@
   "confidence": 0.275,
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.002888,
+    "baseline_estimated_cost_usd": 0.0031,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -141,7 +141,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.002888
+    "savings_usd": 0.0031
   },
   "cost_latency": {
     "steps": [
@@ -149,7 +149,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 247,
+        "input_tokens": 300,
         "model_name": "mock-fast",
         "output_tokens": 95,
         "provider": "mock",
@@ -158,7 +158,7 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 247,
+    "total_input_tokens": 300,
     "total_output_tokens": 95,
     "warnings": [
       "Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)",
@@ -328,20 +328,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 247,
+        "input_tokens": 300,
         "model_alias": "mock-fast",
         "output_tokens": 95,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 342
+        "total_tokens": 395
       }
     ],
     "successful_model_calls": 1,
-    "total_input_tokens": 247,
+    "total_input_tokens": 300,
     "total_output_tokens": 95,
-    "total_tokens": 342
+    "total_tokens": 395
   },
   "warnings": [
     "Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)"

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from fusion.config.loader import ModelEntry
 from fusion.orchestration.progress import call_finished, call_started
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
+from fusion.security.redaction import redact_error, redact_request
 from fusion.telemetry.cost import ModelUsage, PricingRegistry
 
 StageName = Literal[
@@ -278,6 +279,7 @@ class CallGateway:
         temperature: float | None = None,
         seed: int | None = None,
         stream: bool = False,
+        redact: bool = True,
     ) -> None:
         self.ledger = ledger
         self.models = models
@@ -289,6 +291,10 @@ class CallGateway:
         self.temperature = temperature
         self.seed = seed
         self.stream = stream
+        # Every prompt is scrubbed of secrets just before it is sent: refinement, judge, synthesis
+        # and shadow prompts embed model output that the run's input redaction never saw. A study
+        # that must show models the task exactly as written turns this off (``fusion bench``).
+        self.redact = redact
 
     async def call(
         self,
@@ -316,6 +322,13 @@ class CallGateway:
             )
             return self._record(stage, alias, response, entry, started_ms, "missing_provider")
 
+        if self.redact:
+            request, removed = redact_request(request)
+            if removed:
+                noun = "string was" if removed == 1 else "strings were"
+                self.warnings.append(
+                    f"{removed} secret-like {noun} removed from the {stage} prompt sent to {alias}"
+                )
         request = self._with_sampling(request, entry)
         note = None
         if self.truncate_prompts:
@@ -378,6 +391,8 @@ class CallGateway:
         trimmed: bool = False,
     ) -> ModelResponse:
         response.model_alias = alias
+        if response.error:  # stored and shown, and a provider's error can quote the prompt
+            response.error = redact_error(response.error)
         list_cost: float | None = 0.0
         if status == "missing_provider":
             cost_usd: float | None = 0.0  # nothing was sent, so nothing was billed
