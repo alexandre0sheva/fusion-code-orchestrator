@@ -1,5 +1,8 @@
 # Claude Code + Opus vs Claude Code + Fusion A/B Runbook
 
+Canonical for the manual Claude Code A/B procedure. The automated, ground-truth measurement is in
+[BENCHMARKING.md](BENCHMARKING.md).
+
 This runbook describes the intended production workflow:
 
 - **Arm A:** Claude Code uses its native large model, for example Opus.

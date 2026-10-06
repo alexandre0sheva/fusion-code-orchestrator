@@ -78,7 +78,8 @@ CATEGORY_TASK_TYPE: dict[str, TaskType] = {
 
 # Places a bare dataset name ("toy") is looked up, after the path as given.
 DATASET_DIRS = (
-    Path(__file__).parent / "datasets",
+    Path(__file__).parent / "datasets",  # packaged: ``toy``, and ``v1`` in a wheel
+    Path(__file__).parent / "datasets" / "v1",  # packaged tasks by name: ``coding``
     Path("evals") / "datasets" / "bench",
     Path("evals") / "bench",
     Path("evals") / "datasets" / "v1",  # tasks of the shipped dataset by name: ``coding``

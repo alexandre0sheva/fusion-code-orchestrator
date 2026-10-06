@@ -1,5 +1,8 @@
 # Evaluation datasets
 
+Canonical for where the benchmark data comes from: provenance, validity limits, licence and the
+guidelines for writing tasks.
+
 Two kinds live here.
 
 - **`v1/`: the ground-truth benchmark dataset** that `fusion bench` studies run on. Methodology,

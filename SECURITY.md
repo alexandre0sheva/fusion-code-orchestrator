@@ -1,5 +1,8 @@
 # Security Policy
 
+Canonical for the security model: the threat model, what leaves the machine, the controls, the
+benchmark sandbox and how to report a vulnerability.
+
 ## Reporting a vulnerability
 
 Please open a GitHub security advisory or private issue with enough detail to reproduce the

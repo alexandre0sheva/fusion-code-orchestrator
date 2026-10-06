@@ -1,5 +1,9 @@
 # Fusion Code Orchestrator
 
+[![CI](https://github.com/alexandre0sheva/fusion-code-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre0sheva/fusion-code-orchestrator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](pyproject.toml)
+
 A panel of small, cheap LLMs that answers coding questions for Claude Code (and Cursor) over MCP,
 plus the instrumentation to find out whether that panel can match a single frontier model on cost,
 speed and quality.
@@ -8,9 +12,10 @@ Claude Code stays the coding agent. Fusion is an advisor: it takes a diff, an er
 question or a feature request, asks a panel of cheap models in parallel, merges their answers, and
 returns the result with token, cost and latency telemetry. It never edits files or runs commands.
 
-> **Status: v0.2.0 in progress, alpha.** The question "can a cheap panel match a frontier model?"
-> now has a measured answer, below, and it is more modest than the pitch. The rest of the 0.2.0 work
-> is in the [roadmap](docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md).
+> **Thesis, tested in v0.2.0 (alpha):** a panel of cheap models can give advice close to a frontier
+> model's for a fraction of the cost. The measured answer, below, is more modest than the pitch:
+> **cheaper, yes; faster, no; better, not shown.** See the [changelog](CHANGELOG.md) for what is in
+> the release.
 
 ## Does a cheap panel match a frontier model?
 
@@ -39,6 +44,17 @@ Small, synthetic and LLM-judged in part: read the limitations before quoting a n
 Everything, with the method and the unedited verdicts, is in
 [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) and the
 [interactive report](docs/benchmark-report.html).
+
+## Limitations
+
+- The study is small (34 tasks, 2 repeats) and its intervals are wide, so "not worse than Opus" is
+  *inconclusive*, not *equal*. The tasks are synthetic and not yet reviewed by a person.
+- Fusion is slower than one model: it waits for several, then merges.
+- Redaction is pattern-based and can miss a secret; answers are advice to check, not instructions.
+- Not on PyPI: install from GitHub (`uvx --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator`;
+  append `@v0.2.0` to pin the release).
+
+The full list is in the [changelog](CHANGELOG.md#known-limitations) and [SECURITY.md](SECURITY.md#known-limitations).
 
 ## What Fusion is and is not
 

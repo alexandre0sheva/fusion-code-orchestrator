@@ -5,12 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Unreleased
+## [Unreleased]
 
-Evidence-backed release: benchmark mode, a faster and cheaper real mode, latest models, and
-one-command integrations. The work is planned task by task in
-[docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md](docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md).
-Add each user-visible change below under the matching heading as its task lands.
+## [0.2.0] - 2026-10-06
+
+An evidence-backed release: a benchmark mode that measures the panel against a single model on ground
+truth, a faster and cheaper real mode, current models with verified prices, and one-command setup for
+Claude Code, Cursor and Codex. The measured answer to "does a cheap panel match a frontier model?" is
+**cheaper (about 0.3x Opus per solved task), slower (about 1.5x), and not shown to be better or worse**:
+the study is small and its intervals are wide ([docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md)).
+Read [Known limitations](#known-limitations) before quoting a number. The work was planned task by task
+in [docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md](docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md).
 
 ### Added
 
@@ -38,6 +43,7 @@ Add each user-visible change below under the matching heading as its task lands.
 - `fusion bench show RUN --task ID` prints a task's gates, criteria, evidence and the judges' reasoning; `show` and `run` list `eval_cost_usd` and `eval_seconds` (what measuring and judging cost) beside, never inside, the arm's cost and time.
 - `fusion bench dataset validate | stats | build`: validate a dataset (schema, unique ids, line numbers inside the supplied files, secrets, split disjointness, a licence note, that each task's truth is scorable offline, and with `--release` the published coverage), print its statistics, compile the authoring YAML into the JSONL (`--check` for drift), or have a model draft candidate tasks (`--generate`, spend-capped).
 - Disk response cache for live studies: a repeated request is replayed at zero cost, flagged `cache_hit` on its ledger record and `latency_valid: false` on its item. `ModelResponse.cache_hit` and `CallRecord.cache_hit` are new fields.
+- **Packaging for `uvx`.** The wheel carries the YAML configs, the dashboard, the Cursor and Codex templates and now the benchmark dataset (`fusion bench --dataset v1`, `coding`, `frontend` and `performance` resolve from the installed package, not only from a clone). CI builds the wheel, checks it against the source tree with `evals/runners/check_wheel.py` and runs it from an empty directory; a manual `release.yml` workflow (tag in, GitHub Release out) attaches the wheel and source distribution after the same checks, with a commented-out PyPI trusted-publishing job. Distribution is the GitHub repository and `uvx --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator`; PyPI is not used yet. See [CONTRIBUTING.md](CONTRIBUTING.md#publishing-a-release).
 - **Test depth:** property tests (Hypothesis, a new dev dependency) for claim clustering, agreement, cost arithmetic, the benchmark statistics, redaction and output cleaning; provider contract tests that replay wire fixtures (`tests/fixtures/providers/`: success, cache, thinking, refusal, blocked, error and streaming bodies for each provider) through the adapters; `evals/runners/record_provider_fixtures.py --max-usd N`, which records real exchanges as new fixtures through the spend ledger; and live smoke tests that skip by default (`uv run pytest -m live`). See [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 - `Pipeline.run` accepts `seed`, `redact` and `ledger`; `PipelineResult.halt_reason` says why a run stopped early; database migration 5 adds the `bench_runs` and `bench_items` tables.
 
@@ -72,7 +78,7 @@ Add each user-visible change below under the matching heading as its task lands.
 - `CHANGELOG.md`, `CLAUDE.md` (agent/contributor guide), GitHub Actions CI, issue and pull request templates.
 - `docs/CONFIGURATION.md`, `docs/INTEGRATIONS.md` and `docs/BENCHMARKING.md`; a docs test that checks relative links and anchors, the canonical docs, and the README size limit.
 - In-process FastMCP smoke tests (tool registration, a `fusion_ask` round trip, and a guard that mock mode never reaches real providers).
-- Version parity test between `pyproject.toml` and `plugin/plugin.json`; `pytest` marker `live` for tests that call real provider APIs (skipped by default).
+- Version parity test between `pyproject.toml` and `plugin/.claude-plugin/plugin.json`; `pytest` marker `live` for tests that call real provider APIs (skipped by default).
 - **MCP server upgrade.** Tool descriptions are rewritten for tool selection (when to call, when not, that a call takes tens of seconds and costs cents). Every tool has annotations (`readOnlyHint`, `destructiveHint: false`, `idempotentHint`, `openWorldHint`) and a typed `outputSchema`. The orchestration tools take `max_cost_usd` (a per-call cap that can only lower the strategy's own), `strategy`, `detail`, `file_snippets` and one `context` input. Progress notifications report each stage and each panel member as it finishes. New resources `fusion://runs/{run_id}`, `fusion://stats` and `fusion://strategies`, and prompts `review-this-diff`, `debug-this-error` and `plan-this-feature`. `fusion mcp --transport http [--host] [--port] [--allow-remote]` serves streamable HTTP on localhost (127.0.0.1:8765 by default; a non-loopback host is refused without `--allow-remote`). A call still running after `FUSION_TOOL_SOFT_TIMEOUT_S` seconds (default 90) returns the panel's digest with a warning and `partial: true`, or `halted: timeout` when nothing had answered. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#mcp-tool-reference).
 - `PipelineContext.max_cost_usd`, `BasePipeline.soft_timeout_s`, `PipelineResult.partial`, the `timeout` halt reason, and `partial` and `halt_reason` on every tool output model.
 - **Claude Code plugin and one-command install.** The plugin now follows Claude Code's current layout: manifest in `plugin/.claude-plugin/plugin.json` (name `fusion`, so commands are `/fusion:ask`, `review`, `debug`, `plan`, `decide`, `eval`, `stats`, `bench` and `ab`), server in `plugin/.mcp.json`, six skills with tight "use when / do not use" descriptions (hidden from the `/` menu), and a `fusion-advisor` subagent that calls Fusion and returns a verdict of at most 15 lines. `.claude-plugin/marketplace.json` makes `/plugin marketplace add alexandre0sheva/fusion-code-orchestrator` work. `fusion install claude-code [--plugin] [--scope user|project] [--ref TAG] [--local-checkout PATH] [--dry-run] [--force] [--no-verify]` registers the server (or installs the plugin), starts it first to check it lists its tools, is safe to run again, merges `.mcp.json` without touching other servers, and refuses to replace a different `fusion` entry without `--force`. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#claude-code).
@@ -122,7 +128,7 @@ Add each user-visible change below under the matching heading as its task lands.
 - `fusion compare-cost` and the `evals/runners/compare_cost.py` runner take a catalog alias (`--opus-model claude-opus`). `fusion config validate` checks the catalog, baselines and routing references and prints catalog warnings.
 - The Anthropic sampling-parameter guard now covers every Claude 4.7+ model (Opus 5.5, Sonnet 5.5, Fable 5.1), not only `claude-opus-4-N`.
 - Dependencies upgraded to the latest releases and the lockfile refreshed, including FastMCP 3.4 → 4.0 (MCP SDK 1.x → 2.x), Typer 0.26 → 0.27, Pydantic 2.13.5, ruff 0.15 → 0.16 and mypy 2.1 → 2.4; minimum versions in `pyproject.toml` now match what is tested (`fastmcp>=4.0`, `httpx>=0.28`, `pydantic>=2.13`, `typer>=0.27`, ...). The suite passes on Python 3.12 and 3.13 with warnings treated as errors.
-- Removed the unused `pydantic-settings` dependency; added `platformdirs` (used by the upcoming config/paths work).
+- Removed the unused `pydantic-settings` dependency; added `platformdirs` (user config and data directories).
 - README reduced from 696 to under 200 lines; detail moved to the canonical docs (configuration, integrations, benchmarking, costs, security) with duplicated sections removed.
 - `CONTRIBUTING.md` now defines the docs contract, the quality gate, the `live` test marker and the changelog rule; `docs/COSTS.md` no longer repeats price numbers (they live in `pricing.yaml`).
 - The package version is read from installed package metadata (`pyproject.toml` is the single source).
@@ -164,6 +170,19 @@ Add each user-visible change below under the matching heading as its task lands.
 - **Prompt-injection mitigations.** Diffs, errors, context, snippets, file names and every model answer quoted into another prompt are wrapped in `<untrusted>` blocks (a closing marker inside the text is defused), and every system prompt says such blocks are data, never instructions; the benchmark judges do the same. See [SECURITY.md](SECURITY.md#prompt-injection).
 - **Model output is cleaned and bounded before it reaches Claude Code or a terminal.** Terminal escape sequences, control characters and bidi overrides are removed from every string a tool returns (and from the stored-run resource); strings are capped at 100,000 characters, a response at 400,000 and lists at 500 items, and the response's `warnings` say so when it removed or cut anything. See [SECURITY.md](SECURITY.md#output-hardening).
 - **Supply chain:** every GitHub Action is pinned to a commit SHA, CI audits the locked dependencies with `pip-audit` on every change and weekly, Dependabot proposes weekly updates, and CI fails when line coverage of `orchestration/`, `providers/` or `bench/` is under 85%. [SECURITY.md](SECURITY.md#supply-chain) has the threat model, the data flow and what leaves the machine.
+
+### Known limitations
+
+- **The quality claim is not established.** The headline study is 34 held-out tasks, 2 repeats each, $9.61 of live spend. Fusion's quality difference from Claude Opus 5.5 is +0.03 with an interval of about plus or minus 0.12, so "not worse" and "better" are inconclusive, and a single cheap model scored as well as the panel at about 1/30 of its cost. The panel is cheaper than the frontier model and about 1.5x slower.
+- **The benchmark tasks are synthetic.** An LLM drafted them and no person has reviewed them ([evals/datasets/README.md](evals/datasets/README.md#provenance-and-validity-read-this-before-quoting-a-number)). Scorers combine keyword matching with cheap LLM judges (every judge's vendor sits on a panel, so it may favour its own style); frontend and performance scores are measured, not judged, and check structure and speed, not intent.
+- `docs/BENCHMARK_RESULTS.md` records "Fusion version 0.1.0" for its runs: they were made on the 0.2.0 development tree before the version was bumped.
+- Prices and model ids come from the catalog as verified on 2026-10-05; providers change both. `fusion models check` flags stale prices and `--live` asks each provider for its model list.
+- The default panel includes Claude Haiku 4.5, which the catalog marks as possibly retired by its provider from 2026-10-15; `fusion doctor` warns about it. Before then run `fusion models check --live` and move to the replacement in your `config.yaml`.
+- The benchmark sandbox is a best-effort guard, not a security boundary; memory limits are not enforced on macOS, and an optional browser evaluator runs page JavaScript under Chromium's own protections ([SECURITY.md](SECURITY.md#benchmark-sandbox)).
+- Redaction is pattern- and entropy-based and can miss an unusual secret; `<untrusted>` delimiters reduce prompt injection but do not stop a model from following an instruction in data ([SECURITY.md](SECURITY.md#known-limitations)).
+- Not verified: the GitHub Actions workflows (written and their commands run locally, but not yet run on GitHub), the live provider smoke tests and the fixture recorder against the real APIs (the committed provider fixtures are hand-written from each API's documentation), and the dashboard in Safari and Firefox.
+- Not on PyPI. Installs from `git+https://github.com/alexandre0sheva/fusion-code-orchestrator` follow the default branch; append `@v0.2.0` to the URL to pin the release. A wheel built twice at the same version is cached by `uvx`; pass `--no-cache` when testing a rebuild.
+- Windows is untested; the sandbox's network and write isolation need macOS `sandbox-exec` or Linux `unshare`.
 
 ## [0.1.0] - 2026-07-08
 
@@ -211,5 +230,6 @@ multi-model panel for coding questions, with cost and quality instrumentation.
 - Quality scores come from LLM-judge output and heuristics, not verified outcomes.
 - Judge and eval calls are not included in the reported Fusion cost.
 
-[0.2.0]: https://github.com/alexandre0sheva/fusion-code-orchestrator/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/alexandre0sheva/fusion-code-orchestrator/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/alexandre0sheva/fusion-code-orchestrator/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/alexandre0sheva/fusion-code-orchestrator/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
 [project]
 name = "fusion-code-orchestrator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-model orchestration and evaluation engine for coding workflows"
 readme = "README.md"
 license = { text = "MIT" }
@@ -54,6 +54,8 @@ packages = ["src/fusion"]
 # carries them inside the package so `uvx --from git+... fusion install ...` can find them.
 [tool.hatch.build.targets.wheel.force-include]
 "integrations" = "fusion/_integrations"
+# The benchmark dataset, so `fusion bench --dataset v1` works from a wheel or `uvx --from git+...`.
+"evals/datasets/v1" = "fusion/bench/datasets/v1"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

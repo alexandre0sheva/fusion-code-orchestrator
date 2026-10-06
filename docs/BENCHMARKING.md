@@ -397,7 +397,7 @@ Each returns `Evidence` (`kind`, `ok`, `metrics`, `artifact_path`, `summary`, `c
 
 | Evaluator | Kind | Measures |
 |---|---|---|
-| `tests` | `tests` | the hidden tests (Task 16's flake guard, results memoised by task and patch), per test; `pass_fraction`, `visible_pass_fraction` |
+| `tests` | `tests` | the hidden tests (rerun once to catch flaky tests, results memoised by task and patch), per test; `pass_fraction`, `visible_pass_fraction` |
 | `build` | `build` | every Python file compiles; JavaScript passes `node --check` where `node` exists |
 | `static` | `static` | ruff (default), mypy, eslint, tsc where installed and named in `static_tools`; cyclomatic complexity of every Python function (read from the AST, so no extra dependency); new third-party imports; secret-looking strings; for pages a viewport meta tag, media queries, the widest fixed width and requests to other hosts |
 | `diff_stats` | `diff_stats` | lines and files added, changed, removed |

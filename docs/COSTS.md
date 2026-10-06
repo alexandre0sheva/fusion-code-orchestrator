@@ -3,6 +3,10 @@
 Fusion tracks cost and usage at provider-call granularity. The goal is transparent
 comparison, not false precision.
 
+Canonical for the cost and pricing methodology: where prices come from, how a call and a run are
+priced, what the baseline comparison means, and the per-strategy cost table (generated from the
+catalog).
+
 ## Pricing: the model catalog
 
 Prices live in the model catalog, `src/fusion/config/catalog.yaml`, next to each model's provider

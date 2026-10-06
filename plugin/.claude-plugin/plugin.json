@@ -1,7 +1,7 @@
 {
   "name": "fusion",
   "displayName": "Fusion Code Orchestrator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A panel of cheap models for second opinions on review, debugging, architecture, planning and hard coding questions. Claude Code stays the executor.",
   "author": {
     "name": "Oleksandr Shevchenko"

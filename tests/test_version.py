@@ -61,3 +61,10 @@ def test_cli_version_prints_package_version() -> None:
     result = CliRunner().invoke(app, ["version"])
     assert result.exit_code == 0
     assert f"v{fusion.__version__}" in result.output
+
+
+def test_lock_file_records_the_project_version() -> None:
+    """CI installs with ``--locked``, which fails when ``uv.lock`` still names the old version."""
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    entry = next(p for p in lock["package"] if p["name"] == "fusion-code-orchestrator")
+    assert entry["version"] == _pyproject_version(), "run `uv lock` after bumping the version"

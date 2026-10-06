@@ -92,3 +92,64 @@ def test_dependabot_watches_python_dependencies_and_actions() -> None:
 def test_the_coverage_gate_is_documented_where_contributors_look() -> None:
     text = (ROOT / "CONTRIBUTING.md").read_text()
     assert "85" in text and "coverage" in text.lower()
+
+
+# ------------------------------------------------------------------------- packaging and release
+
+
+def release() -> dict[str, Any]:
+    return load(ROOT / ".github" / "workflows" / "release.yml")
+
+
+def triggers(workflow: dict[str, Any]) -> dict[str, Any]:
+    found = workflow.get(True) or workflow.get("on")  # YAML reads a bare `on` as the boolean True
+    assert isinstance(found, dict)
+    return found
+
+
+def test_ci_builds_the_package_and_smoke_tests_the_wheel() -> None:
+    package = ci()["jobs"]["package"]
+    text = "\n".join(str(s.get("run", "")) for s in package["steps"])
+    assert "uv build" in text
+    assert "evals/runners/check_wheel.py" in text
+    assert "fusion version" in text and "--no-cache" in text  # a stale uv cache hides a bad wheel
+
+
+def test_a_release_is_started_by_hand_and_only_by_hand() -> None:
+    on = triggers(release())
+    assert set(on) == {"workflow_dispatch"}
+    assert "tag" in on["workflow_dispatch"]["inputs"]
+
+
+def test_a_release_checks_the_package_before_it_publishes_anything() -> None:
+    jobs = release()["jobs"]
+    assert "build" in jobs and "github-release" in jobs
+    assert jobs["github-release"]["needs"] == "build"
+    build = "\n".join(str(s.get("run", "")) for s in jobs["build"]["steps"])
+    assert "uv build" in build and "check_wheel.py" in build
+    assert "fusion version" in build
+
+
+def test_only_the_job_that_creates_the_release_may_write() -> None:
+    for name, job in release()["jobs"].items():
+        wanted = job.get("permissions", {})
+        if name == "github-release":
+            assert wanted == {"contents": "write"}
+        else:
+            assert "write" not in wanted.values(), name
+
+
+def test_publishing_to_pypi_is_documented_but_not_switched_on() -> None:
+    workflow = release()
+    assert not any("pypi" in name.lower() for name in workflow["jobs"])
+    text = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    assert "# " in text and "pypa/gh-action-pypi-publish" in text  # present, as a comment
+    assert "id-token: write" in text and not any(
+        "id-token" in job.get("permissions", {}) for job in workflow["jobs"].values()
+    )
+
+
+def test_publishing_later_is_explained_for_the_owner() -> None:
+    text = (ROOT / "CONTRIBUTING.md").read_text()
+    assert "## Publishing a release" in text
+    assert "trusted publishing" in text.lower() and "release.yml" in text

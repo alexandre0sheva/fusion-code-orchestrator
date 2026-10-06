@@ -3,8 +3,8 @@
 Python MCP server + CLI that gives Claude Code (and Cursor/Codex) a panel of cheap LLMs for
 review, debugging, planning and answers, and measures whether that panel beats one big model on
 cost, speed and quality. Claude Code stays the executor: Fusion tools return text, never edit
-files or run commands. Current work: the v0.2.0 roadmap in
-`docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md` (one task per session).
+files or run commands. v0.2.0 is built and tag-ready; the owner commits and tags it (the plan and
+what each task changed are in `docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md`).
 
 ## Commands
 
@@ -43,9 +43,8 @@ copying paragraphs. Read the docs-contract table in `CONTRIBUTING.md` before edi
 
 ## Changelog rule
 
-Everything in the roadmap ships as 0.2.0. Add one line per user-visible change under
-`## [0.2.0] - Unreleased` in `CHANGELOG.md` (rules in `CONTRIBUTING.md`). Bump `pyproject.toml`
-and `plugin/.claude-plugin/plugin.json` versions only in the release task.
+One line per user-visible change under `## [Unreleased]` in `CHANGELOG.md`. The rules, and the
+release steps (the only time a version is bumped), are in `CONTRIBUTING.md`.
 
 ## Git
 

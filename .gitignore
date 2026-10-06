@@ -40,6 +40,8 @@ ENV/
 
 # SQLite
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 fusion_runs.db
 

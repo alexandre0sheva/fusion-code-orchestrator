@@ -3,6 +3,10 @@
 Fusion Code Orchestrator is a Python MCP server that gives Claude Code model-like
 multi-model workflows for coding tasks. It calls providers directly through adapters.
 
+Canonical for how Fusion works inside: the pipeline stages and data flow, strategies and modes, the
+cost ledger, concurrency and the module layout. Settings are in [CONFIGURATION.md](CONFIGURATION.md)
+and the security model in [../SECURITY.md](../SECURITY.md).
+
 ## Pipeline flow
 
 A run is a list of **stages** that read and write one `RunState` (`src/fusion/orchestration/`):

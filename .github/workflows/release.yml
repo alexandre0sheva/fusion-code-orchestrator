@@ -1,0 +1,112 @@
+name: Release
+
+# Started by hand once the owner has tagged the release commit (`git tag v0.2.0 && git push origin
+# v0.2.0`). It checks the tag against the version, runs the quality gate, builds and checks the
+# package, and attaches the wheel and source distribution to a GitHub Release. Publishing to PyPI
+# is not switched on: see the commented job at the end and CONTRIBUTING.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, for example v0.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - name: The tag must name the version in pyproject.toml
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          version="$(uv run --no-project --python 3.12 python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          if [ "$TAG" != "v$version" ]; then
+            echo "tag $TAG does not match the version in pyproject.toml (v$version)" >&2
+            exit 1
+          fi
+      - name: Quality gate
+        run: |
+          uv sync --all-groups --locked
+          uv run ruff check src tests evals
+          uv run mypy
+          uv run pytest -q
+      - name: Build the wheel and the source distribution
+        run: uv build
+      - name: Check the wheel carries the configs, dashboard, integrations and dataset
+        run: uv run --no-project --python 3.12 python evals/runners/check_wheel.py dist/*.whl
+      - name: Run the wheel the way a user would, in an empty directory
+        run: |
+          wheel="$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
+          cd "$(mktemp -d)"
+          uvx --no-cache --from "$wheel" fusion version
+          uvx --no-cache --from "$wheel" fusion bench plan --dataset v1 --arms solo-cheap --mock
+      - name: Release notes from the changelog
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          awk -v v="${TAG#v}" '
+            $0 ~ "^## \\[" v "\\]" { show = 1; next }
+            show && /^## \[/ { exit }
+            show { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-notes
+          path: .
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$TAG" --notes-file release-notes.md
+
+  # Publishing to PyPI is off: the owner has not decided to publish there. To switch it on,
+  # register this repository as a trusted publisher for the project on PyPI
+  # (https://docs.pypi.org/trusted-publishers/), create a GitHub environment named "pypi" (add
+  # required reviewers if you want a manual approval), then uncomment this job. It needs no token.
+  #
+  # pypi:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   environment: pypi
+  #   permissions:
+  #     id-token: write
+  #   steps:
+  #     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+  #       with:
+  #         name: dist
+  #         path: dist
+  #     - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
