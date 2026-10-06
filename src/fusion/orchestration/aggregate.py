@@ -9,13 +9,16 @@ call, lives in ``synthesize.py``.)
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
 from fusion.orchestration.claims import (
     AgreementReport,
     ClaimCluster,
+    PanelAnswer,
     cluster_line,
+    patch_text_key,
     top_clusters,
 )
 from fusion.orchestration.strategy import Strategy
@@ -23,7 +26,7 @@ from fusion.providers.base import ModelResponse
 
 __all__ = ["Aggregator", "Picked", "aggregator_for", "build_best_of", "build_digest", "build_vote"]
 
-Aggregator = Literal["solo", "llm", "vote", "best_of", "digest"]
+Aggregator = Literal["solo", "llm", "vote", "best_of", "digest", "verified"]
 
 
 def aggregator_for(strategy: Strategy, *, cascade_exited_early: bool = False) -> Aggregator:
@@ -160,3 +163,99 @@ def build_best_of(
     picked = pick_best(panel_responses, clusters)
     text = next(content for name, content in panel_responses if name == picked.model)
     return _response("best_of", text), picked
+
+
+# -- answers that are one code patch ---------------------------------------------------------------
+#
+# A coding task's answer is a single patch, so a majority of claims is not an answer: the vote is
+# over patches, and the ``verified`` aggregator (benchmark only) lets the task's visible tests pick.
+
+
+def patches_of(answers: Mapping[str, PanelAnswer]) -> dict[str, str]:
+    """Each model's patch, for the models that gave one."""
+    return {model: a.patch for model, a in answers.items() if a.patch}
+
+
+def build_patch_vote(
+    panel_responses: list[tuple[str, str]],
+    answers: Mapping[str, PanelAnswer],
+    clusters: list[ClaimCluster],
+) -> tuple[ModelResponse, Picked, int] | None:
+    """The answer whose patch the most models gave (identical up to whitespace), as written.
+
+    Ties and all-different patches go to the model the others' claims agree with most. Returns
+    ``(response, picked, votes)``, or None when no model gave a patch.
+    """
+    patches = patches_of(answers)
+    if not patches:
+        return None
+    votes: dict[str, int] = {}
+    for patch in patches.values():
+        key = patch_text_key(patch)
+        votes[key] = votes.get(key, 0) + 1
+    backed = {m: votes[patch_text_key(p)] for m, p in patches.items()}
+    n_models = len(panel_responses)
+    scored = [
+        (
+            -backed.get(name, 0),
+            -_answer_agreement(name, clusters, n_models),
+            -_evidence_rate(name, clusters),
+            index,
+            name,
+        )
+        for index, (name, _text) in enumerate(panel_responses)
+        if name in patches
+    ]
+    best = min(scored)
+    text = next(content for name, content in panel_responses if name == best[4])
+    return _response("vote", text), Picked(model=best[4], agreement=-best[1]), -best[0]
+
+
+Verifier = Callable[[str], Awaitable[float | None]]
+
+
+async def build_verified(
+    panel_responses: list[tuple[str, str]],
+    answers: Mapping[str, PanelAnswer],
+    clusters: list[ClaimCluster],
+    verify: Verifier,
+) -> tuple[ModelResponse, Picked, dict[str, float | None]] | None:
+    """The answer whose patch does best on the task's visible tests (``verify`` runs them).
+
+    Ties go to the patch more models gave, then to claim agreement and panel order. Returns
+    ``(response, picked, scores)`` (scores by model), or None when no model gave a patch.
+    No model call: the verification is code, not a model.
+    """
+    patches = patches_of(answers)
+    if not patches:
+        return None
+    scores: dict[str, float | None] = {}
+    cache: dict[str, float | None] = {}
+    for model, patch in patches.items():
+        key = patch_text_key(patch)
+        if key not in cache:
+            cache[key] = await verify(patch)
+        scores[model] = cache[key]
+    votes: dict[str, int] = {}
+    for patch in patches.values():
+        votes[patch_text_key(patch)] = votes.get(patch_text_key(patch), 0) + 1
+    n_models = len(panel_responses)
+
+    def verdict(name: str) -> float:
+        score = scores[name]
+        return 0.0 if score is None else score  # a patch that cannot be checked counts as 0
+
+    ranked = [
+        (
+            -verdict(name),
+            -votes[patch_text_key(patches[name])],
+            -_answer_agreement(name, clusters, n_models),
+            index,
+            name,
+        )
+        for index, (name, _text) in enumerate(panel_responses)
+        if name in patches
+    ]
+    best = min(ranked)
+    text = next(content for name, content in panel_responses if name == best[4])
+    return _response("verified", text), Picked(model=best[4], agreement=-best[2]), scores

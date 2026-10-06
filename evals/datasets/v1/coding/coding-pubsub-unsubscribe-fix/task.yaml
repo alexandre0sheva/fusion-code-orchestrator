@@ -1,0 +1,23 @@
+id: coding-pubsub-unsubscribe-fix
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- design
+solution_summary: Give each subscription its own record with an active flag, publish
+  over a snapshot that skips inactive records, and make unsubscribing idempotent
+flaws:
+- summary: Publish over a snapshot of the callbacks but remove by callback equality,
+    so unsubscribing twice fails and the wrong duplicate goes
+- summary: Track subscriptions as records so unsubscribe is exact and idempotent,
+    but still iterate the live list while publishing
+expected_pass:
+- tests.test_hidden.BrokerTests.test_a_subscriber_added_during_publish_waits_for_the_next_one
+- tests.test_hidden.BrokerTests.test_an_exception_stops_the_publish
+- tests.test_hidden.BrokerTests.test_same_callback_twice_is_two_subscriptions
+- tests.test_hidden.BrokerTests.test_self_unsubscribe_does_not_skip_the_next_subscriber
+- tests.test_hidden.BrokerTests.test_topics_are_separate_and_count_is_returned
+- tests.test_hidden.BrokerTests.test_unsubscribe_twice_is_harmless
+- tests.test_hidden.BrokerTests.test_unsubscribing_a_later_subscriber_prevents_its_call
+- tests.test_hidden.BrokerTests.test_unsubscribing_the_second_of_two_equal_callbacks_keeps_the_first_position

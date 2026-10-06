@@ -3,15 +3,18 @@
 Two kinds live here.
 
 - **`v1/`: the ground-truth benchmark dataset** that `fusion bench` studies run on. Methodology,
-  scoring and commands are in [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#datasets).
+  scoring and commands are in [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#datasets). It has
+  two parts: text tasks scored by keywords and judges (Dataset A, the rest of this file) and
+  [executable coding tasks](#dataset-b-executable-coding-tasks) scored by running tests (`v1/coding/`).
 - `*_cases.jsonl`: the older, unscored cases used by `evals/runners/run_offline_eval.py`.
 
 ## `v1` at a glance
 
-100 tasks: 25 each of code review, debugging, architecture decisions and implementation
+Dataset A: 100 tasks: 25 each of code review, debugging, architecture decisions and implementation
 planning, in easy, medium and hard, in Python, TypeScript and Go where code is involved
-(review and debugging). Each task is in exactly one split: `dev` (15 per category, for tuning
-thresholds and prompts) or `test` (10 per category, touched only by the final study).
+(review and debugging). Dataset B: 33 executable coding tasks in Python. Each task is in exactly
+one split: `dev` (15 per text category and 16 coding tasks, for tuning thresholds and prompts) or
+`test` (10 per text category and 17 coding tasks, touched only by the final study).
 
 ```bash
 uv run fusion bench dataset validate evals/datasets/v1 --release   # checks everything below
@@ -77,6 +80,61 @@ at the top of `src/fusion/bench/datasets/build.py`. In short:
 draft candidates into `authoring/candidates/` for a person to review; nothing generated is used
 until a person has checked every seeded defect and rubric point and moved it into `authoring/v1/`.
 Generation costs money and is forecast, capped and recorded in the spend ledger.
+
+## Dataset B: executable coding tasks
+
+`v1/coding/<task_id>/` holds 33 small Python tasks (standard library only) that a patch is scored
+on by running **hidden tests**: 16 implement a function or class from a written spec, 17 fix bugs
+in a small repository, one or three files each, 10 easy, 18 medium and 5 hard. How they are run,
+scored and sandboxed is in [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#coding-tasks-and-the-sandbox).
+
+```
+<task_id>/
+  task.yaml            id, difficulty, split, tags, solution_summary, flaws, expected_pass
+  prompt.md            the request (the answer-format instruction is appended when it loads)
+  repo/                the files the model sees, including a few visible tests in repo/tests/
+  tests/               the hidden tests (name them test_hidden.py; the task's visible ones are test_visible.py)
+  reference/solution/  the changed files of a correct fix, as whole new files
+  reference/flaw-N/    the changed files of the N-th plausible wrong fix (one summary each in task.yaml)
+```
+
+The directories are the source of truth; there is no compile step. `fusion bench dataset validate
+evals/datasets/v1/coding` loads every task and proves it sound by running it: the reference
+solution passes every hidden test, twice; the unpatched files fail some; every flaw applies and
+fails some; hidden files do not overwrite visible ones; each task has visible tests.
+
+**Provenance and validity.** Like Dataset A, every task is synthetic, written by an LLM (Claude) and
+not yet reviewed by a person (`llm-authored` is in every task's tags). What that implies for coding
+tasks:
+
+- They are small and self-contained: an implementation of one function or class, or a bug in tens of
+  lines. They say little about changes in a large, unfamiliar codebase.
+- The hidden tests encode what the prompt says, written by the same author as the prompt. A correct
+  patch that reads the prompt differently fails, and a patch that satisfies the tests can still be
+  poor code (nothing here scores style, performance or safety).
+- Each task has a reference fix and two wrong ones. That proves the tests can tell those apart, not
+  that they catch every wrong patch.
+- Tests were not mutation-tested. The visible tests are lifted from the hidden ones and, on
+  purpose, catch roughly two thirds of the wrong fixes: that is what the `best-of-n-verified` arm
+  measures.
+- Simulated models know the reference fix and flaws; `--mock` results test the harness only.
+
+### Guidelines for adding or reviewing a coding task
+
+1. Everything a test checks must be stated in `prompt.md` (names, signatures, error types, edge
+   cases). If a careful engineer could reasonably return something else, specify it or drop the test.
+2. Standard library only, deterministic, no network, no clock or randomness the test does not control
+   (inject a clock), no printing from tests (the runner reads `unittest -v` output), no docstrings on
+   test methods, and finishing in about a second.
+3. Write 6 to 12 hidden tests that each check one behaviour, with names that say which. List their
+   ids in `expected_pass` (`tests.test_hidden.Class.test_name`); the validator rejects an id that
+   the solution does not pass.
+4. Give two flaws that a plausible model would write: partial fixes, the fix for the reported symptom
+   only, a missed edge case. A flaw must apply and must fail at least one hidden test.
+5. Put two or three visible tests in `repo/tests/test_visible.py`: the examples, plus a reproduction
+   of the reported problem for a bug-fix task. They must pass with the solution.
+6. No secrets, real people or companies. Run the validator, and add the task to `dev` or `test`,
+   never both.
 
 ## Licence
 

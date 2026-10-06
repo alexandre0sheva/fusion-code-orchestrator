@@ -41,13 +41,14 @@ __all__ = [
     "task_text",
 ]
 
-# Quality an answer needs to count as solved, per category.
+# Quality an answer needs to count as solved, per category. A coding task is solved only when
+# every hidden test passes: a patch that breaks half of them has not solved it.
 PASS_THRESHOLDS: dict[Category, float] = {
     "code_review": 0.6,
     "debugging": 0.6,
     "architecture": 0.6,
     "planning": 0.6,
-    "coding": 0.6,
+    "coding": 1.0,
     "frontend": 0.6,
     "performance": 0.6,
 }

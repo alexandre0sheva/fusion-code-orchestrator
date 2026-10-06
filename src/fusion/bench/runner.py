@@ -26,6 +26,7 @@ from fusion.bench.cache import CachingProvider, ResponseDiskCache
 from fusion.bench.metrics import build_metrics
 from fusion.bench.plan import estimate_job
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoreResult, get_scorer, is_solved
+from fusion.bench.scoring.coding import coding_verifier
 from fusion.bench.spec import (
     BenchConfig,
     BenchTask,
@@ -308,6 +309,8 @@ def _context(task: BenchTask, arm: str) -> PipelineContext:
         file_snippets=[f"{path}\n{content}" for path, content in task.files.items()],
         changed_files=list(task.files),
         strategy=arm,
+        expects_patch=task.expects_patch,
+        verifier=coding_verifier(task),
     )
 
 

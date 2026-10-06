@@ -1,0 +1,25 @@
+id: coding-text-wrap
+difficulty: medium
+split: dev
+tags:
+- python
+- text
+solution_summary: Split into paragraphs on blank lines, fill words greedily up to
+  the width, and break words longer than the width into width-sized chunks
+flaws:
+- summary: Fill words greedily but leave a word longer than the width whole on its
+    own line
+- summary: Wrap the whole text as one paragraph, so blank lines vanish
+expected_pass:
+- tests.test_hidden.WrapTests.test_empty_text
+- tests.test_hidden.WrapTests.test_exact_fit
+- tests.test_hidden.WrapTests.test_greedy_fill
+- tests.test_hidden.WrapTests.test_invalid_width
+- tests.test_hidden.WrapTests.test_last_chunk_can_be_joined_by_the_next_word
+- tests.test_hidden.WrapTests.test_leading_and_trailing_blank_lines_are_ignored
+- tests.test_hidden.WrapTests.test_long_word_after_text_starts_a_new_line
+- tests.test_hidden.WrapTests.test_long_word_is_split
+- tests.test_hidden.WrapTests.test_no_line_exceeds_the_width
+- tests.test_hidden.WrapTests.test_paragraphs_get_one_empty_line
+- tests.test_hidden.WrapTests.test_whitespace_collapses
+- tests.test_hidden.WrapTests.test_width_one

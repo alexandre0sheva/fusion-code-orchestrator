@@ -1,0 +1,25 @@
+id: coding-json-pointer
+difficulty: medium
+split: dev
+tags:
+- python
+- parsing
+solution_summary: Split on slashes, unescape each token with ~1 before ~0, and walk
+  dicts and lists, treating digit-only tokens without leading zeros as list indexes
+  and - as append
+flaws:
+- summary: Unescape ~0 before ~1, so ~01 decodes to / instead of ~1
+- summary: Accept any integer token as a list index, including leading zeros and negatives,
+    and never append
+expected_pass:
+- tests.test_hidden.PointerGetTests.test_deep
+- tests.test_hidden.PointerGetTests.test_escape_order
+- tests.test_hidden.PointerGetTests.test_malformed_pointer
+- tests.test_hidden.PointerGetTests.test_rfc_examples
+- tests.test_hidden.PointerGetTests.test_unresolvable_pointers
+- tests.test_hidden.PointerSetTests.test_bad_list_indexes
+- tests.test_hidden.PointerSetTests.test_escaped_key
+- tests.test_hidden.PointerSetTests.test_list_replace_and_append
+- tests.test_hidden.PointerSetTests.test_missing_parent
+- tests.test_hidden.PointerSetTests.test_set_and_replace_in_dict
+- tests.test_hidden.PointerSetTests.test_whole_document_cannot_be_replaced

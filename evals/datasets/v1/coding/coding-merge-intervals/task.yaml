@@ -1,0 +1,22 @@
+id: coding-merge-intervals
+difficulty: easy
+split: dev
+tags:
+- python
+solution_summary: Sort by start, then extend the last merged interval to the larger
+  end whenever the next start is not past it
+flaws:
+- summary: Merge only strictly overlapping intervals, so intervals that touch stay
+    separate
+- summary: Take the later interval's end when merging, so a nested interval shrinks
+    the result
+expected_pass:
+- tests.test_hidden.MergeIntervalsTests.test_example
+- tests.test_hidden.MergeIntervalsTests.test_input_is_not_modified
+- tests.test_hidden.MergeIntervalsTests.test_invalid_interval
+- tests.test_hidden.MergeIntervalsTests.test_nested_interval_is_absorbed
+- tests.test_hidden.MergeIntervalsTests.test_result_holds_tuples
+- tests.test_hidden.MergeIntervalsTests.test_separate_intervals_stay_separate
+- tests.test_hidden.MergeIntervalsTests.test_single_and_empty
+- tests.test_hidden.MergeIntervalsTests.test_touching_intervals_merge
+- tests.test_hidden.MergeIntervalsTests.test_unsorted_input

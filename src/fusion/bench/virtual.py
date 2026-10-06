@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import heapq
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from typing import Any
 
-__all__ = ["VirtualTimeLoop", "run_virtual"]
+__all__ = ["VirtualTimeLoop", "offload", "run_virtual"]
 
 
 class VirtualTimeLoop(asyncio.SelectorEventLoop):
@@ -43,3 +43,16 @@ def run_virtual[T](coro: Coroutine[Any, Any, T]) -> T:
     """Run ``coro`` to completion on a fresh virtual-time loop."""
     with asyncio.Runner(loop_factory=VirtualTimeLoop) as runner:
         return runner.run(coro)
+
+
+async def offload[T](fn: Callable[..., T], *args: Any) -> T:
+    """Run blocking work (a sandboxed test run) without stalling a real loop.
+
+    On a real loop it goes to a worker thread. On the virtual loop it runs inline: a worker thread
+    would let the virtual clock jump ahead while the work is still going, firing every timeout.
+    The work takes no virtual time, so a simulated study's timings never depend on how fast this
+    machine runs tests.
+    """
+    if isinstance(asyncio.get_running_loop(), VirtualTimeLoop):
+        return fn(*args)
+    return await asyncio.to_thread(fn, *args)

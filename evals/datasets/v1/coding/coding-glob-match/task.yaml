@@ -1,0 +1,26 @@
+id: coding-glob-match
+difficulty: medium
+split: test
+tags:
+- python
+- parsing
+- text
+solution_summary: 'Translate the pattern to a regular expression piece by piece: [^/]*
+  for *, .* for **, [^/] for ?, a slash-excluding class for brackets, and escapes
+  for backslash'
+flaws:
+- summary: Delegate to fnmatch.fnmatchcase, whose * crosses slashes and which treats
+    bad brackets and backslashes as literals
+- summary: Support only star, double star and question mark; brackets and backslashes
+    are matched literally
+expected_pass:
+- tests.test_hidden.GlobTests.test_bad_patterns
+- tests.test_hidden.GlobTests.test_classes_and_ranges
+- tests.test_hidden.GlobTests.test_classes_never_match_a_slash
+- tests.test_hidden.GlobTests.test_double_star_crosses_slashes
+- tests.test_hidden.GlobTests.test_escapes
+- tests.test_hidden.GlobTests.test_literal_and_case
+- tests.test_hidden.GlobTests.test_negated_class
+- tests.test_hidden.GlobTests.test_question_mark
+- tests.test_hidden.GlobTests.test_regex_characters_are_literal
+- tests.test_hidden.GlobTests.test_star_does_not_cross_slashes

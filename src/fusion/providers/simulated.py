@@ -35,10 +35,11 @@ from fusion.providers.base import (
     speed_metrics,
 )
 from fusion.providers.mock import MockProvider
+from fusion.providers.simulated_coding import coding_patch
 from fusion.providers.simulated_judge import JUDGE_ROLE, judge_reply
 
 if TYPE_CHECKING:
-    from fusion.bench.spec import BenchTask, TruthPoint
+    from fusion.bench.spec import BenchTask, CodingTruth, TruthPoint
     from fusion.config.catalog import Catalog
     from fusion.providers.limits import ProviderLimiter
 
@@ -121,6 +122,7 @@ class SimWorld:
             raise ValueError(msg)
         # Longest prompt first, so a task whose prompt contains another's is matched before it.
         self.tasks = [t for _, _, t in sorted((-len(t.prompt), i, t) for i, t in enumerate(tasks))]
+        self._coding: dict[str, CodingTruth] = {}
         self.seed = seed
         self.shared = shared_difficulty
         self.family = family_difficulty
@@ -128,6 +130,14 @@ class SimWorld:
     def task_for(self, text: str) -> BenchTask | None:
         """The task whose prompt appears in ``text`` (the longest match wins)."""
         return next((t for t in self.tasks if t.prompt in text), None)
+
+    def coding_truth(self, task: BenchTask) -> CodingTruth:
+        """The task's coding truth, parsed once."""
+        from fusion.bench.spec import CodingTruth
+
+        if task.id not in self._coding:
+            self._coding[task.id] = CodingTruth.model_validate(task.truth)
+        return self._coding[task.id]
 
     def normal(self, *parts: object) -> float:
         digest = hashlib.sha256("|".join(map(str, (self.seed, *parts))).encode()).digest()
@@ -311,7 +321,7 @@ class SimulatedProvider(ModelProvider):
                     shared=0.55,
                 )
             ]
-            return _panel_json(points, decoys)
+            return _panel_json(points, decoys, self._patch(request, task, [*points, *decoys]))
         seen = prompt.replace(task.prompt, "").lower()
         if role == "refine":
             return self._refine(request, spec, task, seen)
@@ -334,7 +344,7 @@ class SimulatedProvider(ModelProvider):
             and self.world.uniform("fall", request.model_id, task.id, d.id, request.seed)
             < (1.0 - spec.skill) * 0.7
         ]
-        return _panel_json(points, decoys)
+        return _panel_json(points, decoys, self._patch(request, task, [*points, *decoys]))
 
     def _synthesize(self, request: ModelRequest, spec: SimModel, task: BenchTask, seen: str) -> str:
         """Merge what the panel said: favour points several models raised, doubt lone decoys."""
@@ -360,8 +370,27 @@ class SimulatedProvider(ModelProvider):
             if self.world.uniform("keepd", request.model_id, task.id, d.id, request.seed) < chance:
                 kept.append(d)
         texts = [p.text for p in kept]
-        return json.dumps(
-            {"summary": "; ".join(texts) or "No points", "consensus": texts, "confidence": 0.7}
+        answer: dict[str, Any] = {
+            "summary": "; ".join(texts) or "No points",
+            "consensus": texts,
+            "confidence": 0.7,
+        }
+        patch = self._patch(request, task, kept)
+        if patch is not None:
+            answer["patch"] = patch or None
+        return json.dumps(answer)
+
+    def _patch(self, request: ModelRequest, task: BenchTask, said: list[TruthPoint]) -> str | None:
+        """The patch for a coding task (None for any other task: those answers carry no patch)."""
+        if not task.expects_patch:
+            return None
+        return coding_patch(
+            task,
+            self.world.coding_truth(task),
+            said,
+            model=request.model_id,
+            world=self.world,
+            seed=request.seed,
         )
 
     def _canned(self, request: ModelRequest) -> str:
@@ -374,7 +403,9 @@ def _says(text: str, point: TruthPoint) -> bool:
     return any(k.lower() in text for k in point.keywords)
 
 
-def _panel_json(points: list[TruthPoint], decoys: list[TruthPoint]) -> str:
+def _panel_json(
+    points: list[TruthPoint], decoys: list[TruthPoint], patch: str | None = None
+) -> str:
     claims = [_claim(p, i) for i, p in enumerate([*points, *decoys], 1)]
     claims.append(
         {
@@ -387,14 +418,15 @@ def _panel_json(points: list[TruthPoint], decoys: list[TruthPoint]) -> str:
             "evidence": None,
         }
     )
-    return json.dumps(
-        {
-            "summary": f"{len(points) + len(decoys)} points raised",
-            "claims": claims,
-            "confidence": 0.7,
-            "score": None,
-        }
-    )
+    answer: dict[str, Any] = {
+        "summary": f"{len(points) + len(decoys)} points raised",
+        "claims": claims,
+        "confidence": 0.7,
+        "score": None,
+    }
+    if patch is not None:
+        answer["patch"] = patch or None
+    return json.dumps(answer)
 
 
 def _parse(text: str) -> dict[str, Any] | None:

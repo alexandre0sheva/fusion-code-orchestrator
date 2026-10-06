@@ -1,0 +1,21 @@
+id: coding-parse-duration
+difficulty: easy
+split: test
+tags:
+- python
+solution_summary: Match each number-and-unit part in turn, rejecting unknown or repeated
+  units and stray text, and add up the seconds
+flaws:
+- summary: Sum every number-and-unit pair found by findall, silently skipping stray
+    text and repeated or unknown units
+- summary: Parse strictly but only accept lower-case units and never a bare integer
+expected_pass:
+- tests.test_hidden.ParseDurationTests.test_any_order_and_spaces_and_case
+- tests.test_hidden.ParseDurationTests.test_bare_integer_is_seconds
+- tests.test_hidden.ParseDurationTests.test_compound
+- tests.test_hidden.ParseDurationTests.test_days_and_zero
+- tests.test_hidden.ParseDurationTests.test_empty_is_an_error
+- tests.test_hidden.ParseDurationTests.test_non_integer_and_negative_are_errors
+- tests.test_hidden.ParseDurationTests.test_repeated_unit_is_an_error
+- tests.test_hidden.ParseDurationTests.test_stray_text_is_an_error
+- tests.test_hidden.ParseDurationTests.test_unknown_unit_is_an_error

@@ -8,6 +8,9 @@
 #                digest   no call; the answers and claim clusters go to Claude Code to merge
 #                vote     no call; keep only the points a majority of the models backed
 #                best_of  no call; return the answer the other models agree with most
+#                verified benchmark only, coding tasks: no call; run each panelist's patch against
+#                         the task's visible tests and return the best one. It runs code, so it
+#                         is refused outside `fusion bench` (the MCP tools never run code)
 # kind: cascade  the `cascade.first` cheapest members answer first; if they agree (agreement >=
 #              `cascade.agreement_threshold`, nothing disputed, task not high risk) the run ends
 #              there with `cascade.early_aggregator` (vote | best_of) and no synthesis call;
@@ -92,6 +95,15 @@ strategies:
       - model: gpt-luna
       - model: gemini-flash
     aggregator: vote
+
+  best-of-n-verified:
+    kind: panel
+    description: Benchmark only. The cheap panel each write a patch and the task's visible tests pick the best one; no synthesis call. Refused outside `fusion bench`, because it runs code.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: verified
 
   panel-cascade:
     kind: cascade

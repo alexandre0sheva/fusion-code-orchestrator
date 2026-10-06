@@ -1,0 +1,26 @@
+id: coding-bank-account
+difficulty: medium
+split: dev
+tags:
+- python
+- design
+- money
+solution_summary: Keep balances as Decimal, validate amounts, and make transfer check
+  the withdrawal before touching either account
+flaws:
+- summary: Keep balances as floats, so repeated cents drift and exact comparisons
+    fail
+- summary: Credit the destination before debiting the source, so a failed transfer
+    leaves the money in both accounts
+expected_pass:
+- tests.test_hidden.AccountTests.test_amount_types
+- tests.test_hidden.AccountTests.test_amount_values
+- tests.test_hidden.AccountTests.test_failed_transfer_changes_nothing
+- tests.test_hidden.AccountTests.test_history
+- tests.test_hidden.AccountTests.test_money_is_exact
+- tests.test_hidden.AccountTests.test_opening_values
+- tests.test_hidden.AccountTests.test_transfer
+- tests.test_hidden.AccountTests.test_transfer_to_self
+- tests.test_hidden.AccountTests.test_transfer_validates_the_amount_first
+- tests.test_hidden.AccountTests.test_withdraw_and_overdraft
+- tests.test_hidden.AccountTests.test_withdraw_without_overdraft

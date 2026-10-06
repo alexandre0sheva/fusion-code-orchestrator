@@ -158,8 +158,10 @@ def _parse_answer_eval_json(data: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_generic_json(data: dict[str, Any]) -> dict[str, Any]:
     answer = str(data.get("answer") or data.get("summary") or json.dumps(data)[:500])
+    patch = data.get("patch")
     return {
         "answer": answer,
+        **({"patch": patch} if isinstance(patch, str) and patch.strip() else {}),
         "summary": str(data.get("summary", answer[:500])),
         "suggested_actions": _as_str_list(data.get("suggested_actions")),
         "tests_to_run": _as_str_list(data.get("tests_to_run")),

@@ -74,6 +74,7 @@ reports it as a warning so mock and local development stay easy.
 | `FUSION_DATA_DIR` | Directory holding `runs.db` | platform data dir |
 | `FUSION_PROJECT_DIR` | Directory whose `.fusion/config.yaml` is the project layer | working directory |
 | `FUSION_BENCH_DIR` | Where benchmark runs, their database, the response cache and `spend.json` live | `bench-results` under the project directory |
+| `FUSION_SANDBOX_ISOLATION` | Benchmark sandbox: `auto` uses network and write isolation when the platform has it, `require` refuses to run without it, `off` disables it ([SECURITY.md](../SECURITY.md#benchmark-sandbox)) | `auto` |
 | `FUSION__<SECTION>__<KEY>` | Override one config key (see [Layers and locations](#layers-and-locations)) | unset |
 | `FUSION_SHADOW_MODE` | Shadow A/B against the real baseline: `off`, `sampled`, `always` | `off` |
 | `FUSION_SHADOW_SAMPLE_RATE` | Fraction of runs shadowed in `sampled` mode | `0.2` |
@@ -135,7 +136,7 @@ strategies:
         temperature: 0.2         # optional per member
         reasoning_effort: low    # optional per member
     rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
-    aggregator: llm              # llm | digest | vote | best_of
+    aggregator: llm              # llm | digest | vote | best_of | verified (benchmark only)
     aggregator_model: claude-sonnet   # llm only; omit for the catalog's synthesizer role
     judge: off                   # off | light | full
     judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
@@ -167,6 +168,7 @@ budget_strategies:
 | `panel-digest` | the same panel, no synthesis: the answers come back for Claude Code to merge | 3 |
 | `panel-vote` | the same panel, no synthesis: only the points a majority of models backed come back | 3 |
 | `panel-cascade` | the two cheapest of the panel first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
+| `best-of-n-verified` | **benchmark only** (refused elsewhere, it runs code): the same panel each write a patch and the task's visible tests pick one, no synthesis; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 |
 | `panel-local` | Ollama and LM Studio models; falls back to the cloud panel with a warning when none are enabled | 2 + 1 |
 
 How the fields behave:
@@ -183,7 +185,10 @@ How the fields behave:
   what several models agree on and check the rest against the code); `vote` returns only the points
   a majority of the models backed (and says so when there are none); `best_of` returns the one
   answer that the other models' claims back most, as written (ties go to the answer with more
-  evidence, then to the earlier member). `vote`, `best_of` and `digest` take no `aggregator_model`.
+  evidence, then to the earlier member). `verified` (benchmark mode only, for coding tasks) runs the
+  task's visible tests on each panelist's patch and returns the best. `vote`, `best_of`, `digest`
+  and `verified` take no `aggregator_model`. When the task's answer is a code patch, `vote` returns
+  the patch most models gave (see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox)).
 - **`judge`**: `off` runs only the deterministic checks and makes no judge call (the default, so a
   run costs only its panel and aggregator). `light` has the judge model score each answer.
   `full` does the same and also records a check of the judge's own output under

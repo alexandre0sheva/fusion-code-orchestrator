@@ -595,7 +595,7 @@ def dataset_validate_cmd(
 @dataset_app.command("stats")
 def dataset_stats_cmd(path: _DatasetPath) -> None:
     """Counts per category, difficulty, split and language, and the size of the tasks."""
-    stats = validate_dataset(path).stats
+    stats = validate_dataset(path, Rules(run_code=False)).stats  # counting needs no test runs
     table = Table(title=f"{path}: {stats.tasks} tasks")
     for column in (
         "category",

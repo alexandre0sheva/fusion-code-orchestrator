@@ -1,0 +1,24 @@
+id: coding-ring-buffer-fix
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- data-structures
+solution_summary: Overwrite the oldest item when full, advance the start index modulo
+  the capacity on pop, and keep the size in step
+flaws:
+- summary: Overwrite the oldest slot when full but forget to move the start index,
+    so the newest item becomes the oldest
+- summary: Fix pop's size and wrap-around but silently drop new items when the buffer
+    is full
+expected_pass:
+- tests.test_hidden.RingBufferTests.test_capacity_must_be_positive
+- tests.test_hidden.RingBufferTests.test_capacity_one
+- tests.test_hidden.RingBufferTests.test_clear
+- tests.test_hidden.RingBufferTests.test_empty_buffer
+- tests.test_hidden.RingBufferTests.test_matches_a_deque_under_mixed_operations
+- tests.test_hidden.RingBufferTests.test_overwrites_the_oldest_when_full
+- tests.test_hidden.RingBufferTests.test_peek_does_not_remove
+- tests.test_hidden.RingBufferTests.test_pop_returns_oldest_first_and_shrinks
+- tests.test_hidden.RingBufferTests.test_wraps_around_after_pops

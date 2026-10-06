@@ -199,6 +199,13 @@ def build_user_prompt(
     return "\n".join(parts)
 
 
+_PATCH_FIELD = (
+    "string — ONE patch for the whole change: a unified diff, or the complete new content of each "
+    "changed file under `=== path ===` lines. Build it from the patches in the responses (take the "
+    "best one, or combine them into one that applies to the original files); never several"
+)
+
+
 def build_synthesis_prompt(
     *,
     task_type: TaskType,
@@ -206,6 +213,7 @@ def build_synthesis_prompt(
     disagreement_analysis: dict[str, object],
     original_task: str = "",
     clusters: list[ClaimCluster] | None = None,
+    patch: bool = False,
 ) -> str:
     """Build prompt for synthesizing panel responses into structured JSON.
 
@@ -214,6 +222,8 @@ def build_synthesis_prompt(
     """
     key = canonical_task_key(task_type)
     schema = _SYNTHESIS_SCHEMAS.get(key, {"summary": "string", "confidence": "float 0-1"})
+    if patch:  # the task asks for a code change: the merged answer is one patch
+        schema = {**schema, "patch": _PATCH_FIELD}
     parts = [f"Synthesize the following {key} panel responses into a single JSON object.\n"]
     if clusters:
         parts.append(_render_clusters(clusters))

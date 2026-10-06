@@ -1,0 +1,23 @@
+id: coding-semver-compare
+difficulty: hard
+split: test
+tags:
+- python
+- parsing
+solution_summary: Parse into numeric core and prerelease identifiers, rank a release
+  above its prereleases, and compare identifiers numerically or lexically by the semver
+  rules
+flaws:
+- summary: Compare prerelease identifiers as plain strings, so beta.11 sorts before
+    beta.2
+- summary: Compare the whole version string after splitting off nothing, so build
+    metadata changes the result
+expected_pass:
+- tests.test_hidden.CompareVersionsTests.test_build_metadata_is_ignored
+- tests.test_hidden.CompareVersionsTests.test_equal
+- tests.test_hidden.CompareVersionsTests.test_malformed_versions
+- tests.test_hidden.CompareVersionsTests.test_numeric_identifier_is_lower_than_alphanumeric
+- tests.test_hidden.CompareVersionsTests.test_numeric_parts_compare_as_integers
+- tests.test_hidden.CompareVersionsTests.test_release_beats_its_prerelease
+- tests.test_hidden.CompareVersionsTests.test_shorter_prerelease_is_lower
+- tests.test_hidden.CompareVersionsTests.test_the_specs_ordering_chain

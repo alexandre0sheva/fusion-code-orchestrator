@@ -21,6 +21,7 @@ async def synthesize_responses(
     original_task: str = "",
     gateway: CallGateway | None = None,
     clusters: list[ClaimCluster] | None = None,
+    patch: bool = False,
 ) -> ModelResponse:
     """Call synthesizer model to merge panel responses into structured JSON."""
     entry = registry_models[synthesizer_model]
@@ -32,6 +33,7 @@ async def synthesize_responses(
         disagreement_analysis=disagreement_analysis,
         original_task=original_task,
         clusters=clusters,
+        patch=patch,
     )
     request = ModelRequest(
         model_id=entry.model_id,

@@ -1,0 +1,25 @@
+id: coding-scheduler-fifo-fix
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- data-structures
+solution_summary: Add a running sequence number as the tiebreaker so equal priorities
+  are FIFO and tasks are never compared, and cancel a single task with lazy deletion
+flaws:
+- summary: Add a sequence number so ties are FIFO and nothing is compared, but remove
+    still deletes every equal task from the list
+- summary: Remove only the first matching entry but leave the heap un-reordered, and
+    break ties by task value
+expected_pass:
+- tests.test_hidden.SchedulerTests.test_empty_scheduler
+- tests.test_hidden.SchedulerTests.test_equal_priorities_are_fifo
+- tests.test_hidden.SchedulerTests.test_peek_does_not_remove
+- tests.test_hidden.SchedulerTests.test_peek_skips_cancelled_tasks
+- tests.test_hidden.SchedulerTests.test_priority_order
+- tests.test_hidden.SchedulerTests.test_remove_cancels_only_the_earliest_matching_task
+- tests.test_hidden.SchedulerTests.test_remove_keeps_the_order_of_the_rest
+- tests.test_hidden.SchedulerTests.test_remove_missing
+- tests.test_hidden.SchedulerTests.test_removed_task_can_be_added_again
+- tests.test_hidden.SchedulerTests.test_tasks_are_never_compared

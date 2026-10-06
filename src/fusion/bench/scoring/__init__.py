@@ -17,6 +17,7 @@ from fusion.bench.scoring.base import (
     ScoringError,
     is_solved,
 )
+from fusion.bench.scoring.coding import CodingScorer
 from fusion.bench.scoring.debug import DebugScorer
 from fusion.bench.scoring.pairwise import NoEligibleJudgeError, PairwiseJudge, PairwiseResult
 from fusion.bench.scoring.points import PointsScorer
@@ -28,6 +29,7 @@ __all__ = [
     "PASS_THRESHOLDS",
     "SCORERS",
     "AnswerView",
+    "CodingScorer",
     "DebugScorer",
     "Evidence",
     "EvidenceItem",
@@ -47,14 +49,15 @@ __all__ = [
 
 _POINTS = PointsScorer()
 _RUBRIC = RubricScorer()
-# Coding, frontend and performance are scored by their executable evaluators (roadmap Tasks 16
-# and 17); until then a task in ``points`` format is all they can be scored on.
+# Coding is scored by running its hidden tests (``CodingScorer``). Frontend and performance have
+# their executable evaluators in roadmap Task 17; until then a task in ``points`` format is all
+# they can be scored on.
 SCORERS: dict[Category, Scorer] = {
     "code_review": ReviewScorer(),
     "debugging": DebugScorer(),
     "architecture": _RUBRIC,
     "planning": _RUBRIC,
-    "coding": _POINTS,
+    "coding": CodingScorer(),
     "frontend": _POINTS,
     "performance": _POINTS,
 }

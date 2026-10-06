@@ -8,6 +8,11 @@ no secret-looking strings, a licence note next to the dataset, and that the dev 
 share no task, prompt or file set. ``Rules(release=True)`` adds the coverage a published dataset
 promises: size per category, a language mix, clean changes among the reviews, both splits and all
 difficulties in every category, and the size of each task.
+
+Executable coding tasks (``evals/datasets/v1/coding/<id>/``) are checked by running them: the
+reference solution must pass every hidden test (twice, to catch flakiness), the unpatched files
+must fail some, every flawed fix must apply and fail some, and the hidden files must not collide
+with the files the model is shown. That is the proof the tests tell a right fix from a wrong one.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import asyncio
 import json
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -24,7 +30,16 @@ from pydantic import BaseModel, Field, ValidationError
 
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoringError, get_scorer
 from fusion.bench.scoring.calibration import seeded_pair
-from fusion.bench.spec import BenchTask, ReviewTruth, RubricTruth, read_rows, resolve_dataset
+from fusion.bench.scoring.coding import run_hidden_tests, visible_pass_fraction
+from fusion.bench.spec import (
+    BenchTask,
+    CodingTruth,
+    DatasetError,
+    ReviewTruth,
+    RubricTruth,
+    iter_rows,
+    resolve_dataset,
+)
 from fusion.orchestration.ledger import CallGateway, RunLedger
 from fusion.telemetry.cost import PricingRegistry
 
@@ -61,6 +76,8 @@ class Rules:
     min_per_difficulty: int = 3  # per category
     min_languages: int = 3
     min_clean_share: float = 0.2  # of code-review tasks
+    min_coding: int = 30  # executable coding tasks
+    run_code: bool = True  # run each coding task's solution, flaws and tests (under a second each)
     min_lines: int = 30  # a review's diff, a debugging task's code, trace and logs
     max_lines: int = 400
 
@@ -106,11 +123,6 @@ class Report:
 
 
 # -- reading -----------------------------------------------------------------------------------
-
-
-def _files_of(path: Path) -> list[Path]:
-    suffixes = {".jsonl", ".yaml", ".yml"}
-    return sorted(p for p in path.rglob("*") if p.suffix in suffixes) if path.is_dir() else [path]
 
 
 def _gutter(line: str) -> tuple[int | None, str] | None:
@@ -251,6 +263,58 @@ async def _scorability(tasks: list[BenchTask], add: Any) -> None:
             add("error", task.id, f"a flawed answer still scores {flawed:.2f}")
 
 
+def _check_coding_task(task: BenchTask) -> list[tuple[Literal["error", "warning"], str]]:
+    """Run one coding task's reference solution, unpatched files and flaws; return the problems."""
+    found: list[tuple[Literal["error", "warning"], str]] = []
+    truth = CodingTruth.model_validate(task.truth)
+    clash = sorted(set(truth.hidden_files) & set(task.files))
+    if clash:
+        found.append(("error", f"hidden files collide with files the model is shown: {clash}"))
+    if not truth.solution:
+        return [*found, ("error", "no reference/solution: the tests cannot be shown to pass")]
+    if not truth.solution_summary:
+        found.append(("error", "task.yaml needs a solution_summary (what the right fix is)"))
+    for n, flaw in enumerate(truth.flaws, 1):
+        if not flaw.summary:
+            found.append(("error", f"flaw {n} has no summary"))
+    if not truth.flaws:
+        found.append(("warning", "no flaws: nothing shows that the tests reject a wrong fix"))
+    right = run_hidden_tests(task, truth.solution)
+    if not right.applied:
+        return [*found, ("error", f"the reference solution does not apply: {right.patch_error}")]
+    if right.failed or right.timed_out:
+        shown = ", ".join(right.failed[:4])
+        what = shown or "timed out"
+        found.append(("error", f"the reference solution fails hidden tests: {what}"))
+    if right.flaky:
+        found.append(("error", f"flaky tests (their result changed between runs): {right.flaky}"))
+    again = run_hidden_tests(task, truth.solution, cache=False)  # a real second run
+    if again.failed:
+        found.append(("error", "the reference solution passes once and fails on a rerun"))
+    bare = run_hidden_tests(task, None)
+    if not bare.failed:
+        found.append(("error", "the unpatched files already pass every hidden test"))
+    for n, flaw in enumerate(truth.flaws, 1):
+        result = run_hidden_tests(task, flaw.patch)
+        if not result.applied:
+            found.append(("error", f"flaw {n} does not apply: {result.patch_error}"))
+        elif not result.failed:
+            found.append(("error", f"flaw {n} passes every hidden test, so it is not wrong"))
+    visible = visible_pass_fraction(task, None)
+    if visible is None:
+        found.append(("warning", "no visible tests: the verified arm cannot check this task"))
+    return found
+
+
+def _check_coding(tasks: list[BenchTask], add: Any) -> None:
+    if not tasks:
+        return
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for task, problems in zip(tasks, pool.map(_check_coding_task, tasks), strict=True):
+            for level, message in problems:
+                add(level, task.id, message)
+
+
 def _check_splits(tasks: list[BenchTask], rules: Rules, add: Any) -> None:
     labelled = [t for t in tasks if t.split]
     if not labelled:
@@ -300,6 +364,9 @@ def _check_coverage(tasks: list[BenchTask], stats: DatasetStats, rules: Rules, a
                     category,
                     f"{have} {difficulty} tasks; at least {rules.min_per_difficulty} needed",
                 )
+    coding = stats.by_category.get("coding", 0)
+    if coding < rules.min_coding:
+        add("error", "coding", f"{coding} tasks; at least {rules.min_coding} needed")
     if len(stats.languages) < rules.min_languages:
         add(
             "error",
@@ -352,15 +419,17 @@ def validate_dataset(path: str | Path, rules: Rules | None = None) -> Report:
 
     root = resolve_dataset(path)
     tasks: list[BenchTask] = []
-    for file in _files_of(root):
-        for index, row in enumerate(read_rows(file), 1):
-            where = f"{file.name}:{index}"
+    try:
+        for source, index, row in iter_rows(root):
+            where = f"{source.name}:{index}" if source.is_file() else source.name
             try:
                 tasks.append(BenchTask.model_validate(row))
             except ValidationError as exc:
                 first = exc.errors()[0]
                 loc = ".".join(str(p) for p in first["loc"])
                 add("error", where, f"invalid task: {loc}: {first['msg']}")
+    except DatasetError as exc:
+        add("error", str(root), str(exc))
     if not tasks and not report.issues:
         add("error", str(root), "no tasks found")
     ids = Counter(t.id for t in tasks)
@@ -377,6 +446,8 @@ def validate_dataset(path: str | Path, rules: Rules | None = None) -> Report:
     for task in tasks:
         _check_task(task, rules, add)
     asyncio.run(_scorability(tasks, add))
+    if rules.run_code:
+        _check_coding([t for t in tasks if t.expects_patch], add)
     _check_splits(tasks, rules, add)
     report.tasks = tasks
     report.stats = _stats(tasks)

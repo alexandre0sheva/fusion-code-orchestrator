@@ -1,0 +1,23 @@
+id: coding-matrix-ops
+difficulty: easy
+split: dev
+tags:
+- python
+- math
+solution_summary: Validate that rows are equal in length, build the product from row-by-column
+  sums, and transpose with a list comprehension of lists
+flaws:
+- summary: Build the product from the row count of a for every dimension, which only
+    works for square matrices
+- summary: Transpose with zip so the rows come back as tuples, and never check for
+    ragged rows
+expected_pass:
+- tests.test_hidden.MatrixTests.test_arguments_are_untouched_and_not_shared
+- tests.test_hidden.MatrixTests.test_identity
+- tests.test_hidden.MatrixTests.test_matmul_by_identity
+- tests.test_hidden.MatrixTests.test_matmul_dimension_mismatch
+- tests.test_hidden.MatrixTests.test_matmul_empty_or_ragged
+- tests.test_hidden.MatrixTests.test_matmul_rectangular
+- tests.test_hidden.MatrixTests.test_transpose_ragged
+- tests.test_hidden.MatrixTests.test_transpose_rectangular
+- tests.test_hidden.MatrixTests.test_transpose_returns_lists_and_empty

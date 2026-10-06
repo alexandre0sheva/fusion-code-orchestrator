@@ -1,0 +1,23 @@
+id: coding-diffstat-fix
+difficulty: easy
+split: test
+tags:
+- python
+- bug-fix
+- text
+solution_summary: Read each hunk header's line counts and consume exactly that many
+  lines, so file headers are never mistaken for content and content lines that look
+  like headers are counted
+flaws:
+- summary: Skip the +++ and --- header lines by their prefix when counting, so content
+    lines that start with those are lost
+- summary: Track hunks by their header counts but take the file name only from the
+    +++ line, so deleted files are not counted
+expected_pass:
+- tests.test_hidden.DiffstatTests.test_content_lines_that_look_like_headers_are_counted
+- tests.test_hidden.DiffstatTests.test_empty_diff
+- tests.test_hidden.DiffstatTests.test_headers_do_not_count
+- tests.test_hidden.DiffstatTests.test_new_and_deleted_files
+- tests.test_hidden.DiffstatTests.test_no_newline_marker_is_ignored
+- tests.test_hidden.DiffstatTests.test_several_files_and_hunks
+- tests.test_hidden.DiffstatTests.test_the_same_file_twice_counts_once

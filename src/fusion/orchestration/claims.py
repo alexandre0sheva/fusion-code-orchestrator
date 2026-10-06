@@ -81,11 +81,24 @@ class Claim(BaseModel):
         return bool((self.evidence or "").strip()) or located
 
 
+def patch_text_key(text: str) -> str:
+    """A patch with line endings and surrounding blank space normalised, for comparing patches."""
+    return "\n".join(line.rstrip() for line in text.strip().replace("\r\n", "\n").splitlines())
+
+
 class PanelAnswer(BaseModel):
     """A panelist's whole answer."""
 
     summary: str = ""
     claims: list[Claim] = Field(default_factory=list)
+    patch: str | None = Field(
+        default=None,
+        description=(
+            "Only when the task asks for a code change: the whole change as ONE patch, a unified "
+            "diff or the complete new content of each changed file under a `=== path ===` line. "
+            "Otherwise null."
+        ),
+    )
     confidence: float = 0.5  # the model's own estimate; reported, never used for confidence
     score: float | None = None  # answer_eval only: 0-1 quality of the answer under evaluation
 
@@ -235,9 +248,11 @@ def parse_panel_answer(
     data = parsed_json if parsed_json is not None else _extract_json(text)
     if isinstance(data, dict) and isinstance(data.get("claims"), list):
         claims = [c for c in (_clean_claim(r, default_kind) for r in data["claims"]) if c]
+        patch = data.get("patch")
         answer = PanelAnswer(
             summary=str(data.get("summary") or "").strip(),
             claims=_number(claims),
+            patch=patch if isinstance(patch, str) and patch.strip() else None,
             confidence=_unit(data.get("confidence"), 0.5) or 0.0,
             score=_unit(data.get("score"), None),
         )
@@ -252,7 +267,16 @@ def render_panel_answer(answer: PanelAnswer) -> str:
         lines.append("")
     for claim in answer.claims:
         lines.append(f"- {_claim_line(claim)}")
+    if answer.patch:
+        lines.extend(["", *_fenced(answer.patch)])
     return "\n".join(lines)
+
+
+def _fenced(patch: str) -> list[str]:
+    """``patch`` in a code fence long enough that nothing inside it can close it."""
+    longest = max((len(m) for m in re.findall(r"`+", patch)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [f"{fence}diff", patch.rstrip("\n"), fence]
 
 
 def _claim_line(claim: Claim) -> str:

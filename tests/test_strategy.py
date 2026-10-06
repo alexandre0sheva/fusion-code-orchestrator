@@ -189,7 +189,9 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-vote",
         "panel-cascade",
         "panel-local",
+        "best-of-n-verified",
     }
+    assert book.get("best-of-n-verified").aggregator == "verified"
     assert book.get("solo-frontier").members[0].model == "claude-opus"
     assert book.get("panel-cheap").aggregator_model == "claude-haiku"
     assert book.get("panel-cheap-strong-synth").aggregator_model == "claude-sonnet"

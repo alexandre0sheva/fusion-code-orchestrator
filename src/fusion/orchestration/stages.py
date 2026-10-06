@@ -24,6 +24,8 @@ from fusion.orchestration.aggregate import (
     aggregator_for,
     build_best_of,
     build_digest,
+    build_patch_vote,
+    build_verified,
     build_vote,
 )
 from fusion.orchestration.budget_guard import (
@@ -719,6 +721,8 @@ class AggregateStage(_Stage):
             state.synth_response = self._vote(state, readable)
         elif kind == "best_of":
             state.synth_response = self._best_of(state, readable)
+        elif kind == "verified":
+            state.synth_response = await self._verified(state, readable)
         else:
             state.synth_response = await self._synthesize(state, readable)
         return state
@@ -726,6 +730,18 @@ class AggregateStage(_Stage):
     @staticmethod
     def _vote(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
         assert state.agreement is not None
+        if state.ctx.expects_patch:
+            voted = build_patch_vote(readable, state.answers, state.clusters)
+            if voted is not None:
+                response, picked, votes = voted
+                if state.routing is not None:
+                    state.routing.reasons.append(
+                        f"patch vote picked {picked.model}'s patch ({votes} of {len(readable)} "
+                        "models gave it)"
+                    )
+                return response
+            state.warnings.append("Vote: no answer contained a patch; returned the best answer")
+            return AggregateStage._best_of(state, readable)
         if not state.agreement.consensus:
             if state.cascade is not None and state.cascade.stopped_by_budget:
                 state.warnings.append("No point reached a majority; returned the best answer")
@@ -742,6 +758,30 @@ class AggregateStage(_Stage):
         if state.routing is not None:
             state.routing.reasons.append(
                 f"best_of picked {picked.model} (agreement with the others {picked.agreement:.2f})"
+            )
+        return response
+
+    @staticmethod
+    async def _verified(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
+        """The panel's patch that does best on the task's visible tests (benchmark mode only)."""
+        verify = state.ctx.verifier
+        if verify is None:
+            state.warnings.append(
+                "The verified aggregator needs the benchmark's test runner; none was given, so "
+                "the best answer was returned"
+            )
+            return AggregateStage._best_of(state, readable)
+        verified = await build_verified(readable, state.answers, state.clusters, verify)
+        if verified is None:
+            state.warnings.append("Verified: no answer contained a patch; returned the best answer")
+            return AggregateStage._best_of(state, readable)
+        response, picked, scores = verified
+        if state.routing is not None:
+            shown = ", ".join(
+                f"{m} {'?' if v is None else f'{v:.2f}'}" for m, v in scores.items()
+            )
+            state.routing.reasons.append(
+                f"verified picked {picked.model}'s patch by visible tests ({shown})"
             )
         return response
 
@@ -766,6 +806,7 @@ class AggregateStage(_Stage):
                 original_task=state.sanitized_primary,
                 gateway=state.gateway,
                 clusters=state.clusters,
+                patch=state.ctx.expects_patch,
             )
         finally:
             state.guard.release("synthesis")

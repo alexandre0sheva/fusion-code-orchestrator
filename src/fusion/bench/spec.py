@@ -9,13 +9,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from fusion.bench.datasets.coding import (
+    DEFAULT_TEST_COMMAND,
+    CodingTaskError,
+    is_task_dir,
+    load_task_dir,
+)
 from fusion.config.layers import ConfigError
 from fusion.routing.classifier import TaskType
 
@@ -26,6 +34,8 @@ __all__ = [
     "BenchConfig",
     "BenchTask",
     "Category",
+    "CodingFlaw",
+    "CodingTruth",
     "DatasetError",
     "DebugTruth",
     "ReviewTruth",
@@ -35,6 +45,7 @@ __all__ = [
     "Split",
     "Truth",
     "TruthPoint",
+    "iter_rows",
     "load_dataset",
     "read_rows",
     "resolve_dataset",
@@ -64,6 +75,8 @@ DATASET_DIRS = (
     Path(__file__).parent / "datasets",
     Path("evals") / "datasets" / "bench",
     Path("evals") / "bench",
+    Path("evals") / "datasets" / "v1",  # tasks of the shipped dataset by name: ``coding``
+    Path("evals") / "datasets",  # and the dataset itself: ``v1``
 )
 _SUFFIXES = (".jsonl", ".yaml", ".yml")
 
@@ -202,6 +215,37 @@ class RubricTruth(BaseModel):
         return self
 
 
+class CodingFlaw(BaseModel):
+    """A plausible but wrong fix of a coding task: it applies, and some hidden test fails."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = ""  # what this fix does, in a sentence (simulated models repeat it as a claim)
+    patch: str  # a unified diff against the task's files
+
+
+class CodingTruth(BaseModel):
+    """Ground truth of an executable coding task: tests, not keywords.
+
+    The model's patch is applied to ``BenchTask.files`` in a sandbox, ``hidden_files`` are copied
+    in (over anything of the same name), and ``command`` runs. ``expected_pass`` lists the ids of
+    the tests a correct patch passes; quality is the share of them that pass. ``solution`` and
+    ``flaws`` are for the validator and for simulated models; a real model never sees them.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    expected_pass: list[str] = Field(min_length=1)
+    hidden_files: dict[str, str] = Field(min_length=1)
+    command: list[str] = Field(default_factory=lambda: list(DEFAULT_TEST_COMMAND), min_length=1)
+    timeout_s: float = Field(default=30.0, gt=0)
+    mem_mb: int = Field(default=1024, ge=64)
+    reruns: int = Field(default=2, ge=0, le=5)  # flake guard: extra runs when a test fails
+    solution: str = ""
+    solution_summary: str = ""
+    flaws: list[CodingFlaw] = Field(default_factory=list)
+
+
 def _keyword_in(text: str, keywords: list[str]) -> str:
     """The first keyword that ``text`` contains (the text itself when there are none)."""
     return next((k for k in keywords if k.lower() in text.lower()), text)
@@ -252,11 +296,18 @@ class BenchTask(BaseModel):
             DebugTruth.model_validate(self.truth)
         if {"required_points", "forbidden_points"} & self.truth.keys():
             RubricTruth.model_validate(self.truth)
+        if "expected_pass" in self.truth:
+            CodingTruth.model_validate(self.truth)
         return self
 
     @property
     def task_type(self) -> TaskType:
         return CATEGORY_TASK_TYPE[self.category]
+
+    @property
+    def expects_patch(self) -> bool:
+        """Whether the answer is a code patch (an executable coding task) rather than prose."""
+        return "expected_pass" in self.truth
 
     def parsed_truth(self) -> Truth:
         return Truth.model_validate(self.truth)
@@ -269,9 +320,14 @@ class BenchTask(BaseModel):
         if (
             "points" in t
             or "decoys" in t
-            or not ({"bugs", "root_cause_tags", "required_points", "forbidden_points"} & t.keys())
+            or not (
+                {"bugs", "root_cause_tags", "required_points", "forbidden_points", "expected_pass"}
+                & t.keys()
+            )
         ):
             return self.parsed_truth()
+        if "expected_pass" in t:
+            return self._simulated_coding_truth()
         points: list[dict[str, Any]] = []
         decoys: list[dict[str, Any]] = []
         if "bugs" in t:
@@ -327,6 +383,28 @@ class BenchTask(BaseModel):
         return Truth.model_validate({"points": points, "decoys": decoys})
 
 
+    def _simulated_coding_truth(self) -> Truth:
+        """The fix as a point a model finds and each flaw as a decoy it falls for: simulated
+        models then state them as claims and attach the matching patch (``simulated_coding``)."""
+        coding = CodingTruth.model_validate(self.truth)
+        points: list[dict[str, Any]] = []
+        if coding.solution:
+            said = coding.solution_summary or f"Apply the reference fix for {self.id}"
+            points.append(
+                {"id": "solution", "keywords": [said], "text": said, "kind": "recommendation"}
+            )
+        decoys = [
+            {
+                "id": f"flaw-{n}",
+                "keywords": [flaw.summary or f"Alternative fix {n} for {self.id}"],
+                "text": flaw.summary or f"Alternative fix {n} for {self.id}",
+                "kind": "recommendation",
+            }
+            for n, flaw in enumerate(coding.flaws, 1)
+        ]
+        return Truth.model_validate({"points": points, "decoys": decoys})
+
+
 class Arm(BaseModel):
     """One contestant: a strategy (from ``strategies.yaml`` or config), optionally modified."""
 
@@ -377,7 +455,7 @@ def resolve_dataset(name_or_path: str | Path) -> Path:
     for folder in DATASET_DIRS:
         for suffix in ("", *_SUFFIXES):
             candidate = folder / f"{given}{suffix}"
-            if candidate.is_file():
+            if candidate.is_file() or (suffix == "" and candidate.is_dir()):
                 return candidate
     searched = ", ".join(str(d) for d in DATASET_DIRS)
     msg = f"Dataset '{name_or_path}' not found (looked at the path itself and in {searched})"
@@ -401,25 +479,59 @@ def read_rows(path: Path) -> list[Any]:
     return [row for doc in docs for row in (doc if isinstance(doc, list) else [doc])]
 
 
+def dataset_sources(path: Path) -> list[Path]:
+    """The files and coding-task directories a dataset is made of, in a stable order.
+
+    A directory holding ``task.yaml`` is one coding task and nothing under it is read as rows.
+    """
+    if path.is_file() or is_task_dir(path):
+        return [path]
+    found: list[Path] = []
+    for root, dirs, names in os.walk(path):
+        dirs.sort()
+        here = Path(root)
+        kept = []
+        for name in dirs:
+            if is_task_dir(here / name):
+                found.append(here / name)
+            else:
+                kept.append(name)
+        dirs[:] = kept
+        found.extend(here / n for n in sorted(names) if Path(n).suffix in _SUFFIXES)
+    return sorted(found)
+
+
+def iter_rows(path: Path) -> Iterator[tuple[Path, int, Any]]:
+    """``(source, index, row)`` for every task row of the dataset at ``path``: the rows of each
+    JSONL or YAML file, and the row compiled from each coding-task directory (index 1)."""
+    for source in dataset_sources(path):
+        if source.is_dir():
+            try:
+                yield source, 1, load_task_dir(source)
+            except CodingTaskError as exc:
+                raise DatasetError(str(exc)) from exc
+        else:
+            for index, row in enumerate(read_rows(source), 1):
+                yield source, index, row
+
+
 def load_dataset(name_or_path: str | Path, split: str | None = None) -> list[BenchTask]:
-    """Read and validate every task of a dataset (a file, or a directory of files).
+    """Read and validate every task of a dataset (a file, or a directory of files and coding tasks).
 
     ``split`` ("dev" or "test") keeps that split's tasks and those with no split; None or "all"
     keeps everything.
     """
     path = resolve_dataset(name_or_path)
-    files = sorted(p for p in path.rglob("*") if p.suffix in _SUFFIXES) if path.is_dir() else [path]
-    if not files:
-        msg = f"No .jsonl or .yaml files in {path}"
+    if not dataset_sources(path):
+        msg = f"No .jsonl or .yaml files or coding tasks in {path}"
         raise DatasetError(msg)
     tasks: list[BenchTask] = []
-    for file in files:
-        for index, row in enumerate(read_rows(file), 1):
-            try:
-                tasks.append(BenchTask.model_validate(row))
-            except ValueError as exc:
-                msg = f"{file} task {index}: {exc}"
-                raise DatasetError(msg) from exc
+    for source, index, row in iter_rows(path):
+        try:
+            tasks.append(BenchTask.model_validate(row))
+        except ValueError as exc:
+            msg = f"{source} task {index}: {exc}"
+            raise DatasetError(msg) from exc
     ids = [t.id for t in tasks]
     dupes = sorted({i for i in ids if ids.count(i) > 1})
     if dupes:

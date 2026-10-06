@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,7 +24,14 @@ from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import CallGateway, RunLedger
 from fusion.orchestration.refine import RefinementResult
 from fusion.orchestration.schemas import PipelineEvals
-from fusion.orchestration.strategy import MODE_SETTINGS, Mode, ModeSettings, PanelMember, Strategy
+from fusion.orchestration.strategy import (
+    MODE_SETTINGS,
+    BenchmarkOnlyError,
+    Mode,
+    ModeSettings,
+    PanelMember,
+    Strategy,
+)
 from fusion.providers.base import ModelProvider, ModelResponse
 from fusion.routing.budget import BudgetLevel, BudgetTracker
 from fusion.routing.classifier import TaskType
@@ -54,6 +61,12 @@ class PipelineContext:
     strategy: str | None = None  # a strategy name wins over ``budget``
     max_models: int | None = None
     shadow_baseline: bool | None = None
+    # Benchmark only: the answer is a code patch (an executable coding task), so synthesis must
+    # merge the panel's patches into one.
+    expects_patch: bool = False
+    # Benchmark only: scores a patch by running the task's visible tests (the ``verified``
+    # aggregator). 1.0 = all pass, -1.0 = the patch does not apply, None = cannot be verified.
+    verifier: Callable[[str], Awaitable[float | None]] | None = None
 
 
 @dataclass
@@ -201,6 +214,13 @@ class RunState:
             stream=settings.stream,
         )
         strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
+        if strategy.aggregator == "verified" and mode is not Mode.BENCHMARK:
+            msg = (
+                f"Strategy '{strategy.name}' uses the 'verified' aggregator, which runs code to "
+                "choose among answers. It is available only in benchmark mode (`fusion bench`): "
+                "Fusion's tools never run code, so Claude Code stays the only executor."
+            )
+            raise BenchmarkOnlyError(msg)
         started = deps.clock()
         return cls(
             ctx=ctx,

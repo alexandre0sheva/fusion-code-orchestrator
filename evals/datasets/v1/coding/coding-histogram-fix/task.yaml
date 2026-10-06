@@ -1,0 +1,26 @@
+id: coding-histogram-fix
+difficulty: easy
+split: dev
+tags:
+- python
+- bug-fix
+- math
+solution_summary: Put the maximum in the last bin instead of one past it, return zeros
+  for no values, and send values equal to a degenerate range to the first bin
+flaws:
+- summary: Clamp the bin index so the maximum fits but still crash on equal values
+    and count out-of-range values
+- summary: Ignore out-of-range values and handle empty and degenerate input but let
+    the maximum fall outside the last bin
+expected_pass:
+- tests.test_hidden.HistogramTests.test_accepts_any_iterable
+- tests.test_hidden.HistogramTests.test_all_values_equal
+- tests.test_hidden.HistogramTests.test_bin_edges
+- tests.test_hidden.HistogramTests.test_bins_are_half_open
+- tests.test_hidden.HistogramTests.test_degenerate_explicit_range
+- tests.test_hidden.HistogramTests.test_empty_values
+- tests.test_hidden.HistogramTests.test_floats
+- tests.test_hidden.HistogramTests.test_single_bin_counts_everything_in_range
+- tests.test_hidden.HistogramTests.test_the_maximum_lands_in_the_last_bin
+- tests.test_hidden.HistogramTests.test_validation
+- tests.test_hidden.HistogramTests.test_values_outside_the_range_are_ignored

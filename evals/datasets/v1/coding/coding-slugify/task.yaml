@@ -1,0 +1,22 @@
+id: coding-slugify
+difficulty: easy
+split: dev
+tags:
+- python
+solution_summary: Fold accents with unicodedata NFKD, collapse non-alphanumerics to
+  single hyphens, strip hyphens, then truncate and strip again
+flaws:
+- summary: Collapse non-alphanumerics to hyphens with a regex but never fold accents,
+    so accented letters become hyphens
+- summary: Fold accents and collapse separators but cut to max_length without stripping
+    a hyphen the cut leaves behind
+expected_pass:
+- tests.test_hidden.SlugifyTests.test_accents_are_folded
+- tests.test_hidden.SlugifyTests.test_basic
+- tests.test_hidden.SlugifyTests.test_digits
+- tests.test_hidden.SlugifyTests.test_edges_are_trimmed
+- tests.test_hidden.SlugifyTests.test_max_length_cuts
+- tests.test_hidden.SlugifyTests.test_max_length_longer_than_slug
+- tests.test_hidden.SlugifyTests.test_max_length_never_leaves_a_trailing_hyphen
+- tests.test_hidden.SlugifyTests.test_nothing_left
+- tests.test_hidden.SlugifyTests.test_runs_of_separators_collapse

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MODE_SETTINGS",
+    "BenchmarkOnlyError",
     "CascadeSpec",
     "Mode",
     "ModeSettings",
@@ -41,7 +42,11 @@ __all__ = [
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 _STRATEGY_KEYS = ("strategies", "budget_strategies")
 # Aggregators that make no model call, so they take no aggregator_model.
-NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest"})
+NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest", "verified"})
+
+
+class BenchmarkOnlyError(ConfigError):
+    """A strategy that runs code (the ``verified`` aggregator) was used outside a benchmark."""
 
 
 class Mode(StrEnum):
@@ -136,7 +141,7 @@ class Strategy(BaseModel):
     description: str = ""
     members: list[PanelMember] = Field(min_length=1)  # solo = exactly one member
     rounds: int = Field(default=1, ge=1, le=4)  # > 1 adds peer-refinement rounds
-    aggregator: Literal["llm", "vote", "best_of", "digest"] = "llm"
+    aggregator: Literal["llm", "vote", "best_of", "digest", "verified"] = "llm"
     aggregator_model: str | None = None  # llm aggregator; None = the catalog's synthesizer role
     judge: Literal["off", "light", "full"] = "off"
     # The synthesizer reads the judge's scores, so synthesis waits for the judge. Otherwise the

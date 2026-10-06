@@ -30,7 +30,8 @@ every call, scores each answer against the task's ground truth, and keeps everyt
   (`code_review`, `debugging`, `architecture`, `planning`, `coding`, `frontend`, `performance`), a
   `prompt`, optional `context` and `files`, a `difficulty`, and `truth`: the category-specific
   ground truth. Prompts must be unique. A bare dataset name such as `toy` is looked up in
-  `src/fusion/bench/datasets/`, then `evals/datasets/bench/`.
+  `src/fusion/bench/datasets/`, then `evals/datasets/bench/`, `evals/bench/`, `evals/datasets/v1/`
+  (so `coding` is `v1/coding`) and `evals/datasets/` (so `v1` is the whole shipped dataset).
 - **Arm** (`Arm`): a [strategy](CONFIGURATION.md#strategies-and-budgets) by name, with optional
   `overrides` (nested mappings merge), so "the cheap panel with three rounds" is one entry. The
   `default` arm set is the six of the roadmap: `solo-frontier`, `solo-cheap`, `panel-cheap`,
@@ -104,7 +105,7 @@ Each item stores the answer, the arm's claims, the full ledger of calls (`CallRe
 | `output_tokens_per_s` | effective: output tokens divided by wall seconds |
 | `decode_tokens_per_s`, `ttft_ms` | per model, from streamed calls |
 | `calls`, `retries` | provider calls and the retries inside them |
-| `quality`, `solved` | the scorer's output, and whether it reached the category's pass threshold (0.6) |
+| `quality`, `solved` | the scorer's output, and whether it reached the category's pass threshold (0.6; for `coding`, 1.0: every hidden test passes) |
 | `cache_hits`, `latency_valid` | calls replayed from the cache; false when any were, see below |
 
 Money per solved task is the arm's total cost divided by its solved items; `bench show` prints it.
@@ -166,10 +167,14 @@ results) so that later evaluators can feed the rubric without a new interface.
 | `code_review` | `ReviewScorer` | `bugs`: `[{file, line, category, severity, description, aliases?}]`, `line_tolerance` (3); empty `bugs` = a clean change | F1 of severity-weighted recall and precision |
 | `debugging` | `DebugScorer` | `root_cause_tags`, `root_cause_aliases?`, `root_cause?`, `fix_keywords?` | 0.7 × cause credit + 0.3 × share of fix keywords |
 | `architecture`, `planning` | `RubricScorer` | `required_points`, `forbidden_points`: strings or `{id, text, keywords?, gate?, weight?}` | weighted share of required items met, less 0.5 × share of forbidden asserted |
+| `coding` | `CodingScorer` | `expected_pass`, `hidden_files`, `command`, `timeout_s`, `solution?`, `flaws?` (see [Coding tasks](#coding-tasks-and-the-sandbox)) | pass@1: the share of `expected_pass` hidden tests that pass |
 | any | `PointsScorer` | `points`, `decoys`: `{id, keywords, text?, weight?}` | weighted recall less 0.5 × share of decoys asserted |
 
-`coding`, `frontend` and `performance` are scored on measured results by the evaluators of roadmap
-Tasks 16 and 17; until then only a `points` truth scores them.
+`frontend` and `performance` are scored on measured results by the evaluators of roadmap Task 17;
+until then only a `points` truth scores them.
+
+**Coding.** The answer's one patch is run against hidden tests in a sandbox; no model is asked and
+the scorer costs nothing. How: [Coding tasks and the sandbox](#coding-tasks-and-the-sandbox).
 
 **Review.** The answer's *findings* are the places it points at (`file:line`, `file, line N`, or a
 bare `line N` when the task has one file). A finding reports a seeded bug when it names the bug's
@@ -220,14 +225,16 @@ test the harness, not any real model.
 
 ### Datasets
 
-`evals/datasets/v1/` is the ground-truth dataset the 0.2.0 study runs on: 100 tasks, 25 each of
-`code_review`, `debugging`, `architecture` and `planning`, in three difficulties, with code tasks in
-Python, TypeScript and Go, and six clean reviews (24%) that test false alarms. Truth formats and
-scorers are under [Scoring](#scoring). **All tasks are synthetic and not yet reviewed by a person;
+`evals/datasets/v1/` is the ground-truth dataset the 0.2.0 study runs on: 133 tasks, 25 each of
+`code_review`, `debugging`, `architecture` and `planning` (in three difficulties, with code tasks in
+Python, TypeScript and Go, and six clean reviews, 24%, that test false alarms) and 33 executable
+`coding` tasks that are scored by running tests ([below](#coding-tasks-and-the-sandbox)). Truth
+formats and scorers are under [Scoring](#scoring). **All tasks are synthetic and not yet reviewed by a person;
 what that means for validity is in [evals/datasets/README.md](../evals/datasets/README.md#provenance-and-validity-read-this-before-quoting-a-number),
 which is also where the licence note and the guidelines for adding tasks live.**
 
-**Splits.** Every task is in `dev` (15 per category) or `test` (10 per category). `dev` is for tuning
+**Splits.** Every task is in `dev` (15 per text category, 16 coding tasks) or `test` (10 per text
+category, 17 coding tasks). `dev` is for tuning
 (the cascade threshold, prompts, judge choice); `test` is touched only by the final study. A run uses
 `--split dev` unless told otherwise (`BenchConfig.split`, default `dev`), so a tuning run cannot
 see held-out tasks by accident; `--split test` and `--split all` are for the final study. A dataset
@@ -245,13 +252,89 @@ uv run fusion bench dataset build --generate 10 --category debugging --model cla
 `validate` always checks each row's schema, unique ids and prompts, that bug files and line numbers
 are inside the files supplied (and on added lines of the diff), that no string looks like a secret,
 that a licence note sits next to the dataset, and that an answer written from a task's own truth
-scores at least 0.9 under its offline scorer and a flawed one at most 0.5. `--release` adds the
-published dataset's promise: at least 100 tasks, 25 per category, 8 per split and 3 per difficulty in
-each category, three languages, 20% clean reviews, and 30 to 400 lines per review diff or debugging
-task. Tasks are written as YAML (code review diffs mark each seeded bug with `«id»`, and the compiler
+scores at least 0.9 under its offline scorer and a flawed one at most 0.5, and it **runs every
+coding task** (see below; about 15 seconds for the 33 shipped ones). `--release` adds the
+published dataset's promise: at least 100 tasks, 25 per text category, at least 30 coding tasks, 8
+per split and 3 per difficulty in each category, three languages, 20% clean reviews, and 30 to 400
+lines per review diff or debugging task. Tasks are written as YAML (code review diffs mark each seeded bug with `«id»`, and the compiler
 computes the line numbers), compiled to JSONL, and a test fails when the two differ. `--generate`
 has a model draft candidates into `evals/datasets/authoring/candidates/` for a person to review; it
 is forecast, held to `--max-usd` and the live-spend cap, and recorded in the spend ledger.
+
+### Coding tasks and the sandbox
+
+The `coding` category is scored by running code, not by matching words. A task is a directory,
+`evals/datasets/v1/coding/<task_id>/`:
+
+| Path | Holds |
+|------|-------|
+| `prompt.md` | what to build or fix; the format request for the answer is appended when the task loads |
+| `repo/` | the files the model sees: the code, and a few **visible** tests (`repo/tests/`) |
+| `tests/` | the **hidden** tests: copied in after the patch, never shown to a model |
+| `reference/solution/`, `reference/flaw-N/` | the files of a correct fix and of plausible wrong fixes, as new content (the loader turns them into diffs) |
+| `task.yaml` | `id`, `difficulty`, `split`, `tags`, `solution_summary`, `flaws` (one summary each) and `expected_pass` |
+
+The loaded task's `truth` is `CodingTruth`: the test `command` (default
+`python -m unittest discover -v -s tests -t .`), `timeout_s`, `mem_mb`, `hidden_files`,
+`expected_pass` (the ids of the hidden tests a correct patch passes), and the reference `solution`
+and `flaws` as diffs. The last two are for the validator and for simulated models; a real model
+never sees any of `truth`. How to add a task is in
+[evals/datasets/README.md](../evals/datasets/README.md#dataset-b-executable-coding-tasks).
+
+**The answer is one patch.** No agent loop, so solo and panel arms are compared fairly: each answer
+holds a single patch, either a unified diff or the complete new content of each changed file under
+`=== path ===` lines. Panelists put it in the `patch` field of their claims JSON
+(`PanelAnswer.patch`); the `llm` aggregator is asked for one patch merged from theirs; `vote` and a
+cascade's early exit return the patch most models gave (identical up to whitespace), as that model
+wrote it; `best_of` returns the answer the others' claims back most. `panel-digest` returns every
+answer for Claude Code to merge, so it holds every panelist's patch and scores 0 whenever they
+differ: do not benchmark it on coding. Diffs are applied by matching context, not by trusting hunk numbers,
+because models get line numbers wrong; a patch that does not apply, names an unsafe path, or is
+missing scores 0, and the item's `score.details` says which.
+
+**Scoring.** The scorer applies the patch to the task's files in a fresh sandbox, copies the hidden
+files over the result (so a patch cannot weaken a test), and runs the command. Quality is **pass@1**:
+the share of `expected_pass` that pass, and a task is *solved* only at 1.0. **Flake guard:** when the
+first run does not pass everything, it is run twice more (fresh sandboxes) and a test counts as
+passed if it passed in most runs; tests whose result changed are listed as `flaky`. A run that times
+out is not repeated. Results are memoised by (task, patch), so identical patches from several arms
+or repeats run once.
+
+**The sandbox** (`bench/sandbox.py`, a reusable `Sandbox` context manager with `copy_in`, `run` and
+`collect`, which roadmap Task 17's evaluators also use) runs each command in a temporary directory
+with a wall-clock limit that kills the whole process group, `resource` limits (CPU, file size, core
+dumps; memory on Linux), output caps, a scrubbed environment (only `PATH` and locale pass: no API
+keys, `HOME` and `TMPDIR` inside the sandbox) and, where the platform offers it, **no network and no
+writes outside the sandbox** (`sandbox-exec` on macOS, `unshare --net` on Linux). Where it does
+not, `score.details["isolation"]` says `none` and only the limits apply. `FUSION_SANDBOX_ISOLATION`
+chooses: `auto` (default), `require` (refuse to run without isolation), `off`. It is a best-effort
+guard for a dataset you chose, not a security boundary; see [SECURITY.md](../SECURITY.md#benchmark-sandbox).
+It runs only inside benchmark mode, on tasks from the dataset you named, and is never reachable
+through MCP.
+
+**`best-of-n-verified`** (a strategy, not in the `default` six): each of the three cheap models
+writes a patch and the task's *visible* tests choose, with no synthesis call: the patch with the
+highest visible pass rate wins (a patch that does not apply loses; ties go to the patch more models
+gave, then to claim agreement). The visible tests are weaker than the hidden ones on purpose: the
+arm measures what cheap verification buys, and on the shipped tasks they catch about two thirds of
+the wrong fixes. It runs code, so the pipeline **refuses it outside benchmark mode**
+(`BenchmarkOnlyError`): Fusion's tools never execute anything and Claude Code stays the only
+executor. Verification time counts toward the arm's wall time in live studies; with `--mock` it
+takes no virtual time, so simulated timings leave it out.
+
+```bash
+uv run fusion bench dataset validate evals/datasets/v1/coding         # runs every task's solution, flaws and tests
+uv run fusion bench plan --dataset coding --arms solo-frontier,panel-cheap,best-of-n-verified --mock
+uv run fusion bench run  --dataset coding --arms solo-frontier,panel-cheap,best-of-n-verified --mock
+```
+
+**Caveats.** The tasks are small, self-contained Python and standard library only (the sandbox runs
+any command, but no other language is shipped), written by an LLM and not yet reviewed by a person
+([provenance](../evals/datasets/README.md#provenance-and-validity-read-this-before-quoting-a-number)).
+Hidden tests check what the prompt specifies, so a correct patch that reads the prompt differently
+fails; the tests were run against a reference fix and two wrong ones, which proves they can tell
+them apart and nothing more. Simulated models for a coding task know the reference fix and its
+flaws, so `--mock` results validate the harness, not any model's ability to code.
 
 ## Offline dataset evals
 

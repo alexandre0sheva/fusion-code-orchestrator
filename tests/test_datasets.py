@@ -312,8 +312,11 @@ def test_v1_passes_the_release_rules() -> None:
     report = validate_dataset(V1, Rules(release=True))
     assert report.ok, messages(report)
     stats = report.stats
-    assert stats.tasks == 100
-    assert set(stats.by_category.values()) == {25}
+    assert stats.tasks == 133
+    assert {c: n for c, n in stats.by_category.items() if c != "coding"} == {
+        c: 25 for c in ("architecture", "code_review", "debugging", "planning")
+    }
+    assert stats.by_category["coding"] >= 30  # executable tasks: tests/test_coding_dataset.py
     assert set(stats.languages) == {"go", "python", "typescript"}
     assert stats.clean_reviews / stats.reviews >= 0.2
 
@@ -329,7 +332,7 @@ def test_v1_jsonl_is_exactly_what_its_sources_compile_to() -> None:
 
 def test_v1_splits_are_disjoint_and_loaded_by_name() -> None:
     dev, test, everything = (load_dataset(V1, s) for s in ("dev", "test", "all"))
-    assert (len(dev), len(test), len(everything)) == (60, 40, 100)
+    assert (len(dev), len(test), len(everything)) == (76, 57, 133)
     assert not {t.id for t in dev} & {t.id for t in test}
     assert {t.split for t in dev} == {"dev"}
     assert (
@@ -361,6 +364,8 @@ def test_every_v1_task_is_scorable_and_its_truth_translates_for_simulation() -> 
 
     async def check() -> None:
         for task in load_dataset(V1, "all"):
+            if task.expects_patch:  # scored by running tests: tests/test_coding_dataset.py
+                continue
             sim = task.simulated_truth()
             scorer = get_scorer(task.category)
             perfect = "\n".join(f"- {p.text}" for p in sim.points) or "No issues found."
@@ -493,7 +498,7 @@ def test_generation_obeys_max_usd_and_the_spend_cap_and_records_spend(tmp_path: 
 def test_validate_exits_nonzero_on_errors_and_zero_on_a_good_dataset(tmp_path: Path) -> None:
     good = CliRunner().invoke(bench_app, ["dataset", "validate", str(V1), "--release"])
     assert good.exit_code == 0, good.output
-    assert "OK" in good.output and "100 tasks" in good.output
+    assert "OK" in good.output and "133 tasks" in good.output
     bad = CliRunner().invoke(
         bench_app, ["dataset", "validate", str(dataset(tmp_path, [task_row(), task_row()]))]
     )
@@ -504,7 +509,8 @@ def test_validate_exits_nonzero_on_errors_and_zero_on_a_good_dataset(tmp_path: P
 def test_stats_prints_the_counts(tmp_path: Path) -> None:
     result = CliRunner().invoke(bench_app, ["dataset", "stats", str(V1)])
     assert result.exit_code == 0, result.output
-    for text in ("code_review", "debugging", "architecture", "planning", "Languages:", "24%"):
+    kinds = ("code_review", "debugging", "architecture", "planning", "coding")
+    for text in (*kinds, "Languages:", "24%"):
         assert text in result.output
 
 
@@ -541,11 +547,11 @@ def test_the_run_command_selects_a_split(tmp_path: Path, monkeypatch: pytest.Mon
         ["plan", "--dataset", str(V1), "--arms", "solo-cheap", "--mock", "--split", "test"],
     )
     assert out.exit_code == 0, out.output
-    assert "40 tasks x 1 arms" in out.output
+    assert "57 tasks x 1 arms" in out.output
     default = CliRunner().invoke(
         bench_app, ["plan", "--dataset", str(V1), "--arms", "solo-cheap", "--mock"]
     )
-    assert "60 tasks x 1 arms" in default.output
+    assert "76 tasks x 1 arms" in default.output
 
 
 def test_v1_loads_as_bench_tasks() -> None:

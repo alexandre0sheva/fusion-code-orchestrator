@@ -1,0 +1,23 @@
+id: coding-ttl-cache-fix
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- data-structures
+solution_summary: Treat an entry as expired from set time plus ttl onwards, drop expired
+  entries when they are read or counted, and make membership check liveness
+flaws:
+- summary: Count entries as expired from the deadline on and drop them when read,
+    but len and membership still include expired entries
+- summary: Purge by a strict comparison so an entry survives its exact deadline, though
+    len and membership are live-only
+expected_pass:
+- tests.test_hidden.TTLCacheTests.test_contains_checks_liveness
+- tests.test_hidden.TTLCacheTests.test_delete_only_reports_live_entries
+- tests.test_hidden.TTLCacheTests.test_expired_at_exactly_the_deadline
+- tests.test_hidden.TTLCacheTests.test_falsy_values_are_live_values
+- tests.test_hidden.TTLCacheTests.test_len_counts_only_live_entries
+- tests.test_hidden.TTLCacheTests.test_live_until_the_deadline
+- tests.test_hidden.TTLCacheTests.test_setting_again_restarts_the_time
+- tests.test_hidden.TTLCacheTests.test_ttl_must_be_positive
