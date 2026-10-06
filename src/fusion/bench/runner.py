@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from fusion.bench.arms import arm_book
 from fusion.bench.cache import CachingProvider, ResponseDiskCache
 from fusion.bench.evaluators import EvaluatorSet
+from fusion.bench.meta import build_meta, load_meta, write_meta
 from fusion.bench.metrics import build_metrics
 from fusion.bench.plan import estimate_job
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoreResult, get_scorer, is_solved
@@ -322,9 +323,10 @@ async def run_bench(
     env: BenchEnv | None = None,
     run_id: str | None = None,
     on_item: Callable[[BenchItem, BenchProgress], None] | None = None,
+    retry_halted: bool = False,
 ) -> BenchRun:
     """Run (or resume, when ``run_id`` names an existing run) the study ``cfg`` describes."""
-    tasks = select_tasks(load_dataset(cfg.dataset, cfg.split), cfg.limit, cfg.seed)
+    tasks = select_tasks(load_dataset(cfg.dataset, cfg.split), cfg.limit, cfg.seed, cfg.quota)
     env = env or build_env(cfg, tasks)
     unknown = [m for m in cfg.judge_models if m not in env.registry.models]
     if unknown:
@@ -336,6 +338,10 @@ async def run_bench(
     pipeline = _pipeline(env, routing, clock)
     store = env.store
     spend = env.spend if not cfg.mock else None
+    if (
+        spend is not None and cfg.spend_stop_usd is not None
+    ):  # stop short of the cap, keep a reserve
+        spend = SpendLedger(spend.path, cap_usd=min(spend.cap_usd, cfg.spend_stop_usd))
     if spend is not None:
         spend.check(0.0, "starting a live run")
 
@@ -366,7 +372,18 @@ async def run_bench(
     else:
         store.sync_index(rid)
         store.update_run(rid, status="running", total_jobs=len(jobs), config=cfg)
-    finished = store.completed_keys(rid)
+    if load_meta(store.run_dir(rid)) is None:  # a resumed run keeps the snapshot of its start
+        write_meta(
+            store.run_dir(rid),
+            build_meta(
+                cfg,
+                tasks,
+                book=book,
+                models=env.registry.models,
+                reconstructed=existing is not None,  # a run begun before snapshots existed
+            ),
+        )
+    finished = store.completed_keys(rid, retry_halted=retry_halted)
     wanted = {j.key for j in jobs}
     resumed = len(finished & wanted)
     pending = [j for j in jobs if j.key not in finished]

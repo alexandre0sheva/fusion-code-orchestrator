@@ -1,0 +1,31 @@
+# The headline study: the frontier models and the cheap ones alone against Fusion, once, on the
+# held-out test split. Run it only after the ablations have settled the defaults, and do not change
+# an arm afterwards: the whole point of the split is that nothing was tuned on these tasks.
+#
+#   fusion bench plan --suite headline
+#   fusion bench run  --suite headline --max-usd 11
+#
+# `fusion-best` is the option the dev ablations picked with `fusion bench recommend` (below).
+# It was set once, before the run, and must not change afterwards.
+description: >-
+  Opus 5.5, Sol, Haiku and Luna alone, the default Fusion panel and the best variant, on a
+  stratified subset of the test split (final-study budget: about $11).
+stage: final study on test
+dataset: v1
+split: test
+quota: {code_review: 6, debugging: 6, architecture: 5, planning: 5, coding: 6, frontend: 3, performance: 3}
+repeats: 2
+seed: 100
+max_usd: 11.0
+spend_stop_usd: 18.0
+concurrency: 8
+judge_models: [gpt-luna]
+arms:
+  - {name: solo-frontier, strategy: solo-frontier}   # Claude Opus 5.5
+  - {name: solo-sol, strategy: solo-sol}             # GPT-6.1 Sol
+  - {name: solo-haiku, strategy: solo-cheap}
+  - {name: solo-luna, strategy: solo-luna}
+  - {name: fusion-default, strategy: panel-cheap}
+  # Frozen from the dev ablation (run live-ablation): the cheapest arm per solved task on the
+  # cost-quality frontier within 0.05 quality of the best. A lean, not a finding: see the results.
+  - {name: fusion-best, strategy: panel-cheap, overrides: {members: [{model: claude-haiku}, {model: gpt-luna}]}}

@@ -10,7 +10,8 @@ from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelRespon
 
 STRATEGY_DESCRIPTION = (
     "Strategy name; overrides budget. Run `fusion strategies list` to see them. Examples: "
-    "solo-cheap (one cheap model), panel-cheap (default: cheap panel, one synthesis call), "
+    "solo-cheap (one cheap model), panel-duo (default: two cheap models, one synthesis call), "
+    "panel-cheap (three cheap models), "
     "panel-cascade (two cheap models, the rest only if they disagree), panel-refine (adds a "
     "refinement round), panel-vote (the points most models backed, no synthesis). "
     "panel-digest returns every panel answer plus the shared, disputed and single-model points "

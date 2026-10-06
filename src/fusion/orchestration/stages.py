@@ -20,6 +20,7 @@ from fusion.benchmark.shadow import (
     finish_shadow_comparison,
     should_run_shadow,
 )
+from fusion.config.loader import FanoutConfig
 from fusion.orchestration.aggregate import (
     aggregator_for,
     build_best_of,
@@ -359,11 +360,24 @@ class PanelStage(_Stage):
             context=state.sanitized_context,
             file_snippets=state.sanitized_snippets,
             changed_files=state.ctx.changed_files,
-            config=self.deps.routing.budgets.fanout,
+            config=self._fanout_config(state),
             gateway=state.gateway,
             members={m.model: m for m in state.members},
             min_successful=min_successful,
         )
+
+    def _fanout_config(self, state: RunState) -> FanoutConfig:
+        """The routing policy's fan-out settings with the strategy's own latency controls on top."""
+        config = self.deps.routing.budgets.fanout
+        override = state.strategy.fanout if state.strategy else None
+        if override is None:
+            return config
+        updates = {
+            name: value
+            for name in override.model_fields_set
+            if (value := getattr(override, name)) is not None
+        }
+        return config.model_copy(update=updates)
 
     def _accept(self, state: RunState, fanout: FanoutResult) -> RunState:
         state.fanout = fanout

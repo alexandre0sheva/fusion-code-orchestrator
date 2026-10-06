@@ -58,7 +58,15 @@ uv run fusion bench list                  # runs, newest first
 uv run fusion bench show RUN              # one summary row per arm (--json for scripts)
 uv run fusion bench show RUN --task ID    # one task: gates, criteria, evidence, the judge's reasoning
 uv run fusion bench resume RUN --max-usd 8   # continue a stopped or interrupted run
+uv run fusion bench resume RUN --retry-halted   # ...and run again the jobs that halted (timeouts, no quorum)
+uv run fusion bench report RUN            # intervals, paired comparisons, $ per solved task, verdicts (md)
+uv run fusion bench report RUN --format html   # one self-contained file with the charts
+uv run fusion bench compare RUN_A RUN_B   # before and after a tuning change
 uv run fusion bench spend                 # the live-spend ledger
+uv run fusion bench suite list            # the packaged studies; `suite show NAME` for one
+uv run fusion bench plan --suite ablation # price a suite (also: run --suite NAME)
+uv run fusion bench recommend RUN         # which arm to make the default, from a dev run
+uv run fusion bench results RUN           # write docs/BENCHMARK_RESULTS.md from runs
 uv run fusion bench calibrate-judge --dataset toy --mock   # how well do judges pick the better answer?
 uv run fusion bench calibrate-judge --dataset v1 --mock --artifacts   # ...the better page or faster code?
 uv run fusion bench dataset validate evals/datasets/v1 --release   # check a dataset (also: stats, build)
@@ -113,6 +121,12 @@ Each item stores the answer, the arm's claims, the full ledger of calls (`CallRe
 
 Money per solved task is the arm's total cost divided by its solved items; `bench show` prints it.
 
+A job that halted because a call hit the fan-out's 45-second per-model timeout scores 0, which
+understates a slow model (GPT-6.1 Sol timed out on 21 of its 68 final-study jobs, Opus on 3).
+`resume --retry-halted`, with the limits raised for that run (`FUSION__FANOUT__PER_MODEL_TIMEOUT_SECONDS=240
+FUSION__FANOUT__GLOBAL_TIMEOUT_SECONDS=300`), runs those jobs again; every attempt stays in
+`results.jsonl`, the last is scored, and the report says how many jobs were retried.
+
 A job ends `completed`, `halted` (the pipeline stopped early, for instance without quorum: the arm
 failed the task, and the item is scored and counted) or `error` (an exception, or a scorer
 failure). Errors keep what the run had spent and are tried again by `resume`.
@@ -120,7 +134,9 @@ failure). Errors keep what the run had spent and are tried again by `resume`.
 ### Resuming, results and the cache
 
 Results go to `bench-results/<run>/results.jsonl` (one line per finished job, flushed as written;
-this file is the record of truth), `config.json`, and the `bench_runs` and `bench_items` tables of
+this file is the record of truth), `config.json`, `meta.json` (what the run was when it started: the
+dataset hash, each arm's models and each model's price and the date it was verified; a resumed run
+keeps it), `report.html` once you ask for one, and the `bench_runs` and `bench_items` tables of
 `bench-results/bench.db` (the same schema as the run history, in a separate file so studies never
 appear in `fusion stats`). `bench-results/` is git-ignored; `FUSION_BENCH_DIR` moves it. After a
 kill, `resume` skips the job keys already finished and runs the rest; a torn last line is ignored.
@@ -128,8 +144,11 @@ Repeats come first in the job order, so a run that stops early has whole repeats
 
 Live runs wrap each provider in a **response cache** (`bench-results/cache/`, one file per answer,
 keyed by provider and the whole request including model, prompt, schema, temperature and seed).
-A replayed call is billed at zero, flagged `cache_hit` on its record, and keeps the latency and
-speed it had when first answered. Only successes are stored. Because repeats use different seeds,
+A replayed call is billed at zero (the provider did not charge for it), flagged `cache_hit` on its
+record, and keeps the latency and speed it had when first answered. **Reports still count it at
+its price-list cost** (`list_cost_usd` on the record, `replayed_cost_usd` on the item): two arms
+that make the same call, such as a panel's Haiku request and a solo Haiku arm's, would otherwise
+look cheaper the second time. The spend ledger counts only what was billed. Only successes are stored. Because repeats use different seeds,
 they never share entries; a rerun of the same repeat does. A job with any cache hit has
 `latency_valid: false`: its wall time is not a measurement of the arm, so summaries leave it out of
 the percentiles. Use `--no-cache` for a speed study. The cache is off for `--mock`.
@@ -473,6 +492,119 @@ machine, a noisy measurement is left unscored rather than guessed, and a loaded 
 more of them. The default criterion weights and penalties above are choices, not measurements.
 Simulated judges read the same evidence a real one would and score it with noise by an assumed
 skill; their calibration tests the harness, not any model.
+
+### Suites and the final study
+
+A **suite** is a study kept as a file (`src/fusion/bench/suites/*.yaml`): the `BenchConfig` fields
+plus a description and a stage, with arms written as a strategy and overrides. `fusion bench plan
+--suite NAME` prices it, `run --suite NAME` runs it, and options on the command line still win
+(`--suite headline --mock --repeats 1`). `--suite` also takes the path of a suite file of your own.
+A task `quota` (tasks per category, a seeded sample of each; categories not named are left out)
+gives every suite a stratified subset that includes the executable, frontend and performance
+categories in small numbers, and `spend_stop_usd` stops a suite at $18 of the $20 ledger cap,
+keeping the reserve. The planner prices a suite's design against what is left below that line.
+
+| Suite | Stage | What it answers | Budget |
+|-------|-------|-----------------|--------|
+| `ablation` | tune on `dev` | panel size 1/2/3/5, refinement, a strong synthesizer, the cascade threshold (0.5 and 0.7; more if money remains), and self-mixtures of one model (Haiku by temperature, Luna by reasoning effort) against heterogeneous panels | about $4.80 |
+| `latency` | tune on `dev` | whether early return, hedging or a cascade shortens the wait; the response cache is off, since a replayed call has no real latency | about $1.20 |
+| `headline` | final, on `test` | Opus 5.5, Sol, Haiku and Luna alone against the default panel and the best variant, two repeats | about $11 |
+
+The procedure that keeps the result honest:
+
+1. **Plan, then run the tuning suites on `dev`** (`ablation`, `latency`): about $6 together. All
+   tuning (the cascade threshold, panel size, the synthesizer) happens on these tasks and nowhere else.
+2. **Choose, with a stated rule.** `fusion bench recommend RUN` takes the cheapest arm per solved task
+   among the cost-quality frontier arms within the margin of the best, says when its interval
+   overlaps the best arm's (at this size it usually does: the choice is then a lean, not a finding)
+   and prints the `fusion-best` line for the headline suite. If the winner beats the shipped
+   default, change the default strategy in `strategies.yaml` and say so in the changelog, even
+   if that means Fusion's default is not the panel the project started with.
+3. **Freeze, then run `headline` once on `test`.** Do not change an arm afterwards. About $11.
+4. **Publish.** `fusion bench results RUN --also ABLATION --also LATENCY --html docs/benchmark-report.html --svg docs/assets/benchmark-cost-quality.svg`
+   writes `docs/BENCHMARK_RESULTS.md`: the verdict engine's text unedited, the supporting studies,
+   the spend per run and the limitations. Nothing in it is typed by hand.
+
+A suite's estimate comes from the planner, which assumes 1,500-token answers; the live total can be
+higher for models that think at length (Opus 5.5 with adaptive thinking), and the caps hold either
+way: a run stops cleanly, resumable, when the next job's worst case would not fit. Stopping early
+leaves whole tasks for every arm (repeats first, then tasks), so the arms stay paired. **Judges:**
+every vendor has a model on a panel, so no judge is cross-family with every arm; the suites use the
+cheapest (`gpt-luna`) for the rubric items the keywords cannot settle, and the agentic judge of
+frontend and performance tasks, which needs a judge from no arm's vendor, is skipped for panels
+(those tasks keep their measured scores). Say so whenever quoting a score.
+
+### Statistics, reports and how to read them
+
+`fusion bench report RUN` turns a run's items into statistics, verdicts and a report: `--format md`
+(default, for a README or docs page), `--format html` (one self-contained file, written to the run's
+folder or to `-o PATH`) or `--format json` (the same data, for scripts). `--baseline ARM` picks the
+arm the others are compared with (default `solo-frontier` when the run has it, else the first arm);
+`--margin`, `--min-tasks` and `--resamples` set the verdict rules below. `fusion bench compare
+RUN_A RUN_B` compares the same arm across two runs on the tasks both have, paired by task, and
+says whether the second is cheaper, faster, not worse or better.
+
+**Intervals.** Every mean has a 95% percentile-bootstrap interval that **resamples tasks, not runs**:
+the repeats of one task share a prompt and a truth, so they are not independent, and resampling them
+would make the interval too narrow. Five repeats do not narrow it; more tasks do. Intervals are
+seeded, so a report is reproducible. With fewer than two tasks there is an estimate and no interval.
+
+**Paired comparisons.** An arm is compared with the baseline on the tasks both were scored on, as
+differences per task. Reported: the mean difference with its interval, wins, ties and losses
+(a tie is a difference of at most 0.02), the exact two-sided **sign test** over the non-tied tasks,
+and an **effect size** (the mean difference over its spread across tasks, Cohen's d for pairs).
+Ratios of cost per solved task, cost per task and seconds per task are bootstrapped the same way;
+below 1 is better.
+
+**Money and speed.** *$ per solved task* is the arm's whole cost (every item, including failures
+and errors, since the money was spent) divided by the items it solved: the headline efficiency
+number. An arm that solved nothing has none. *Seconds* are the median and 90th percentile over items
+whose wall time is a measurement (cache replays are left out). *Output tokens/s* is effective
+(output tokens over wall seconds); decode speed and time to first token are per model and come from
+streamed calls. *Tokens per solved* is input plus output tokens over solved items. *Quality per
+dollar* is mean quality over cost per task; *quality per minute* is mean quality over mean minutes
+per task. *Variance across repeats* is the mean, over tasks, of the standard deviation of quality
+across the repeats, and the share of tasks whose solved/unsolved result changes between them: an
+arm whose result depends on the repeat needs more repeats before its mean means much. Scoring and
+judging (`eval_cost_usd`, `eval_seconds`) are shown beside each arm and never inside its cost or
+speed.
+
+**Frontier.** An arm is on the *cost frontier* when no other arm is at least as cheap per task and
+at least as good, and strictly better in one; likewise for the *latency frontier* (median seconds).
+The HTML charts join the frontier arms with a line and draw each arm's interval as a bar. The
+frontier says which arms are worth considering, not that the gaps between them are real: look at
+the intervals.
+
+**Verdicts.** For each arm against the baseline, overall and per category, four claims, each
+*yes*, *no* or *inconclusive*, with the numbers behind it in the report:
+
+| Claim | yes when | no when |
+|-------|----------|---------|
+| cheaper | the interval of the cost-per-solved ratio is wholly below 1 | wholly at or above 1 |
+| faster | the interval of the seconds-per-task ratio is wholly below 1 | wholly at or above 1 |
+| not worse | the interval of the quality difference is above −0.03 (the non-inferiority margin, `--margin`) | below −0.03 |
+| better | the interval of the quality difference is wholly above 0 | wholly at or below 0 |
+
+Otherwise the claim is inconclusive: the study cannot tell, which is a result, not a failure. Below
+`--min-tasks` (default 10) paired tasks nothing is claimed. The intervals are two-sided 95%, so
+"not worse" is a slightly stricter test than the usual one-sided non-inferiority check. Verdicts are
+about these tasks, this dataset and these judges; they do not transfer to other work without
+repeating the study.
+
+**What blocks a verdict.** When judges scored a frontend or performance task and their latest
+artifact calibration is below the accuracy floor (or missing), the headline ("all tasks") verdicts
+and those categories' verdicts read *blocked* and the report says why; see
+[judge reliability](#frontend-and-performance-tasks-evidence-and-the-agentic-judge).
+
+**Caveats the report prints for itself:** a simulated run (the numbers test the harness, not any
+model), a run that did not finish (arms may have answered different tasks), costs that are a lower
+bound (an unknown price), errors, cache replays left out of the latency, fewer than three repeats,
+and a methodology footer read from today's files because the run has no `meta.json`. The footer
+always gives the dataset hash, each arm's strategy and models, each model's id, price and
+`verified_on` date, the judge models, repeats, seed, the bootstrap and verdict rules, and the spend.
+The HTML report adds a typical run's call timeline per arm, and, for frontend and performance
+tasks, the evidence (gates, measurements, the judge's reasoning and screenshots) of the tasks where
+an arm and the baseline differed most.
 
 ## Offline dataset evals
 

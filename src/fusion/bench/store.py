@@ -260,8 +260,33 @@ class BenchStore:
                 eval_cost += item.metrics.eval_cost_usd
         return cost, eval_cost
 
-    def completed_keys(self, run_id: str) -> set[str]:
-        return {i.job_key for i in self.items(run_id) if i.status in FINISHED}
+    def retried_after_halt(self, run_id: str) -> dict[str, int]:
+        """Arm -> jobs whose first attempt halted and that were then run again (see ``resume
+        --retry-halted``). Every attempt stays in ``results.jsonl``; only the last is reported."""
+        path = self.run_dir(run_id) / RESULTS_FILE
+        first: dict[str, BenchItem] = {}
+        again: set[str] = set()
+        if path.is_file():
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                try:
+                    item = BenchItem.model_validate_json(raw)
+                except ValueError:
+                    continue
+                if item.job_key in first:
+                    again.add(item.job_key)
+                else:
+                    first[item.job_key] = item
+        out: dict[str, int] = {}
+        for key in again:
+            if first[key].status == "halted":
+                out[first[key].arm] = out.get(first[key].arm, 0) + 1
+        return dict(sorted(out.items()))
+
+    def completed_keys(self, run_id: str, *, retry_halted: bool = False) -> set[str]:
+        """Job keys that need no more work. ``retry_halted`` leaves out the halted ones (a panel
+        that did not reach quorum, a call that timed out) so a resume tries them again."""
+        done = {"completed"} if retry_halted else FINISHED
+        return {i.job_key for i in self.items(run_id) if i.status in done}
 
     def sync_index(self, run_id: str) -> None:
         """Re-index the results file (after a crash between writing a line and indexing it)."""

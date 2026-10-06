@@ -32,6 +32,8 @@ from fusion.providers.base import ModelRequest, ModelResponse
 from fusion.providers.mock import MockProvider
 from fusion.routing.classifier import TaskType
 
+pytestmark = pytest.mark.usefixtures("three_model_default")
+
 LONG = "Retries around a flaky HTTP call keep timing out in production under load."
 
 

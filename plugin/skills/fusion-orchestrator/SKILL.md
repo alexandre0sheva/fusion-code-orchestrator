@@ -58,8 +58,8 @@ Do **not** call Fusion for:
 
 ## Strategies, Refinement, and Shadow A/B
 
-- `strategy` chooses which models run: `solo-cheap` (one cheap model), `panel-cheap` (the default
-  three-model panel), `panel-refine` (adds a mixture-of-agents refinement round where panel models
+- `strategy` chooses which models run: `solo-cheap` (one cheap model), `panel-duo` (the default
+  two-model panel) or `panel-cheap` (three models), `panel-refine` (adds a mixture-of-agents refinement round where panel models
   revise after seeing anonymized peer answers — use it for hard or high-stakes tasks),
   `panel-cheap-strong-synth` (stronger final merge), `panel-cascade` (two cheap models first; the
   rest only if they disagree), `panel-vote` (only the points most models backed, no merge call) and

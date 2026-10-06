@@ -70,6 +70,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "N"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/test_sitecheck.py" = ["E501"]  # one-line HTML fixtures
+# One-line SVG and HTML templates of the HTML report.
+"src/fusion/bench/report/charts.py" = ["E501"]
+"src/fusion/bench/report/html.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

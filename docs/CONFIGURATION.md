@@ -125,7 +125,10 @@ A **strategy** says who answers a task and how the answers are combined. Every t
 optional `strategy` (a name from `strategies.yaml`); `fusion strategies list` prints them. Without
 one, the legacy `budget` argument picks the strategy through `budget_strategies`, and the response's
 `routing.strategy` reports which one ran. Switching strategy is a config or argument change, never a
-code change.
+code change. A strategy lists each model alias once; to ask one model several times (a
+*self-mixture*) use the catalog's sample aliases `claude-haiku-s2`, `claude-haiku-s3`, `gpt-luna-s2`
+and `gpt-luna-s3`, the same models at the same prices that no default panel picks, with a different
+`temperature` (or `reasoning_effort`, for models that ignore sampling parameters) per member.
 
 ```yaml
 strategies:
@@ -144,6 +147,8 @@ strategies:
     judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
     max_cost_usd: 0.05           # optional hard cap, see "Cost and latency caps"
     max_latency_s: 60            # optional; stages that would not fit are skipped
+    fanout:                      # optional: this strategy's own latency controls (see Fan-out)
+      early_return: {quorum: 2, grace_ms: 1500}
   my-cascade:
     kind: cascade                # cheapest members first, the rest only if they disagree
     members: [{model: claude-haiku}, {model: gpt-luna}, {model: gemini-flash}]
@@ -164,7 +169,8 @@ budget_strategies:
 | `solo-sol` | GPT-6.1 Sol | 1 |
 | `solo-cheap` | Claude Haiku 4.5 | 1 |
 | `solo-luna` | GPT-6 Luna | 1 |
-| `panel-cheap` (default) | Haiku 4.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 4.5 | 3 + 1 |
+| `panel-duo` (default) | Haiku 4.5 + GPT-6 Luna, merged by Haiku 4.5; chosen by the [v0.2.0 study](BENCHMARK_RESULTS.md), with no spare model if one fails | 2 + 1 |
+| `panel-cheap` | Haiku 4.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 4.5 | 3 + 1 |
 | `panel-cheap-strong-synth` | the same panel, merged by Claude Sonnet 5.5 | 3 + 1 |
 | `panel-refine` | the same panel plus one refinement round, merged by Haiku 4.5 | 3 + 3 + 1 |
 | `panel-digest` | the same panel, no synthesis: the answers come back for Claude Code to merge | 3 |
@@ -242,7 +248,7 @@ Budgets are aliases kept for compatibility:
 | Budget | Strategy |
 |--------|----------|
 | `low` | `solo-cheap` |
-| `medium` | `panel-cheap` |
+| `medium` | `panel-duo` |
 | `high` | `panel-refine` |
 | `local_only` | `panel-local` |
 
@@ -327,6 +333,10 @@ do not. Two optional settings trade a little quality or cost for latency:
   the `panel` role that is not already in the panel. Whichever of the two answers first is used,
   attributed to the model that actually answered, and the other is cancelled. With no spare model
   the run says so and keeps waiting.
+
+A strategy may set either control for itself with `fanout:` (`early_return` and `hedge_after_ms`
+only; the other limits stay the routing policy's), which is how the latency benchmark compares them
+on one panel.
 
 Fusion preserves partial panel results. A failed or timed-out model produces a warning and a usage
 record, but the run continues when quorum is met. If quorum is not met, Fusion returns a structured

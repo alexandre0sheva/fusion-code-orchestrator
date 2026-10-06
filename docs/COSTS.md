@@ -77,6 +77,7 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `panel-digest` | 3 | $0.0231 | 0.46x |
 | `panel-vote` | 3 | $0.0231 | 0.46x |
 | `solo-sol` | 1 | $0.0250 | 0.50x |
+| `panel-duo` | 3 | $0.0307 | 0.61x |
 | `panel-cheap` | 4 | $0.0424 | 0.85x |
 | `solo-frontier` | 1 | $0.0500 | 1.00x |
 | `panel-cascade (escalates)` | 4 | $0.0616 | 1.23x |

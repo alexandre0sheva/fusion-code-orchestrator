@@ -34,3 +34,11 @@ def fusion_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for key in [k for k in os.environ if k.upper().startswith("FUSION__")]:
         monkeypatch.delenv(key, raising=False)
     return home
+
+
+@pytest.fixture
+def three_model_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``budget: medium`` run the three-model ``panel-cheap``, as it did before 0.2.0 chose
+    ``panel-duo``. For tests of pipeline mechanics (quorum, claims, golden outputs) that need three
+    panelists; tests of the shipped default itself do not use it."""
+    monkeypatch.setenv("FUSION__BUDGET_STRATEGIES__MEDIUM", "panel-cheap")

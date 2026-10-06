@@ -22,6 +22,8 @@ from fusion.providers.mock import MockProvider
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.classifier import TaskType
 
+pytestmark = pytest.mark.usefixtures("three_model_default")
+
 DIFF = (
     "diff --git a/app/db.py b/app/db.py\n--- a/app/db.py\n+++ b/app/db.py\n"
     "@@ -1,3 +1,4 @@\n"

@@ -120,7 +120,7 @@ def test_budget_levels_map_to_strategies() -> None:
     }
     assert names == {
         BudgetLevel.LOW: "solo-cheap",
-        BudgetLevel.MEDIUM: "panel-cheap",
+        BudgetLevel.MEDIUM: "panel-duo",
         BudgetLevel.HIGH: "panel-refine",
         BudgetLevel.LOCAL_ONLY: "panel-local",
     }
@@ -154,7 +154,7 @@ def test_production_routing_uses_cloud_models() -> None:
     routing = build_routing(use_mock=False)
     panel = routing.select_panel(TaskType.CODE_REVIEW)
     assert "mock-fast" not in panel
-    assert set(panel) == {"claude-haiku", "gpt-luna", "gemini-flash"}
+    assert set(panel) == {"claude-haiku", "gpt-luna"}  # the default panel-duo
 
 
 def test_judge_prefers_json_capable_model() -> None:

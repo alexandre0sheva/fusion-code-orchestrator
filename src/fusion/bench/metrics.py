@@ -32,6 +32,9 @@ class BenchMetrics(BaseModel):
     retries: int
     critical_path_ms: float  # when the last call finished, on the run's own clock
     cache_hits: int = 0  # calls replayed from the response cache (billed at zero)
+    # What those replayed calls would have cost at the price list. Another arm paid for them, so
+    # they are free to this run but not to its strategy: ``full_cost_usd`` is the strategy's cost.
+    replayed_cost_usd: float = 0.0
     # False when part of the run was replayed from the cache: its wall time is then not a
     # measurement of the arm's speed (per-call speed fields still are).
     latency_valid: bool = True
@@ -78,6 +81,7 @@ def build_metrics(
         retries=base.retries,
         critical_path_ms=base.critical_path_ms,
         cache_hits=cache_hits,
+        replayed_cost_usd=sum(r.list_cost_usd or 0.0 for r in counted if r.cache_hit),
         latency_valid=cache_hits == 0,
         quality=quality,
         solved=solved,

@@ -8,10 +8,37 @@ Claude Code stays the coding agent. Fusion is an advisor: it takes a diff, an er
 question or a feature request, asks a panel of cheap models in parallel, merges their answers, and
 returns the result with token, cost and latency telemetry. It never edits files or runs commands.
 
-> **Status: v0.1.0, alpha.** Fusion measures its own cost against a baseline model, but the claim
-> "a cheap panel is as good as a frontier model" is not yet proven against ground truth. A
-> benchmark mode that tests exactly that is the focus of 0.2.0; see the
-> [roadmap](docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md).
+> **Status: v0.2.0 in progress, alpha.** The question "can a cheap panel match a frontier model?"
+> now has a measured answer, below, and it is more modest than the pitch. The rest of the 0.2.0 work
+> is in the [roadmap](docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md).
+
+## Does a cheap panel match a frontier model?
+
+On 34 held-out tasks with ground truth (code review, debugging, architecture, planning, coding,
+frontend, performance), 2 repeats each, $9.61 of live API spend:
+
+| | Quality (95% CI) | Cost per solved task | Median seconds |
+|---|---|---|---|
+| Claude Opus 5.5 alone | 0.64 [0.53, 0.74] | $0.119 | 19.8 |
+| GPT-6.1 Sol alone | 0.65 [0.54, 0.76] | $0.030 | 34.0 |
+| Claude Haiku 4.5 alone | 0.58 [0.46, 0.70] | $0.029 | 15.5 |
+| GPT-6 Luna alone | 0.64 [0.52, 0.75] | $0.001 | 12.3 |
+| **Fusion `panel-duo` (default)** | 0.67 [0.53, 0.80] | $0.036 | 30.4 |
+| Fusion `panel-cheap` (three models) | 0.66 [0.52, 0.79] | $0.049 | 32.2 |
+
+![Quality against cost per task](docs/assets/benchmark-cost-quality.svg)
+
+- **Cheaper: yes.** Fusion costs about 0.3x Opus per solved task (interval 0.21 to 0.41).
+- **Faster: no.** It is about 1.5x slower, because it waits for several models and then merges.
+- **Better or not worse than Opus: the study cannot tell.** The quality difference is +0.03 with
+  an interval of about plus or minus 0.12, wider than the 0.03 margin. Nothing separates any of the
+  arms on quality, and a single cheap model (Luna) scored as well as the panel at about 1/30 of its
+  cost. So far the panel's case rests on cost against a frontier model, not on beating a cheap one.
+
+Small, synthetic and LLM-judged in part: read the limitations before quoting a number.
+Everything, with the method and the unedited verdicts, is in
+[docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) and the
+[interactive report](docs/benchmark-report.html).
 
 ## What Fusion is and is not
 

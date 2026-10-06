@@ -15,6 +15,8 @@ from fusion.providers.mock import MockProvider
 from fusion.routing.classifier import TaskType
 from fusion.telemetry.cost import PricingRegistry
 
+pytestmark = pytest.mark.usefixtures("three_model_default")
+
 SECRET = "sk-ant-api03-" + "B" * 40
 
 

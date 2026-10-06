@@ -20,6 +20,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from fusion.config.layers import ConfigError, format_validation_error, resolve_config
+from fusion.config.loader import EarlyReturn
 from fusion.routing.budget import BudgetLevel
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ __all__ = [
     "MODE_SETTINGS",
     "BenchmarkOnlyError",
     "CascadeSpec",
+    "FanoutOverride",
     "Mode",
     "ModeSettings",
     "PanelMember",
@@ -131,6 +133,16 @@ class CascadeSpec(BaseModel):
     escalate_on_high_risk: bool = True
 
 
+class FanoutOverride(BaseModel):
+    """Latency controls of the panel fan-out that one strategy sets for itself, on top of the
+    routing policy's ``fanout`` section (only the fields set here change)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    early_return: EarlyReturn | None = None  # stop waiting for stragglers shortly after quorum
+    hedge_after_ms: float | None = Field(default=None, gt=0)  # ask another model when one is slow
+
+
 class Strategy(BaseModel):
     """A declarative arm: members, rounds, aggregation, judging and caps."""
 
@@ -150,6 +162,7 @@ class Strategy(BaseModel):
     max_cost_usd: float | None = Field(default=None, gt=0)
     max_latency_s: float | None = Field(default=None, gt=0)
     cascade: CascadeSpec | None = None
+    fanout: FanoutOverride | None = None  # this strategy's latency controls (see FanoutOverride)
 
     @model_validator(mode="after")
     def _consistent(self) -> Strategy:

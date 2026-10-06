@@ -37,6 +37,8 @@ from fusion.routing.budget import PlannedCall, estimate_tokens, forecast_calls
 from fusion.routing.model_registry import ModelRegistry
 from fusion.telemetry.cost import PricingRegistry
 
+pytestmark = pytest.mark.usefixtures("three_model_default")
+
 TOKENS = estimate_tokens(PROMPT)
 CATALOG = priced_catalog()
 PRICING = PricingRegistry(CATALOG)

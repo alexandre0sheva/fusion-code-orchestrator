@@ -59,6 +59,9 @@ class CallRecord(BaseModel):
     retries: int = 0
     trimmed: bool = False
     cache_hit: bool = False  # replayed from a response cache: free, with its original latency
+    # What the call costs at the price list, whether or not it was billed: equals ``cost_usd``,
+    # except for a cache replay, which is billed at zero but is part of what its strategy costs.
+    list_cost_usd: float | None = None
 
     def to_usage(self) -> ModelUsage:
         total = None
@@ -365,12 +368,16 @@ class CallGateway:
         trimmed: bool = False,
     ) -> ModelResponse:
         response.model_alias = alias
-        if status == "missing_provider" or response.cache_hit:
+        list_cost: float | None = 0.0
+        if status == "missing_provider":
             cost_usd: float | None = 0.0  # nothing was sent, so nothing was billed
             cost_known, cost_is_estimate = True, False
         else:
             cost = self.pricing.estimate_response_cost(response, entry)
             cost_usd, cost_known, cost_is_estimate = cost.amount_usd, cost.known, cost.is_estimate
+            list_cost = cost.amount_usd
+            if response.cache_hit:  # replayed: nothing was billed, but the price is recorded
+                cost_usd, cost_known, cost_is_estimate = 0.0, True, False
         self.ledger.add(
             CallRecord(
                 stage=stage,
@@ -397,6 +404,7 @@ class CallGateway:
                 retries=response.retries,
                 trimmed=trimmed,
                 cache_hit=response.cache_hit,
+                list_cost_usd=list_cost,
             )
         )
         return response

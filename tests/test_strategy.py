@@ -182,6 +182,7 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "solo-sol",
         "solo-cheap",
         "solo-luna",
+        "panel-duo",
         "panel-cheap",
         "panel-cheap-strong-synth",
         "panel-refine",
@@ -251,7 +252,7 @@ def test_user_config_can_override_one_field_or_add_a_strategy(fusion_home: Path)
     assert len(book.get("panel-cheap").members) == 3  # untouched fields keep their defaults
     assert book.get("mine").name == "mine"
     assert book.for_budget(BudgetLevel.LOW).name == "mine"
-    assert book.for_budget(BudgetLevel.MEDIUM).name == "panel-cheap"
+    assert book.for_budget(BudgetLevel.MEDIUM).name == "panel-duo"
 
 
 def test_invalid_user_strategy_reports_key_value_and_layer(
@@ -321,12 +322,12 @@ async def test_budget_levels_resolve_to_strategies_and_an_explicit_strategy_wins
     explicit = await pipe.run(_ctx(budget=BudgetLevel.HIGH, strategy="solo-luna"))
     assert [r.routing.strategy for r in (low, medium, high, explicit)] == [
         "solo-cheap",
-        "panel-cheap",
+        "panel-duo",
         "panel-refine",
         "solo-luna",
     ]
     assert _stages(low) == ["panel"]
-    assert _stages(medium).count("panel") == 3 and "refine" not in _stages(medium)
+    assert _stages(medium).count("panel") == 2 and "refine" not in _stages(medium)  # panel-duo
     assert _stages(high).count("refine") == 3
     assert _stages(explicit) == ["panel"]
 
@@ -371,7 +372,7 @@ async def test_rounds_set_the_number_of_refinement_rounds(
 
 
 async def test_judge_level_controls_judge_calls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, three_model_default: None
 ) -> None:
     off = await _pipeline(tmp_path).run(_ctx())
     assert "judge" not in _stages(off)
@@ -580,7 +581,7 @@ def test_cli_strategies_list_shows_every_strategy_and_budget_alias() -> None:
     as_json = CliRunner().invoke(app, ["strategies", "list", "--json"])
     rows = yaml.safe_load(as_json.output)
     by_name = {row["name"]: row for row in rows}
-    assert by_name["panel-cheap"]["budgets"] == ["medium"]
+    assert by_name["panel-duo"]["budgets"] == ["medium"]
     assert by_name["solo-cheap"]["members"][0]["model"] == "claude-haiku"
 
 

@@ -39,6 +39,8 @@ from fusion.routing.classifier import TaskType
 from fusion.routing.policy import Router
 from fusion.telemetry.cost import PricingRegistry
 
+pytestmark = pytest.mark.usefixtures("three_model_default")
+
 REVIEW = (
     "diff --git a/app/db.py b/app/db.py\n--- a/app/db.py\n+++ b/app/db.py\n"
     '@@ -1 +1,2 @@\n+cursor.execute(f"SELECT * FROM t WHERE id={uid}")\n'

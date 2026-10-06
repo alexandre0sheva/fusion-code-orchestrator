@@ -3,11 +3,12 @@ and charts are the report's job; these are plain means and percentiles of what w
 
 from __future__ import annotations
 
-import math
 from statistics import fmean
 
 from pydantic import BaseModel
 
+from fusion.bench.costing import full_cost_usd
+from fusion.bench.stats import percentile
 from fusion.bench.store import BenchItem
 
 __all__ = ["ArmSummary", "summarize"]
@@ -32,13 +33,6 @@ class ArmSummary(BaseModel):
     cache_hits: int
 
 
-def _percentile(values: list[float], q: float) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    return ordered[max(math.ceil(q * len(ordered)) - 1, 0)]  # nearest rank
-
-
 def _mean(values: list[float]) -> float | None:
     return fmean(values) if values else None
 
@@ -52,7 +46,7 @@ def summarize(items: list[BenchItem]) -> list[ArmSummary]:
     for arm, group in arms.items():
         scored = [i for i in group if i.metrics.quality is not None]
         solved = sum(1 for i in scored if i.metrics.solved)
-        total_cost = sum(i.metrics.cost_usd for i in group)
+        total_cost = sum(full_cost_usd(i) for i in group)
         timed = [i.metrics.seconds_to_complete for i in group if i.metrics.latency_valid]
         rates = [
             i.metrics.output_tokens_per_s
@@ -74,8 +68,8 @@ def summarize(items: list[BenchItem]) -> list[ArmSummary]:
                 eval_cost_usd=sum(i.metrics.eval_cost_usd for i in group),
                 mean_eval_cost_usd=_mean([i.metrics.eval_cost_usd for i in group]),
                 mean_eval_seconds=_mean([i.metrics.eval_seconds for i in group]),
-                seconds_p50=_percentile(timed, 0.5),
-                seconds_p90=_percentile(timed, 0.9),
+                seconds_p50=percentile(timed, 0.5),
+                seconds_p90=percentile(timed, 0.9),
                 output_tokens_per_s=_mean(rates),
                 mean_calls=_mean([float(i.metrics.calls) for i in group]),
                 cache_hits=sum(i.metrics.cache_hits for i in group),

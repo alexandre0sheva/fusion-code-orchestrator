@@ -1,0 +1,30 @@
+# Does returning early or hedging a slow model pay off? Wall time is the measurement, so the
+# response cache is off (a replayed call has no real latency) and every arm is the cheap panel
+# with only its latency controls changed. (The judge's effect on latency, `judge_feeds_synthesis`,
+# is not measured here: a judge call costs as much as another panelist, so it is left out of the
+# budget; add judge-waits and judge-parallel arms for a bigger study.)
+#
+#   fusion bench run --suite latency --max-usd 1.2
+description: >-
+  The cheap panel with early return, hedging and a cascade, on a
+  small dev subset with the response cache off (latency budget: about $1.20).
+stage: tune on dev
+dataset: v1
+split: dev
+quota: {code_review: 3, debugging: 3, architecture: 1, planning: 2}
+repeats: 1
+seed: 0
+max_usd: 1.2
+spend_stop_usd: 18.0
+concurrency: 4
+cache: false
+judge_models: []
+arms:
+  - {name: wait-for-all, strategy: panel-cheap}
+  - name: early-return
+    strategy: panel-cheap
+    overrides: {fanout: {early_return: {quorum: 2, grace_ms: 1500}}}
+  - name: hedged
+    strategy: panel-cheap
+    overrides: {fanout: {hedge_after_ms: 8000}}
+  - {name: cascade, strategy: panel-cascade}

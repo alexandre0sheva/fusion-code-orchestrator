@@ -1,0 +1,64 @@
+# Ablations: which design choice buys quality, and at what cost. Dev split only (this is where the
+# cascade threshold, the panel and the synthesizer are tuned; the test split is not touched).
+# Every arm is the cheap panel with one thing changed, so the differences between arms are the
+# effect of that one thing. Baseline for `fusion bench report --baseline size-3`: the default panel.
+#
+#   fusion bench plan --suite ablation          what it would cost, as a range
+#   fusion bench run  --suite ablation --max-usd 6
+description: >-
+  Panel size, refinement, synthesizer, the cascade threshold and self-mixtures of one
+  model, on a small stratified subset of the dev split (about $4.80 of the $6 tuning budget; the latency suite takes the rest).
+stage: tune on dev
+dataset: v1
+split: dev
+# 15 tasks: every category, with the executable, frontend and performance ones in smaller numbers.
+quota: {code_review: 3, debugging: 3, architecture: 2, planning: 3, coding: 2, frontend: 1, performance: 1}
+repeats: 1
+seed: 0
+max_usd: 4.8
+spend_stop_usd: 18.0   # the $20 roadmap cap keeps a $2 reserve
+concurrency: 8
+# Rubric items the keywords cannot decide go to a cheap judge. Every vendor is in the panels, so
+# no judge is cross-family with every arm; the agentic judge of frontend and performance tasks
+# then has nobody eligible and those tasks keep their measured scores (tests, timings, gates).
+judge_models: [gpt-luna]
+arms:
+  # --- panel size, heterogeneous (Haiku, Luna, Flash, then two more samples) ---
+  - {name: size-3, strategy: panel-cheap}            # the default; refinement off, cheap synthesizer
+  - {name: size-1, strategy: solo-cheap}
+  - name: size-2
+    strategy: panel-cheap
+    overrides: {members: [{model: claude-haiku}, {model: gpt-luna}]}
+  - name: size-5
+    strategy: panel-cheap
+    overrides:
+      members:
+        - {model: claude-haiku}
+        - {model: gpt-luna}
+        - {model: gemini-flash}
+        - {model: gpt-luna-security}
+        - {model: claude-haiku-s2, temperature: 0.7}
+  # --- refinement and synthesizer ---
+  - {name: refine-on, strategy: panel-refine}
+  - {name: synth-strong, strategy: panel-cheap-strong-synth}
+  # --- the cascade's agreement threshold (default 0.7); add 0.6, 0.8, 0.9 if budget remains ---
+  - {name: cascade-0.5, strategy: panel-cascade, overrides: {cascade: {agreement_threshold: 0.5}}}
+  - {name: cascade-0.7, strategy: panel-cascade}
+  # --- homogeneous self-mixtures: one model asked three times, merged by itself ---
+  # Haiku varies by temperature; Luna ignores sampling parameters, so it varies by reasoning effort.
+  - name: self-haiku
+    strategy: panel-cheap
+    overrides:
+      members:
+        - {model: claude-haiku, temperature: 0.3}
+        - {model: claude-haiku-s2, temperature: 0.7}
+        - {model: claude-haiku-s3, temperature: 1.0}
+      aggregator_model: claude-haiku
+  - name: self-luna
+    strategy: panel-cheap
+    overrides:
+      members:
+        - {model: gpt-luna, reasoning_effort: low}
+        - {model: gpt-luna-s2, reasoning_effort: medium}
+        - {model: gpt-luna-s3, reasoning_effort: high}
+      aggregator_model: gpt-luna

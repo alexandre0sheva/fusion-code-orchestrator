@@ -49,11 +49,23 @@ strategies:
 
   panel-cheap:
     kind: panel
-    description: Three cheap models from three vendors, merged by a cheap synthesizer. The default.
+    description: Three cheap models from three vendors, merged by a cheap synthesizer.
     members:
       - model: claude-haiku
       - model: gpt-luna
       - model: gemini-flash
+    aggregator: llm
+    aggregator_model: claude-haiku
+
+  panel-duo:
+    kind: panel
+    description: >-
+      Claude Haiku 4.5 and GPT-6 Luna, merged by Haiku. The default: in the v0.2.0 study it scored
+      as well as the three-model panel at about 30% lower cost per solved task (within noise; see
+      docs/BENCHMARK_RESULTS.md). Two models means no spare: if one fails there is no quorum.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
     aggregator: llm
     aggregator_model: claude-haiku
 
@@ -131,6 +143,6 @@ strategies:
 # The legacy `budget` argument of the tools resolves to a strategy through this table.
 budget_strategies:
   low: solo-cheap
-  medium: panel-cheap
+  medium: panel-duo
   high: panel-refine
   local_only: panel-local

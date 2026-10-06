@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import random
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -558,6 +558,21 @@ class BenchConfig(BaseModel):
     # Which part of a dev/test dataset to use. ``dev`` (the default) never touches the held-out
     # ``test`` tasks; ``all`` is for the final study. Tasks without a split are always used.
     split: Literal["dev", "test", "all"] = "dev"
+    # Tasks to use per category (a seeded sample of each); categories not listed are left out.
+    # With ``limit`` as well, ``limit`` then thins the result evenly across categories.
+    quota: dict[Category, int] = Field(default_factory=dict)
+    # Stop before cumulative live spend would pass this (the roadmap-wide cap minus a reserve);
+    # ``None``: the ledger's own cap.
+    spend_stop_usd: float | None = Field(default=None, gt=0)
+
+    @field_validator("quota")
+    @classmethod
+    def _positive_quota(cls, quota: dict[Category, int]) -> dict[Category, int]:
+        bad = sorted(c for c, n in quota.items() if n < 1)
+        if bad:
+            msg = f"quota counts must be at least 1; check: {', '.join(bad)}"
+            raise ValueError(msg)
+        return quota
 
     @field_validator("arms")
     @classmethod
@@ -678,14 +693,30 @@ def task_hash(task: BenchTask) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-def select_tasks(tasks: list[BenchTask], limit: int | None, seed: int = 0) -> list[BenchTask]:
+def select_tasks(
+    tasks: list[BenchTask],
+    limit: int | None,
+    seed: int = 0,
+    quota: Mapping[Category, int] | None = None,
+) -> list[BenchTask]:
     """``limit`` tasks spread across categories (round robin over a seeded shuffle).
 
-    The result keeps the dataset's order, so the same limit and seed always pick the same tasks.
+    ``quota`` first takes that many tasks of each category it names (a seeded sample; fewer if the
+    category has fewer) and drops the other categories. The result keeps the dataset's order, so
+    the same arguments always pick the same tasks.
     """
+    rng = random.Random(f"select-tasks:{seed}")  # noqa: S311 — reproducible sampling, not security
+    if quota:
+        by_cat: dict[str, list[BenchTask]] = {}
+        for task in tasks:
+            by_cat.setdefault(task.category, []).append(task)
+        taken: set[str] = set()
+        for category, count in sorted(quota.items()):
+            pool = by_cat.get(category, [])
+            taken.update(t.id for t in rng.sample(pool, min(count, len(pool))))
+        tasks = [t for t in tasks if t.id in taken]
     if limit is None or limit >= len(tasks):
         return list(tasks)
-    rng = random.Random(f"select-tasks:{seed}")  # noqa: S311 — reproducible sampling, not security
     by_category: dict[str, list[BenchTask]] = {}
     for task in tasks:
         by_category.setdefault(task.category, []).append(task)
