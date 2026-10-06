@@ -69,8 +69,10 @@ class PipelineResult:
     cascade: CascadeOutcome | None = None
     budget: BudgetReport | None = None
     cache_hit: bool = False  # served from the response cache: no model was called
-    # Why the run stopped early: insufficient_context, quorum or budget.
+    # Why the run stopped early: insufficient_context, quorum, budget or timeout.
     halt_reason: str | None = None
+    # Built from the panel's answers alone because the soft time limit passed first.
+    partial: bool = False
 
     @property
     def mode_settings(self) -> ModeSettings:

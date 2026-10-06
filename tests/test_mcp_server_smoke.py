@@ -35,11 +35,12 @@ async def test_fusion_ask_round_trip_with_mock_provider(tmp_path: Path) -> None:
             "fusion_ask",
             {"input": {"prompt": "How should I retry a failed HTTP call?", "context": "httpx"}},
         )
-    data = result.data
-    assert isinstance(data, dict)
+    data = result.structured_content
+    assert data is not None
     assert data["run_id"]
-    assert "display_markdown" in data
-    assert "usage" in data
+    assert data["display_markdown"] == result.content[0].text  # type: ignore[union-attr]
+    assert data["details_uri"] == f"fusion://runs/{data['run_id']}"
+    assert "usage" not in data  # compact: the breakdown stays in the stored run
 
 
 async def test_mock_env_never_reaches_real_providers(
@@ -50,7 +51,15 @@ async def test_mock_env_never_reaches_real_providers(
     server = create_mcp_server(db_path=str(tmp_path / "runs.db"))
     async with Client(server) as client:
         result = await client.call_tool(
-            "fusion_ask", {"input": {"prompt": "Explain idempotent retries", "context": "http"}}
+            "fusion_ask",
+            {
+                "input": {
+                    "prompt": "Explain idempotent retries",
+                    "context": "http",
+                    "detail": "full",
+                }
+            },
         )
-    providers = {call["provider"] for call in result.data["usage"]["per_model"]}
+    assert result.structured_content is not None
+    providers = {call["provider"] for call in result.structured_content["usage"]["per_model"]}
     assert providers == {"mock"}

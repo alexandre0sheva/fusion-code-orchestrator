@@ -511,10 +511,12 @@
     ],
     "warnings": []
   },
+  "halt_reason": null,
   "minimal_fix_strategy": "Increase pool size and add connection timeout logging",
   "most_likely_causes": [
     "Connection pool exhaustion under load"
   ],
+  "partial": false,
   "ranked_hypotheses": [
     {
       "confidence": 0.8,

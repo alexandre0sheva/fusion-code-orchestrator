@@ -498,9 +498,11 @@
     ],
     "warnings": []
   },
+  "halt_reason": null,
   "missing_points": [
     "No rollback strategy mentioned"
   ],
+  "partial": false,
   "result": {
     "confidence": 0.3312,
     "missing_points": [

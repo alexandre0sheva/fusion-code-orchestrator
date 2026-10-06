@@ -1,0 +1,16 @@
+{
+  "name": "fusion-code-orchestrator",
+  "description": "Fusion: a panel of cheap models that advises Claude Code on review, debugging, architecture and planning.",
+  "owner": {
+    "name": "Oleksandr Shevchenko"
+  },
+  "plugins": [
+    {
+      "name": "fusion",
+      "source": "./plugin",
+      "description": "Slash commands, skills, a subagent and the Fusion MCP server (started with uvx, no clone needed).",
+      "category": "development",
+      "tags": ["code-review", "debugging", "planning"]
+    }
+  ]
+}

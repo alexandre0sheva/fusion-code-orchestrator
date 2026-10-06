@@ -1,21 +1,15 @@
 ---
 name: fusion-decide
-description: Use for architecture trade-off decisions. Invokes fusion_decide_architecture for structured option analysis.
+description: Use before committing to a hard-to-reverse design choice with several viable options (storage, queue, framework, service boundaries). Do not use for choices that are easy to reverse or that project conventions already settle.
+user-invocable: false
 ---
 
-# Fusion Architecture Decisions
+# Fusion decide
 
-Use `fusion_decide_architecture` when choosing between approaches with real trade-offs.
+Call `fusion_decide_architecture` with the decision in `question`, the candidates in `options`,
+`constraints` (scale, team, deadline, existing stack) and a short `context` description of the
+system.
 
-## Input checklist
-
-- `question` — the decision to make (required)
-- `options` — list of options under consideration
-- `constraints` — requirements, SLAs, team constraints
-- `context` — current system context
-
-## Output
-
-Returns: `recommended_option`, `tradeoffs`, `rejected_options`, `risks`, `reversibility`, `migration_plan`, `test_strategy`, `confidence`, `evals`, `run_id`.
-
-Not for trivial choices — use your judgment for obvious decisions.
+Present the recommended option with its tradeoffs, risks, reversibility and migration steps, and
+say where you disagree with the panel. A recommendation from cheap models is an input to the
+decision, not the decision.

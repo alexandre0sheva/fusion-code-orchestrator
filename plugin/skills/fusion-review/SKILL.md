@@ -1,21 +1,18 @@
 ---
 name: fusion-review
-description: Use when reviewing non-trivial code diffs. Invokes fusion_review_diff for multi-model code review with structured findings.
+description: Use before committing or merging a non-trivial or security-sensitive diff, or to get an independent check of your own patch. Do not use for typo, formatting, comment-only or one-line changes; review those yourself.
+user-invocable: false
 ---
 
-# Fusion Review
+# Fusion review
 
-Use `fusion_review_diff` for multi-model code review when the change is non-trivial or security-sensitive.
+Call `fusion_review_diff` with:
 
-## Input checklist
+- `diff`: the unified diff (`git diff HEAD`)
+- `changed_files`: the changed paths
+- `goals`: what to focus on, such as security, concurrency or test gaps
+- `context`: what the project is and what the change is for, in a few lines
 
-- `diff` — the git diff or patch (required)
-- `changed_files` — list of changed paths when known
-- `repo_context` — brief project/stack context
-- `goals` — what to focus on (security, performance, tests)
-
-## Output
-
-Returns structured JSON: `summary`, `critical_findings`, `recommended_changes`, `test_plan`, `consensus`, `disagreements`, `confidence`, `evals`, `routing`, `run_id`.
-
-Do not use for trivial formatting or single-line fixes — review those directly.
+Check every finding against the code before reporting it. Findings several models report
+independently are the strongest; single-model findings may be false positives. Report critical
+findings first and say which you confirmed. Fusion reviews text only: it cannot run the tests.

@@ -24,7 +24,7 @@ Quality gate before saying a task is done: pytest, ruff and mypy all pass.
 `factory`), fanout, refine, synthesis, prompts · `providers/` direct API adapters + mock · `routing/` classifier, registry, policy, budget ·
 `evals/` judge + deterministic checks · `benchmark/` shadow A/B and legacy compare · `bench/` studies (`fusion bench`) · `telemetry/`
 cost and usage · `storage/` SQLite · `config/` YAML + env · `security/` redaction · `cli/` Typer app.
-Also: `plugin/` Claude Code plugin, `evals/` datasets and runners, `tests/`.
+Also: `plugin/` Claude Code plugin, `install/` client installers (`fusion install`), `evals/` datasets and runners, `tests/`.
 
 ## Conventions
 
@@ -45,7 +45,7 @@ copying paragraphs. Read the docs-contract table in `CONTRIBUTING.md` before edi
 
 Everything in the roadmap ships as 0.2.0. Add one line per user-visible change under
 `## [0.2.0] - Unreleased` in `CHANGELOG.md` (rules in `CONTRIBUTING.md`). Bump `pyproject.toml`
-and `plugin/plugin.json` versions only in the release task.
+and `plugin/.claude-plugin/plugin.json` versions only in the release task.
 
 ## Git
 

@@ -300,10 +300,15 @@ async def test_a_cascade_runs_through_the_mcp_tool(tmp_path: Path) -> None:
 
     server = create_mcp_server(db_path=str(tmp_path / "runs.db"))
     async with Client(server) as client:
-        arguments = {"prompt": "How do I retry an HTTP call?", "strategy": "panel-cascade"}
+        arguments = {
+            "prompt": "How do I retry an HTTP call?",
+            "strategy": "panel-cascade",
+            "detail": "full",
+        }
         result = await client.call_tool("fusion_ask", {"input": arguments})
-    assert result.data["routing"]["strategy"] == "panel-cascade"
-    assert any(r.startswith("Cascade:") for r in result.data["routing"]["reasons"])
+    routing = result.structured_content["routing"]
+    assert routing["strategy"] == "panel-cascade"
+    assert any(r.startswith("Cascade:") for r in routing["reasons"])
 
 
 def test_the_command_line_can_run_a_cascade_and_list_it(tmp_path: Path) -> None:

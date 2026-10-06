@@ -216,6 +216,8 @@ class ResultPresenter:
             "usage": usage,
             "cost_comparison": cost_comparison,
             "warnings": result.warnings,
+            "partial": result.partial,
+            "halt_reason": result.halt_reason,
         }
 
     # -- display ---------------------------------------------------------------------------

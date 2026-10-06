@@ -1,9 +1,22 @@
-# Fusion Code Orchestrator — Claude Code Plugin
+# Fusion: Claude Code plugin
 
-Adds Fusion's multi-model panel to Claude Code through a local Python MCP server. Fusion is
-side-effect free inside MCP: Claude Code applies edits and runs commands itself.
+Adds Fusion's panel of cheap models to Claude Code: slash commands, skills that say when to call
+it, a `fusion-advisor` subagent, and the MCP server (started with `uvx`, no clone needed). Fusion
+returns text only; Claude Code applies edits and runs commands itself.
 
-- **Setup and tool reference:** [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.md)
-- **Skills:** `fusion-orchestrator`, `fusion-plan`, `fusion-review`, `fusion-debug`, `fusion-decide`, `fusion-eval`
-- **Commands:** `/fusion-plan`, `/fusion-review`, `/fusion-debug`, `/fusion-decide`, `/fusion-eval`, `/fusion-ab`
-- **Manifest:** `plugin.json` (registers the MCP server `uv run fusion mcp`)
+```text
+plugin/
+  .claude-plugin/plugin.json   manifest (name `fusion`, so commands are /fusion:*)
+  .mcp.json                    the server: uvx --python ">=3.12" --managed-python --from git+<repo> fusion mcp
+  commands/                    /fusion:ask review debug plan decide eval stats bench ab
+  skills/                      fusion-orchestrator, fusion-review, -debug, -decide, -plan, -eval
+  agents/fusion-advisor.md     returns a short verdict; can read files and call Fusion only
+```
+
+The marketplace entry that lets `/plugin marketplace add alexandre0sheva/fusion-code-orchestrator`
+find it is `../.claude-plugin/marketplace.json`.
+
+- **Install, keys, options, smoke test, troubleshooting:** [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.md#claude-code)
+- **Tool reference:** [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.md#mcp-tool-reference)
+- **Try it without installing:** `claude --plugin-dir ./plugin`
+- **Check the manifests:** `claude plugin validate ./plugin` and `claude plugin validate .`

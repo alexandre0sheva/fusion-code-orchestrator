@@ -50,9 +50,10 @@ def test_installed_version_matches_pyproject() -> None:
 
 
 def test_plugin_manifest_version_matches_pyproject() -> None:
-    manifest = json.loads((ROOT / "plugin" / "plugin.json").read_text(encoding="utf-8"))
+    path = ROOT / "plugin" / ".claude-plugin" / "plugin.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
     assert manifest["version"] == _pyproject_version(), (
-        "plugin/plugin.json version drifted from pyproject.toml; bump both together"
+        "plugin/.claude-plugin/plugin.json version drifted from pyproject.toml; bump both together"
     )
 
 

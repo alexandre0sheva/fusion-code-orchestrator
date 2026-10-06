@@ -11,9 +11,10 @@ from fusion.orchestration.cache import ResponseCache, request_key
 from fusion.orchestration.context import PipelineContext, PipelineDeps, RunState
 from fusion.orchestration.ledger import RunLedger
 from fusion.orchestration.output import ResultPresenter
+from fusion.orchestration.progress import report as report_progress
 from fusion.orchestration.result import PipelineResult
 from fusion.orchestration.schemas import CostLatencyInfo, Detail
-from fusion.orchestration.stages import Stage, default_stages
+from fusion.orchestration.stages import SoftTimeoutRecovery, Stage, default_stages
 from fusion.orchestration.strategy import Mode
 from fusion.providers.base import ModelProvider
 from fusion.routing.classifier import TaskType
@@ -36,6 +37,9 @@ class BasePipeline:
     """Shared multi-model orchestration engine, composed from stages."""
 
     task_type: TaskType = TaskType.DEFAULT
+    # Seconds after which a real-mode run stops waiting for models and returns what the panel has
+    # produced (the MCP server sets it from FUSION_TOOL_SOFT_TIMEOUT_S); None means no limit.
+    soft_timeout_s: float | None = None
 
     def __init__(
         self,
@@ -96,17 +100,39 @@ class BasePipeline:
         key = self._cache_key(state) if mode is Mode.REAL else None
         if key is not None and (hit := self._cache.get(key)) is not None:
             return hit
+        soft = self.soft_timeout_s if mode is Mode.REAL else None
+        deadline = asyncio.get_running_loop().time() + soft if soft else None
+        state.soft_limit_s = soft or 0.0
         try:
             for stage in self._stages:
                 if state.halted and not stage.always_runs:
                     continue
-                state = await stage.run(state)
+                if state.partial and not stage.always_runs:
+                    continue  # the answer is final; the shadow comparison would only delay it
+                if label := getattr(stage, "label", None):
+                    await report_progress(label)
+                state = await self._run_stage(stage, state, deadline)
         finally:
             await _stop_background(state)
         assert state.result is not None, "the final stage must produce a result"
-        if key is not None and not state.halted:
+        if key is not None and not state.halted and not state.partial:
             self._cache.put(key, state.result)
         return state.result
+
+    async def _run_stage(self, stage: Stage, state: RunState, deadline: float | None) -> RunState:
+        """Run one stage; a stage under the soft time limit that overruns it is cut short and the
+        run is finished from what it has (``SoftTimeoutRecovery``)."""
+        if deadline is None or not getattr(stage, "soft_limited", False):
+            return await stage.run(state)
+        limit = asyncio.timeout_at(deadline)
+        try:
+            async with limit:
+                return await stage.run(state)
+        except TimeoutError:
+            if not limit.expired():
+                raise
+        await report_progress("soft time limit reached; returning what the panel has")
+        return await SoftTimeoutRecovery(self.deps).run(state)
 
     def _cache_key(self, state: RunState) -> str | None:
         """The response-cache key of this run, or None when the cache is off."""

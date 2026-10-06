@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from typing import Any
 
 from fusion.config.env import is_test_mode
@@ -108,6 +110,35 @@ def _format_compare_markdown(
     )
 
 
+SOFT_TIMEOUT_ENV = "FUSION_TOOL_SOFT_TIMEOUT_S"
+DEFAULT_SOFT_TIMEOUT_S = 90.0
+
+
+def soft_timeout_from_env() -> float | None:
+    """Seconds a tool call may take before it returns the panel's digest; None disables it.
+
+    ``FUSION_TOOL_SOFT_TIMEOUT_S`` sets it (default 90); 0, ``off`` or ``none`` turn it off. An
+    unusable value is reported on stderr and the default applies.
+    """
+    raw = os.environ.get(SOFT_TIMEOUT_ENV, "").strip().lower()
+    if not raw:
+        return DEFAULT_SOFT_TIMEOUT_S
+    if raw in {"0", "off", "none", "false"}:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if value < 0:
+        print(
+            f"fusion: ignoring {SOFT_TIMEOUT_ENV}={raw!r} (use seconds, or 0 to turn it off); "
+            f"using {DEFAULT_SOFT_TIMEOUT_S:.0f}",
+            file=sys.stderr,
+        )
+        return DEFAULT_SOFT_TIMEOUT_S
+    return value or None
+
+
 class FusionTools:
     """Handlers for fusion MCP tools."""
 
@@ -138,6 +169,16 @@ class FusionTools:
         self._answer_eval = answer_eval or pipelines["answer_eval"]
         self._db_path = db_path
         self._use_mock = use_mock
+        soft_timeout = soft_timeout_from_env()
+        for pipeline in (
+            self._code_review,
+            self._ask,
+            self._debug,
+            self._architecture,
+            self._plan,
+            self._answer_eval,
+        ):
+            pipeline.soft_timeout_s = soft_timeout
 
     async def aclose(self) -> None:
         """Close provider HTTP clients and the run database; call when the host shuts down."""
@@ -152,8 +193,9 @@ class FusionTools:
                 context=input.context,
                 file_snippets=input.file_snippets,
                 changed_files=input.changed_files,
-                budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
+                max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
@@ -168,10 +210,12 @@ class FusionTools:
             PipelineCodeReviewInput(
                 diff=input.diff,
                 changed_files=input.changed_files,
-                repo_context=input.repo_context or input.repo_summary,
+                repo_context=input.context,
+                file_snippets=input.file_snippets,
                 goals=input.goals,
-                budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
+                max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
@@ -182,15 +226,20 @@ class FusionTools:
 
     async def fusion_debug_error(self, input: DebugErrorInput) -> dict[str, Any]:
         """Debug an error using multi-model orchestration."""
+        error = input.error_message
+        if input.stack_trace:
+            error += f"\n\nStack trace:\n{input.stack_trace}"
         result = await self._debug.debug(
             PipelineDebugInput(
-                error_message=input.error_message,
+                error_message=error,
                 logs=input.logs,
-                code_context=input.code_context or input.context,
+                code_context=input.context,
+                file_snippets=input.file_snippets,
                 recent_changes=input.recent_changes,
                 environment=input.environment,
-                budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
+                max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
             )
@@ -205,8 +254,10 @@ class FusionTools:
                 constraints=input.constraints,
                 options=input.options,
                 repo_context=input.context,
-                budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                file_snippets=input.file_snippets,
+                budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
+                max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
             )
@@ -221,8 +272,10 @@ class FusionTools:
                 constraints=input.constraints,
                 repo_context=input.context,
                 existing_patterns=input.existing_patterns,
-                budget=BudgetLevel(input.budget) if input.budget else BudgetLevel.MEDIUM,
+                file_snippets=input.file_snippets,
+                budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
+                max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
             )
@@ -240,6 +293,7 @@ class FusionTools:
                 answer=input.answer,
                 context=input.context,
                 rubric=rubric,
+                detail=input.detail,
             )
         )
         return result.model_dump()
@@ -252,6 +306,57 @@ class FusionTools:
             "display_markdown": format_stats_markdown(stats, recent),
             "result": stats_to_dict(stats, recent),
             "warnings": [],
+        }
+
+    def run_record(self, run_id: str) -> dict[str, Any]:
+        """One stored run: its answer, claims, per-call cost and warnings (not the input text)."""
+        record = self.run_store.get_run(run_id)
+        if record is None:
+            msg = f"No run '{run_id}'. Run ids come from the run_id field of a tool response."
+            raise ValueError(msg)
+        return {
+            "run_id": record.run_id,
+            "task_type": record.task_type,
+            "status": record.status,
+            "total_cost_usd": record.total_cost_usd,
+            "total_latency_ms": record.total_latency_ms,
+            "warnings": record.warnings,
+            "routing": record.routing,
+            "steps": [
+                {
+                    "step": s.step_name,
+                    "model": s.model_name,
+                    "provider": s.provider,
+                    "input_tokens": s.input_tokens,
+                    "output_tokens": s.output_tokens,
+                    "cost_usd": s.cost_usd,
+                    "latency_ms": s.latency_ms,
+                }
+                for s in record.steps
+            ],
+            "output": record.output_data,
+        }
+
+    def strategies_overview(self) -> dict[str, Any]:
+        """The strategies a call may name, and which one each budget preset means."""
+        book = self._code_review.deps.routing.strategies
+        return {
+            "budget_presets": dict(book.budget_map),
+            "strategies": [
+                {
+                    "name": s.name,
+                    "kind": s.kind,
+                    "description": s.description,
+                    "models": [m.model for m in s.members],
+                    "rounds": s.rounds,
+                    "aggregator": s.aggregator,
+                    "aggregator_model": s.aggregator_model,
+                    "judge": s.judge,
+                    "max_cost_usd": s.max_cost_usd,
+                    "max_latency_s": s.max_latency_s,
+                }
+                for s in (book.get(name) for name in book.names())
+            ],
         }
 
     async def fusion_compare_claude_runs(

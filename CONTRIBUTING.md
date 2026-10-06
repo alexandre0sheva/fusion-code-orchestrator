@@ -80,5 +80,5 @@ docs exist.
 
 `CHANGELOG.md` follows Keep a Changelog. Add one line per user-visible change under the unreleased
 version, in the matching heading (Added, Changed, Fixed, Removed, Security). Version numbers in
-`pyproject.toml` and `plugin/plugin.json` change only in the release commit; a test keeps them in
-sync.
+`pyproject.toml` and `plugin/.claude-plugin/plugin.json` change only in the release commit; a test
+keeps them in sync.

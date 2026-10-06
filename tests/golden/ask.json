@@ -499,6 +499,8 @@
     ],
     "warnings": []
   },
+  "halt_reason": null,
+  "partial": false,
   "raw_outputs": null,
   "result": {
     "answer": "Panel consensus on code quality (mock:<id>)",

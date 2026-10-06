@@ -61,6 +61,8 @@ class PipelineContext:
     strategy: str | None = None  # a strategy name wins over ``budget``
     max_models: int | None = None
     shadow_baseline: bool | None = None
+    # A hard cap for this run alone; the lower of it and the strategy's own cap applies.
+    max_cost_usd: float | None = None
     # Benchmark only: the answer is a code patch (an executable coding task), so synthesis must
     # merge the panel's patches into one.
     expects_patch: bool = False
@@ -90,7 +92,7 @@ class PipelineDeps:
 class Halt:
     """Why a run stopped early; the persist stage still produces a diagnostic result."""
 
-    reason: Literal["insufficient_context", "quorum", "budget"]
+    reason: Literal["insufficient_context", "quorum", "budget", "timeout"]
 
 
 @dataclass
@@ -147,6 +149,9 @@ class RunState:
     shadow_task: asyncio.Task[BaselineCall] | None = None
 
     halt: Halt | None = None
+    # The soft time limit passed: the answer was built from what the panel had produced so far.
+    partial: bool = False
+    soft_limit_s: float = 0.0  # the soft time limit this run was held to, for its messages
     total_latency_ms: float = 0.0
     result: PipelineResult | None = None
 
@@ -214,6 +219,11 @@ class RunState:
             stream=settings.stream,
         )
         strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
+        if ctx.max_cost_usd is not None:
+            cap = ctx.max_cost_usd
+            if strategy.max_cost_usd is not None:
+                cap = min(cap, strategy.max_cost_usd)
+            strategy = strategy.model_copy(update={"max_cost_usd": cap})
         if strategy.aggregator == "verified" and mode is not Mode.BENCHMARK:
             msg = (
                 f"Strategy '{strategy.name}' uses the 'verified' aggregator, which runs code to "

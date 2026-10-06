@@ -70,8 +70,15 @@ uv run python evals/runners/compare_pipelines.py --mock   # offline
 uv run fusion review-diff --file path/to/diff.patch       # review a diff
 ```
 
-Connect it to Claude Code or Cursor: see [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md). In short,
-register an MCP server that runs `uv run fusion mcp` from your clone, then restart the client.
+**Use it in Claude Code** (no clone needed; three commands):
+
+```bash
+export ANTHROPIC_API_KEY=...   # and/or OPENAI_API_KEY, GOOGLE_API_KEY
+uvx --python '>=3.12' --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator fusion install claude-code --plugin
+claude                         # then try /fusion:review, /fusion:debug or /fusion:ask
+```
+
+Options, the server-only install, Cursor and troubleshooting: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## How it works
 
@@ -148,7 +155,8 @@ src/fusion/
   security/       secret redaction
   storage/        SQLite run store
   cli/            Typer CLI
-plugin/           Claude Code plugin (skills, commands, MCP config)
+  install/        `fusion install`: one-command client setup
+plugin/           Claude Code plugin (commands, skills, subagent, MCP config)
 evals/            datasets and runners
 tests/            offline pytest suite (mock providers)
 ```

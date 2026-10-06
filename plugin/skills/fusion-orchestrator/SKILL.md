@@ -1,82 +1,41 @@
 ---
 name: fusion-orchestrator
-description: Multi-model coding model for Claude Code. Use as a cheaper model-like reasoning panel for implementation guidance, architecture decisions, code review, debugging, planning, and answer evaluation.
+description: Use when a coding decision is hard or costly to get wrong and a second opinion from several cheap models would help. Do not use for trivial edits, renames, formatting, reading or searching files, or anything you can answer from the code in front of you.
+user-invocable: false
 ---
 
-# Fusion Code Orchestrator
+# Fusion: when to ask the panel
 
-Fusion is a **model-like multi-model orchestration engine**. Use it when Claude Code should get a cheaper, diverse model-panel answer before editing, testing, reviewing, or deciding. Fusion itself does not secretly edit files or run shell commands; Claude Code remains free to apply the answer and run normal tools.
+Fusion asks a panel of cheap models in parallel and returns one answer with the points they agree
+on. It sees only the text you send and returns text: it reads no files, runs nothing and edits
+nothing. You stay the executor.
 
-## When to Use Fusion
+## Call it when
 
-Use Fusion MCP tools for:
+- a diff is non-trivial or risky (security, concurrency, migrations, public APIs): `fusion_review_diff`
+- an error is not explained by its message, or a fix did not work: `fusion_debug_error`
+- a choice is hard to reverse (storage, queues, framework, service boundaries): `fusion_decide_architecture`
+- a feature spans several files and the approach is unclear: `fusion_plan_feature`
+- you are unsure and a wrong answer would be costly: `fusion_ask`
+- you are about to rely on a draft answer: `fusion_eval_answer`
 
-- **General coding answers** — call `fusion_ask` when you want Fusion to act like a coding model
-- **A/B evaluation** — call `fusion_compare_claude_runs` after Claude Code has produced both an Opus result and a Fusion-backed result
-- **Complex code review** — security-sensitive diffs, large changes, disagreement-prone areas
-- **Debugging** — unclear root causes, production errors, multi-system failures
-- **Architecture decisions** — trade-off analysis with multiple viable options
-- **Implementation planning** — breaking down non-trivial features with test/risk notes
-- **Answer evaluation** — scoring model-generated answers before acting on them
+## Do not call it for
 
-## When NOT to Use Fusion
+- one-line fixes, typos, formatting, renames, or code you can read and judge directly
+- anything that needs files read or commands run: do that yourself first, then send what matters
+- a question you already answered with high confidence
 
-Do **not** call Fusion for:
+## How to use the answer
 
-- Trivial one-line edits or formatting fixes
-- Simple file reads or searches you can do directly
-- Direct filesystem or shell side effects inside the MCP server; Claude Code should execute those itself after using Fusion's answer
-
-## How to Call Fusion
-
-1. Gather **focused context** — diffs, error messages, logs, relevant snippets
-2. Call the appropriate MCP tool with concise inputs
-3. Review structured output (findings, confidence, eval scores, disagreements)
-4. Apply the answer in Claude Code when it is useful
-
-## MCP Tools
-
-| Tool | Use when |
-|------|----------|
-| `fusion_ask` | Asking Fusion to answer a general coding task like a model |
-| `fusion_review_diff` | Reviewing a git diff or patch |
-| `fusion_debug_error` | Diagnosing errors with logs/stack traces |
-| `fusion_decide_architecture` | Choosing between architecture options |
-| `fusion_plan_feature` | Planning implementation of a feature |
-| `fusion_eval_answer` | Evaluating quality of an LLM answer |
-| `fusion_compare_claude_runs` | Comparing Claude Code + Opus vs Claude Code + Fusion outputs |
-| `fusion_stats` | Showing cumulative savings and shadow A/B win-rate vs the frontier baseline |
-
-## Reading the result
-
-- Every orchestration tool returns `claims` (the panel's points, grouped across models, with who
-  backs each and whether it is shared, single-model or disputed) and `agreement`. Trust shared
-  points most; treat single-model points as leads to check, and look at `contradicted` ones first.
-- `confidence` comes from agreement, evidence and coverage. Under 0.5 with `low_information` set
-  means only one model answered: there was nothing to cross-check.
-- `detail: "full"` adds every claim, the cost breakdown and all warnings; the default is compact.
-
-## Strategies, Refinement, and Shadow A/B
-
-- `strategy` chooses which models run: `solo-cheap` (one cheap model), `panel-duo` (the default
-  two-model panel) or `panel-cheap` (three models), `panel-refine` (adds a mixture-of-agents refinement round where panel models
-  revise after seeing anonymized peer answers — use it for hard or high-stakes tasks),
-  `panel-cheap-strong-synth` (stronger final merge), `panel-cascade` (two cheap models first; the
-  rest only if they disagree), `panel-vote` (only the points most models backed, no merge call) and
-  `panel-digest` (no merge call: you are the aggregator, so keep what several models agree on and
-  check the disputed or single-model points against the code). The older `budget`
-  (`low`/`medium`/`high`) picks one of these.
-- `shadow_baseline: true` on any orchestration tool also runs the real baseline model
-  (Opus 5.5 by default) on the same task and records a blind pairwise verdict. Use it when the
-  user wants proof that Fusion matches big-model quality; it costs extra API money.
-- When the user asks "how is Fusion doing" or wants savings/quality numbers, call
-  `fusion_stats`.
-
-## Best Practices
-
-- Include the **diff** when reviewing code changes
-- Include **error message + stack trace + logs** when debugging
-- Pass **changed file paths** when available (helps catch unsupported references)
-- Treat Fusion output like another model answer — useful, but verify before applying
-- Check `confidence` and `evals.warnings` before high-risk actions
-- For A/B tests, make Claude Code run both arms with the same prompt and context, then compare outputs with `fusion_compare_claude_runs`
+- Send focused input: the diff, or the error with its stack trace and the code around it, plus a
+  few lines of `context`. Short excerpts in `file_snippets`, each prefixed with its path.
+- A call takes tens of seconds and costs cents. `strategy: "solo-cheap"` is the quickest and
+  cheapest; `max_cost_usd` caps the spend. The response states the cost.
+- The reply is compact: the answer, the top claims, confidence and one cost line. Claims backed by
+  several models are the most reliable; treat single-model claims as leads and check them against
+  the code. Confidence under 0.5 with `low_information` means only one model answered, so nothing
+  was cross-checked. `detail: "full"` returns everything; a `run_id` can be read later at
+  `fusion://runs/{run_id}`.
+- With `strategy: "panel-digest"` no model merges the answers, so you are the aggregator.
+- If the response has `partial: true`, the call hit its time limit and this is the panel's digest.
+- Verify before applying: Fusion's answer is another model's opinion.

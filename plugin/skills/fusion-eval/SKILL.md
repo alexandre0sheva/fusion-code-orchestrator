@@ -1,21 +1,13 @@
 ---
 name: fusion-eval
-description: Use to evaluate LLM answer quality before acting on it. Invokes fusion_eval_answer with rubric-based scoring.
+description: Use to score a draft answer or explanation against its question and a rubric before relying on it. Do not use to find out whether code works or a fact is true; it judges text only and runs nothing.
+user-invocable: false
 ---
 
-# Fusion Answer Evaluation
+# Fusion eval
 
-Use `fusion_eval_answer` to score an answer before relying on it for high-impact work.
+Call `fusion_eval_answer` with the `question`, the `answer`, the `context` it was produced from,
+and `expected_criteria` (or a `rubric`).
 
-## Input checklist
-
-- `answer` — the answer to evaluate (required)
-- `question` — original question or task
-- `context` — context the answer was based on
-- `rubric` or `expected_criteria` — what good looks like
-
-## Output
-
-Returns: `score`, `strengths`, `weaknesses`, `unsupported_claims`, `missing_points`, `safer_answer`, `confidence`, `evals`, `run_id`.
-
-Check `unsupported_claims` carefully — Fusion flags claims not grounded in provided context.
+Report the score, the unsupported claims and the missing points. A low score means the answer needs
+work, not that it is wrong: verify against the code or run the tests.

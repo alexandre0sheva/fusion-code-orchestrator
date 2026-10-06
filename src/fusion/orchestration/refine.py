@@ -127,7 +127,13 @@ async def refine_panel_responses(
         asyncio.create_task(_refine(i, name, response))
         for i, (name, response) in enumerate(responses)
     ]
-    _, pending = await asyncio.wait(tasks, timeout=refine_config.global_timeout_seconds)
+    try:
+        _, pending = await asyncio.wait(tasks, timeout=refine_config.global_timeout_seconds)
+    except asyncio.CancelledError:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     if pending:
         for task in pending:
             task.cancel()

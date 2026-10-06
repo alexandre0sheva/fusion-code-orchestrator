@@ -82,6 +82,7 @@ reports it as a warning so mock and local development stay easy.
 | `FUSION_SHADOW_SAMPLE_RATE` | Fraction of runs shadowed in `sampled` mode | `0.2` |
 | `FUSION_LOG_RAW_PROMPTS` | Log unsanitized prompts (dangerous) | `false` |
 | `FUSION_DEFAULT_PROVIDER` | Set to `mock` for offline mode | unset (live) |
+| `FUSION_TOOL_SOFT_TIMEOUT_S` | Seconds an MCP tool call may run before it returns the panel's digest with a warning; `0` or `off` disables ([INTEGRATIONS.md](INTEGRATIONS.md#progress-cancellation-and-the-soft-time-limit)) | `90` |
 
 How the shadow A/B works and how to read its results: [BENCHMARKING.md](BENCHMARKING.md#shadow-ab-live-measurement).
 
@@ -220,7 +221,9 @@ How the fields behave:
 
 ### Cost and latency caps
 
-`max_cost_usd` on a strategy is enforced before and during a run:
+`max_cost_usd` on a strategy is enforced before and during a run. An MCP tool call may pass its
+own `max_cost_usd`; the lower of the two applies, so a call can tighten a strategy's cap but never
+loosen it, and a strategy with no cap gets one for that call only.
 
 1. **Before any call**, the planned calls are priced from the catalog (assumed token counts, the
    same arithmetic as the table in [COSTS.md](COSTS.md#what-a-task-costs-by-strategy), using the

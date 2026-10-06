@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "fusion": {
-      "command": "uv",
-      "args": ["run", "--directory", "${workspaceFolder}", "fusion", "mcp"]
-    }
-  }
-}

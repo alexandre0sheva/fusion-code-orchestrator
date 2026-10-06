@@ -276,6 +276,8 @@
       "Confidence is low-information: 1 panel answer(s), so there was no agreement to measure (confidence is capped at 0.50)"
     ]
   },
+  "halt_reason": null,
+  "partial": false,
   "raw_outputs": null,
   "result": {
     "answer": "Code review summary (mock:<id>)",

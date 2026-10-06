@@ -298,7 +298,10 @@ class CallGateway:
         timeout: float | None = None,
         provider_name: str | None = None,
     ) -> ModelResponse:
-        """Run one call. Failures come back as responses with ``error`` set, never as raises."""
+        """Run one call. Failures come back as responses with ``error`` set, never as raises.
+
+        The exception is cancellation: it is recorded as a ``cancelled`` call and re-raised.
+        """
         entry = self.models.get(alias)
         provider_key = provider_name or (entry.provider if entry else "")
         provider = self.providers.get(provider_key)
@@ -329,8 +332,13 @@ class CallGateway:
                 provider, request, "TimeoutError", f"Timed out after {timeout:.1f}s"
             )
         except asyncio.CancelledError:
-            status = "cancelled"
+            # The call is on the ledger (it may have been billed), then the cancellation goes on:
+            # whoever cancelled (the fan-out stopping a straggler, the host dropping the request)
+            # must see the task end cancelled, not a result.
             response = self._failure(provider, request, "CancelledError", "Cancelled")
+            response.latency_ms = (time.perf_counter() - began) * 1000.0
+            self._record(stage, alias, response, entry, started_ms, "cancelled", trimmed=bool(note))
+            raise
         measured = (time.perf_counter() - began) * 1000.0
         if response.latency_ms <= 0:
             response.latency_ms = measured

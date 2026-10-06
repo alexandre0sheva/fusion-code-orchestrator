@@ -67,8 +67,10 @@ class CodeReviewInput(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     repo_context: str = ""
     goals: str = ""
+    file_snippets: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    max_cost_usd: float | None = None
     detail: Detail = "compact"
     max_models: int | None = None
     include_raw_outputs: bool = False
@@ -84,6 +86,7 @@ class FusionAskInput(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    max_cost_usd: float | None = None
     detail: Detail = "compact"
     max_models: int | None = None
     include_raw_outputs: bool = False
@@ -110,6 +113,8 @@ class FusionAskOutput(BaseModel):
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
     warnings: list[str] = Field(default_factory=list)
+    partial: bool = False  # the soft time limit cut the run short
+    halt_reason: str | None = None
     run_id: str
     raw_outputs: list[dict[str, Any]] | None = None
 
@@ -136,6 +141,8 @@ class CodeReviewOutput(BaseModel):
     usage: UsageSummary | None = None
     cost_comparison: CostComparison | None = None
     warnings: list[str] = Field(default_factory=list)
+    partial: bool = False  # the soft time limit cut the run short
+    halt_reason: str | None = None
     run_id: str
     raw_outputs: list[dict[str, Any]] | None = None
 
@@ -148,8 +155,10 @@ class DebugInput(BaseModel):
     code_context: str = ""
     recent_changes: str = ""
     environment: str = ""
+    file_snippets: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    max_cost_usd: float | None = None
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
 
@@ -173,6 +182,8 @@ class DebugOutput(BaseModel):
     cost_comparison: CostComparison | None = None
     routing: RoutingDecision
     warnings: list[str] = Field(default_factory=list)
+    partial: bool = False  # the soft time limit cut the run short
+    halt_reason: str | None = None
     run_id: str
 
 
@@ -183,8 +194,10 @@ class ArchitectureDecisionInput(BaseModel):
     constraints: str = ""
     options: list[str] = Field(default_factory=list)
     repo_context: str = ""
+    file_snippets: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    max_cost_usd: float | None = None
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
 
@@ -210,6 +223,8 @@ class ArchitectureDecisionOutput(BaseModel):
     cost_comparison: CostComparison | None = None
     routing: RoutingDecision
     warnings: list[str] = Field(default_factory=list)
+    partial: bool = False  # the soft time limit cut the run short
+    halt_reason: str | None = None
     run_id: str
 
 
@@ -220,8 +235,10 @@ class ImplementationPlanInput(BaseModel):
     constraints: str = ""
     repo_context: str = ""
     existing_patterns: str = ""
+    file_snippets: list[str] = Field(default_factory=list)
     budget: BudgetLevel = BudgetLevel.MEDIUM
     strategy: str | None = None
+    max_cost_usd: float | None = None
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
 
@@ -248,6 +265,8 @@ class ImplementationPlanOutput(BaseModel):
     cost_comparison: CostComparison | None = None
     routing: RoutingDecision
     warnings: list[str] = Field(default_factory=list)
+    partial: bool = False  # the soft time limit cut the run short
+    halt_reason: str | None = None
     run_id: str
 
 
@@ -258,6 +277,7 @@ class AnswerEvalInput(BaseModel):
     answer: str
     context: str = ""
     rubric: str = ""
+    detail: Detail = "compact"
 
 
 class AnswerEvalOutput(BaseModel):
@@ -280,4 +300,6 @@ class AnswerEvalOutput(BaseModel):
     cost_comparison: CostComparison | None = None
     routing: RoutingDecision
     warnings: list[str] = Field(default_factory=list)
+    partial: bool = False  # the soft time limit cut the run short
+    halt_reason: str | None = None
     run_id: str

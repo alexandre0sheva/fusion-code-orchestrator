@@ -555,10 +555,11 @@ async def test_fusion_ask_accepts_a_strategy_and_reports_it(tmp_path: Path) -> N
         schema = tools["fusion_ask"].input_schema
         assert "strategy" in str(schema)
         result = await client.call_tool(
-            "fusion_ask", {"input": {"prompt": PROMPT, "strategy": "solo-cheap"}}
+            "fusion_ask", {"input": {"prompt": PROMPT, "strategy": "solo-cheap", "detail": "full"}}
         )
-    assert result.data["routing"]["strategy"] == "solo-cheap"
-    assert result.data["usage"]["successful_model_calls"] == 1
+    data = result.structured_content
+    assert data["strategy"] == data["routing"]["strategy"] == "solo-cheap"
+    assert data["usage"]["successful_model_calls"] == data["models_called"] == 1
 
 
 async def test_fusion_ask_unknown_strategy_is_an_error_the_caller_sees(tmp_path: Path) -> None:

@@ -40,8 +40,10 @@ class CodeReviewPipeline(BasePipeline):
             primary_content=input.diff,
             context="\n\n".join(context_parts),
             changed_files=input.changed_files,
+            file_snippets=input.file_snippets,
             budget=input.budget,
             strategy=input.strategy,
+            max_cost_usd=input.max_cost_usd,
             max_models=input.max_models,
             shadow_baseline=input.shadow_baseline,
         )
@@ -87,6 +89,7 @@ class FusionAskPipeline(BasePipeline):
             changed_files=input.changed_files,
             budget=input.budget,
             strategy=input.strategy,
+            max_cost_usd=input.max_cost_usd,
             max_models=input.max_models,
             shadow_baseline=input.shadow_baseline,
         )
@@ -137,8 +140,10 @@ class DebugPipeline(BasePipeline):
             task_type=TaskType.DEBUGGING,
             primary_content=primary,
             context="\n\n".join(context_parts),
+            file_snippets=input.file_snippets,
             budget=input.budget,
             strategy=input.strategy,
+            max_cost_usd=input.max_cost_usd,
             shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
@@ -174,8 +179,10 @@ class ArchitectureDecisionPipeline(BasePipeline):
             task_type=TaskType.ARCHITECTURE_DECISION,
             primary_content=primary,
             context=input.repo_context,
+            file_snippets=input.file_snippets,
             budget=input.budget,
             strategy=input.strategy,
+            max_cost_usd=input.max_cost_usd,
             shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
@@ -213,8 +220,10 @@ class ImplementationPlanPipeline(BasePipeline):
             task_type=TaskType.IMPLEMENTATION_PLAN,
             primary_content=primary,
             context=input.repo_context,
+            file_snippets=input.file_snippets,
             budget=input.budget,
             strategy=input.strategy,
+            max_cost_usd=input.max_cost_usd,
             shadow_baseline=input.shadow_baseline,
         )
         result = await self.run(ctx)
@@ -254,7 +263,7 @@ class AnswerEvalPipeline(BasePipeline):
         )
         result = await self.run(ctx)
         s = result.structured_output
-        common = self._common_output_fields(result, "Fusion Answer Evaluation")
+        common = self._common_output_fields(result, "Fusion Answer Evaluation", input.detail)
         return AnswerEvalOutput(
             score=float(s.get("score", result.final_eval.overall_score)),
             strengths=list(s.get("strengths", [])),

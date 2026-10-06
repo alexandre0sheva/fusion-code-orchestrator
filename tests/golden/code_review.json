@@ -512,6 +512,8 @@
   "false_positive_risks": [
     "Type hint suggestion may be stylistic only"
   ],
+  "halt_reason": null,
+  "partial": false,
   "raw_outputs": null,
   "recommended_changes": [
     "Add guard clause for empty input",

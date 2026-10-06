@@ -53,6 +53,7 @@ from fusion.orchestration.judge import judge_panel_responses
 from fusion.orchestration.ledger import CallRecord
 from fusion.orchestration.output import step_name
 from fusion.orchestration.output_parser import parse_structured_output
+from fusion.orchestration.progress import report as report_progress
 from fusion.orchestration.prompts import build_user_prompt, get_system_prompt
 from fusion.orchestration.refine import RefinementResult, refine_panel_responses
 from fusion.orchestration.result import PanelResult, PipelineResult, build_usage_summary
@@ -68,6 +69,10 @@ from fusion.telemetry.traces import OrchestrationTrace, StepTrace
 
 
 class Stage(Protocol):
+    """A pipeline step. Optional class attributes (read with ``getattr``): ``label`` is the
+    progress message sent when the stage starts, and ``soft_limited`` puts the stage under the
+    soft time limit (see ``SoftTimeoutRecovery``)."""
+
     always_runs: bool
 
     async def run(self, state: RunState) -> RunState: ...
@@ -75,6 +80,8 @@ class Stage(Protocol):
 
 class _Stage:
     always_runs = False
+    label: str | None = None
+    soft_limited = False
 
     def __init__(self, deps: PipelineDeps) -> None:
         self.deps = deps
@@ -129,6 +136,8 @@ class RedactStage(_Stage):
 
 class RouteStage(_Stage):
     """Apply the run's strategy: pick models, and resolve which are actually available."""
+
+    label = "routing"
 
     async def run(self, state: RunState) -> RunState:
         ctx = state.ctx
@@ -335,6 +344,8 @@ class PanelStage(_Stage):
     A cascade asks its cheapest members first and only asks the rest when they disagree.
     """
 
+    soft_limited = True
+
     async def run(self, state: RunState) -> RunState:
         strategy = state.strategy
         assert strategy is not None
@@ -349,8 +360,15 @@ class PanelStage(_Stage):
         return self._accept(state, await self._fan(state, state.panel_models))
 
     async def _fan(
-        self, state: RunState, models: list[str], *, min_successful: int | None = None
+        self,
+        state: RunState,
+        models: list[str],
+        *,
+        min_successful: int | None = None,
+        label: str = "panel",
     ) -> FanoutResult:
+        noun = "model" if len(models) == 1 else "models"
+        await report_progress(f"{label}: asking {len(models)} {noun}")
         return await fanout_to_panel(
             panel_models=models,
             registry_models=self.deps.registry.models,
@@ -364,6 +382,7 @@ class PanelStage(_Stage):
             gateway=state.gateway,
             members={m.model: m for m in state.members},
             min_successful=min_successful,
+            label=label,
         )
 
     def _fanout_config(self, state: RunState) -> FanoutConfig:
@@ -424,7 +443,7 @@ class PanelStage(_Stage):
             return self._accept(state, first)
         rest = state.panel_models[spec.first :]
         outcome.escalated_to = rest
-        second = await self._fan(state, rest)
+        second = await self._fan(state, rest, label="escalation")
         state.guard.release("escalation")
         merged = merge_fanouts(
             first,
@@ -492,6 +511,9 @@ class RefineStage(_Stage):
     Every refinement call of a round starts together once all round-1 answers exist, and a round
     is skipped when the panel already agrees (``refinement.skip_above_agreement``).
     """
+
+    label = "refining the panel's answers"
+    soft_limited = True
 
     async def run(self, state: RunState) -> RunState:
         assert state.strategy is not None
@@ -853,6 +875,8 @@ def _agreement_summary(state: RunState) -> dict[str, object]:
 class FinalEvalStage(_Stage):
     """Evaluate and parse the final answer, then settle budget warnings and wall time."""
 
+    label = "checking the final answer"
+
     async def run(self, state: RunState) -> RunState:
         engine = self.deps.eval_engine
         synth = state.synth_response
@@ -1093,6 +1117,7 @@ class PersistStage(_Stage):
             cascade=state.cascade,
             budget=state.budget_report(),
             halt_reason=state.halt.reason if state.halt else None,
+            partial=state.partial,
         )
 
 
@@ -1149,6 +1174,67 @@ def _with_shadow_actuals(
     )
 
 
+class SoftTimeoutRecovery(_Stage):
+    """Turn a run the soft time limit interrupted into the best answer it can still give.
+
+    Nothing here calls a model. When the panel had answered, the missing steps are finished from
+    those answers (claims, deterministic scores, and the digest as the final answer, which leaves
+    the merging to Claude Code); otherwise the run halts with an explanation. Either way the
+    result says why it is incomplete.
+    """
+
+    async def run(self, state: RunState) -> RunState:
+        strategy = state.strategy
+        assert strategy is not None
+        limit = state.soft_limit_s
+        state.partial = True
+        if state.fanout is None or not state.successful:
+            self._halt(state, limit)
+            return state
+        state.warnings.append(
+            f"Soft time limit of {limit:.0f}s reached; returning the panel's digest instead of "
+            "waiting for the remaining steps (FUSION_TOOL_SOFT_TIMEOUT_S)"
+        )
+        if state.agreement is None:
+            state = await ClaimsStage(self.deps).run(state)
+        if not state.panel_results:
+            state.strategy = strategy = strategy.model_copy(update={"judge": "off"})
+            state = await JudgeStage(self.deps).run(state)
+        if state.synth_response is None:
+            state.strategy = strategy.model_copy(
+                update={"aggregator": "digest", "aggregator_model": None}
+            )
+            state.synthesizer_model = ""
+            state = await AggregateStage(self.deps).run(state)
+        return await FinalEvalStage(self.deps).run(state)
+
+    def _halt(self, state: RunState, limit: float) -> None:
+        assert state.context_eval is not None
+        engine = self.deps.eval_engine
+        text = (
+            f"No answer was ready after {limit:.0f}s (the soft time limit), so the run was "
+            "stopped. Try a cheaper or faster strategy (for example solo-cheap), a smaller "
+            "input, or raise FUSION_TOOL_SOFT_TIMEOUT_S."
+        )
+        state.final_answer = text
+        state.final_eval = engine.evaluate_final(
+            text, is_coding_task=engine.is_coding_task(state.task_type)
+        )
+        state.disagreement = {
+            "disagreement_score": 0.0,
+            "agreement_score": 0.0,
+            "low_information": True,
+            "consensus": False,
+            "outlier_models": [],
+        }
+        state.structured = {"summary": text, "timed_out": True, "soft_limit_s": limit}
+        state.evals = self.deps.presenter.build_evals(
+            state.context_eval, [], state.disagreement, state.final_eval, None, state.warnings
+        )
+        state.halt = Halt("timeout")
+        state.stamp_latency(self.deps.clock)
+
+
 class ConcurrentStages:
     """Run independent stages at the same time over the one ``RunState``.
 
@@ -1158,6 +1244,8 @@ class ConcurrentStages:
     """
 
     always_runs = False
+    label: str | None = "synthesizing"
+    soft_limited = True
 
     def __init__(
         self, *stages: Stage, sequential_if: Callable[[RunState], bool] = lambda _state: False

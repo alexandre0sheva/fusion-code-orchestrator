@@ -27,6 +27,7 @@ from fusion.config.layers import (
     set_cli_overrides,
 )
 from fusion.config.loader import load_baseline, load_routing_policies
+from fusion.install.cli import install_app
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
     DebugErrorInput,
@@ -68,6 +69,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(strategies_app, name="strategies")
 app.add_typer(models_app, name="models")
 app.add_typer(bench_app, name="bench")
+app.add_typer(install_app, name="install")
 console = Console()
 
 load_env()
@@ -712,13 +714,25 @@ def compare_cost(
 @app.command()
 def mcp(
     db_path: Annotated[str | None, typer.Option(help="SQLite database path")] = None,
+    transport: Annotated[
+        str, typer.Option(help="stdio (default, spawned by the client) or http (streamable HTTP)")
+    ] = "stdio",
+    host: Annotated[str, typer.Option(help="HTTP bind address; loopback unless --allow-remote")] = (
+        "127.0.0.1"
+    ),
+    port: Annotated[int, typer.Option(help="HTTP port")] = 8765,
+    allow_remote: Annotated[
+        bool, typer.Option("--allow-remote", help="Allow a non-loopback --host (no authentication)")
+    ] = False,
 ) -> None:
-    """Start the MCP server (stdio transport)."""
+    """Start the MCP server (stdio by default, or streamable HTTP on localhost)."""
     import sys
 
     from fusion.mcp_server.server import run_server
 
-    if sys.stdin.isatty():
+    if transport not in {"stdio", "http"}:
+        raise typer.BadParameter("use stdio or http", param_hint="--transport")
+    if transport == "stdio" and sys.stdin.isatty():
         err = Console(stderr=True)
         err.print(
             "[yellow]Fusion MCP uses stdin/stdout for JSON-RPC — not an interactive shell.[/yellow]"
@@ -731,7 +745,17 @@ def mcp(
             "[dim]To smoke-test providers: uv run python evals/runners/compare_pipelines.py[/dim]"
         )
 
-    run_server(db_path=db_path)
+    try:
+        run_server(
+            db_path=db_path,
+            transport="http" if transport == "http" else "stdio",
+            host=host,
+            port=port,
+            allow_remote=allow_remote,
+        )
+    except ValueError as exc:
+        Console(stderr=True).print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
 
 
 @app.command("run-mock")

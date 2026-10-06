@@ -513,10 +513,12 @@
     ],
     "warnings": []
   },
+  "halt_reason": null,
   "migration_plan": [
     "Phase 1: Add queue alongside existing HTTP",
     "Phase 2: Migrate writers"
   ],
+  "partial": false,
   "recommended_option": "Event-driven pattern with message queue",
   "rejected_options": [
     "Direct HTTP calls \u2014 too tightly coupled"

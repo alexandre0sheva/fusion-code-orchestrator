@@ -1,0 +1,13 @@
+{
+  "name": "fusion",
+  "displayName": "Fusion Code Orchestrator",
+  "version": "0.1.0",
+  "description": "A panel of cheap models for second opinions on review, debugging, architecture, planning and hard coding questions. Claude Code stays the executor.",
+  "author": {
+    "name": "Oleksandr Shevchenko"
+  },
+  "homepage": "https://github.com/alexandre0sheva/fusion-code-orchestrator",
+  "repository": "https://github.com/alexandre0sheva/fusion-code-orchestrator",
+  "license": "MIT",
+  "keywords": ["mcp", "code-review", "debugging", "multi-model", "advisor"]
+}

@@ -1,21 +1,15 @@
 ---
 name: fusion-plan
-description: Use for non-trivial feature implementation planning. Invokes fusion_plan_feature for phased plans with tests and risks.
+description: Use at the start of a multi-file feature when the approach is not obvious. Do not use for small changes you can already sketch, or when a plan already exists.
+user-invocable: false
 ---
 
-# Fusion Implementation Planning
+# Fusion plan
 
-Use `fusion_plan_feature` when breaking down a feature that touches multiple modules.
+Look at the repository first, then call `fusion_plan_feature` with the feature in
+`feature_description`, `constraints`, the conventions the code already follows in
+`existing_patterns`, and what the project is in `context`.
 
-## Input checklist
-
-- `feature_description` — what to build (required)
-- `constraints` — deadlines, compatibility, non-goals
-- `context` — project/repo context
-- `existing_patterns` — patterns to follow
-
-## Output
-
-Returns: `implementation_sequence`, `affected_modules`, `data_model_changes`, `api_changes`, `ui_changes`, `tests_to_add`, `risks`, `open_questions`, `confidence`, `evals`, `run_id`.
-
-Fusion plans — Claude Code implements.
+Turn the result into concrete steps for this repository: the order of work, the files that change,
+the tests to add. Flag anything that does not fit the code, and list the open questions for the
+user before starting.

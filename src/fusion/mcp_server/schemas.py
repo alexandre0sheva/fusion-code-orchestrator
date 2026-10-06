@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelResponseEval
 
 STRATEGY_DESCRIPTION = (
-    "Strategy name; overrides budget. Run `fusion strategies list` to see them. Examples: "
+    "Strategy name; overrides budget. Read resource fusion://strategies to see them. Examples: "
     "solo-cheap (one cheap model), panel-duo (default: two cheap models, one synthesis call), "
     "panel-cheap (three cheap models), "
     "panel-cascade (two cheap models, the rest only if they disagree), panel-refine (adds a "
@@ -22,142 +22,110 @@ STRATEGY_DESCRIPTION = (
 )
 
 
-class ReviewDiffInput(BaseModel):
+DETAIL_DESCRIPTION = (
+    "compact (default): the answer, the top five claims, confidence and one cost line, about 1.5k "
+    "tokens at most; the rest is kept under run_id (resource fusion://runs/{run_id}). "
+    "full: every claim, the cost breakdown, all warnings and the structured result"
+)
+MAX_COST_DESCRIPTION = (
+    "Hard cost cap in USD for this call. It can only lower the strategy's own cap. If the "
+    "strategy cannot fit, it is shifted to a cheaper form (and the warnings say so); if even the "
+    "cheapest form cannot fit, no model is called. Omit for the strategy's default."
+)
+CONTEXT_DESCRIPTION = (
+    "Background the panel needs and cannot see: what the code does, the relevant files or "
+    "constraints. More relevant context gives better answers; do not paste whole files here."
+)
+SNIPPETS_DESCRIPTION = "Short code excerpts, one per item, each prefixed with its file path"
+SHADOW_DESCRIPTION = (
+    "Force (true) or suppress (false) a shadow A/B run against the real baseline model; "
+    "defaults to FUSION_SHADOW_MODE env behavior. A shadow run spends extra money."
+)
+
+
+class _OrchestrationInput(BaseModel):
+    """Inputs shared by every tool that runs the panel.
+
+    ``context`` is the one place for background text. Older clients sent it as ``repo_context``,
+    ``repo_summary`` or ``code_context`` depending on the tool; those names are still accepted
+    (see ``CONTEXT_ALIASES``) and folded into ``context``, but they are not in the schema.
+    """
+
+    CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ()
+
+    context: str = Field(default="", description=CONTEXT_DESCRIPTION)
+    file_snippets: list[str] = Field(default_factory=list, description=SNIPPETS_DESCRIPTION)
+    budget: Literal["low", "medium", "high", "local_only"] = Field(
+        default="medium", description="Budget preset; ignored when strategy is set"
+    )
+    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
+    max_cost_usd: float | None = Field(default=None, gt=0, description=MAX_COST_DESCRIPTION)
+    detail: Literal["compact", "full"] = Field(default="compact", description=DETAIL_DESCRIPTION)
+    shadow_baseline: bool | None = Field(default=None, description=SHADOW_DESCRIPTION)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_context_aliases(cls, data: Any) -> Any:
+        aliases = cls.CONTEXT_ALIASES
+        if not isinstance(data, dict) or not any(name in data for name in aliases):
+            return data
+        texts: list[str] = []
+        for name in ("context", *aliases):
+            value = data.get(name)
+            if isinstance(value, str) and value.strip() and value not in texts:
+                texts.append(value)
+        folded = {k: v for k, v in data.items() if k not in aliases}
+        folded["context"] = "\n\n".join(texts)
+        return folded
+
+
+class ReviewDiffInput(_OrchestrationInput):
     """Input for fusion_review_diff tool."""
 
-    diff: str = Field(description="Git diff or patch to review")
-    context: str = Field(default="", description="Additional context about the change")
-    file_snippets: list[str] = Field(default_factory=list, description="Related file snippets")
-    repo_summary: str = Field(default="", description="Optional repository summary (legacy alias)")
-    changed_files: list[str] = Field(default_factory=list, description="List of changed file paths")
-    repo_context: str = Field(default="", description="Repository context")
-    goals: str = Field(default="", description="Review goals or focus areas")
-    budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
-    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
-    detail: Literal["compact", "full"] = Field(
-        default="compact",
-        description=(
-            "compact: the answer, top claims, confidence and one cost line. "
-            "full: every claim, the cost breakdown and all warnings"
-        ),
-    )
+    CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ("repo_context", "repo_summary")
+
+    diff: str = Field(description="The git diff or patch to review, as unified diff text")
+    changed_files: list[str] = Field(default_factory=list, description="Changed file paths")
+    goals: str = Field(default="", description="What to focus on, such as security or concurrency")
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
-    include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
-    shadow_baseline: bool | None = Field(
-        default=None,
-        description=(
-            "Force (true) or suppress (false) a shadow A/B run against the real "
-            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
-        ),
-    )
+    include_raw_outputs: bool = Field(default=False, description="Include each panel answer")
 
 
-class FusionAskInput(BaseModel):
+class FusionAskInput(_OrchestrationInput):
     """Input for model-like fusion_ask tool."""
 
-    prompt: str = Field(description="Coding question or task for Fusion to answer")
-    context: str = Field(default="", description="Repository or task context")
-    file_snippets: list[str] = Field(default_factory=list, description="Relevant file snippets")
+    prompt: str = Field(description="The coding question or task, stated so it stands alone")
     changed_files: list[str] = Field(default_factory=list, description="Relevant file paths")
-    budget: str = Field(default="medium", description="Budget level: low, medium, high, local_only")
-    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
-    detail: Literal["compact", "full"] = Field(
-        default="compact",
-        description=(
-            "compact: the answer, top claims, confidence and one cost line. "
-            "full: every claim, the cost breakdown and all warnings"
-        ),
-    )
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
-    include_raw_outputs: bool = Field(default=False, description="Include raw panel outputs")
-    shadow_baseline: bool | None = Field(
-        default=None,
-        description=(
-            "Force (true) or suppress (false) a shadow A/B run against the real "
-            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
-        ),
-    )
+    include_raw_outputs: bool = Field(default=False, description="Include each panel answer")
 
 
-class DebugErrorInput(BaseModel):
+class DebugErrorInput(_OrchestrationInput):
     """Input for fusion_debug_error tool."""
 
-    error_message: str = Field(description="Error message or exception text")
-    stack_trace: str = Field(default="", description="Stack trace if available")
-    context: str = Field(default="", description="Additional debugging context")
-    file_snippets: list[str] = Field(default_factory=list)
+    CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ("code_context",)
+
+    error_message: str = Field(description="The error message or exception text")
+    stack_trace: str = Field(default="", description="The stack trace, if there is one")
     logs: str = Field(default="", description="Relevant log output")
-    code_context: str = Field(default="", description="Relevant code snippets")
     recent_changes: str = Field(default="", description="Recent changes that may relate")
     environment: str = Field(default="", description="Runtime environment details")
-    budget: str = Field(default="medium", description="Budget level")
-    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
-    detail: Literal["compact", "full"] = Field(
-        default="compact",
-        description=(
-            "compact: the answer, top claims, confidence and one cost line. "
-            "full: every claim, the cost breakdown and all warnings"
-        ),
-    )
-    shadow_baseline: bool | None = Field(
-        default=None,
-        description=(
-            "Force (true) or suppress (false) a shadow A/B run against the real "
-            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
-        ),
-    )
 
 
-class DecideArchitectureInput(BaseModel):
+class DecideArchitectureInput(_OrchestrationInput):
     """Input for fusion_decide_architecture tool."""
 
-    question: str = Field(description="Architecture decision question")
+    question: str = Field(description="The architecture decision to make")
     options: list[str] = Field(default_factory=list, description="Options under consideration")
     constraints: str = Field(default="", description="Constraints and requirements")
-    context: str = Field(default="", description="System context")
-    file_snippets: list[str] = Field(default_factory=list)
-    budget: str = Field(default="medium", description="Budget level")
-    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
-    detail: Literal["compact", "full"] = Field(
-        default="compact",
-        description=(
-            "compact: the answer, top claims, confidence and one cost line. "
-            "full: every claim, the cost breakdown and all warnings"
-        ),
-    )
-    shadow_baseline: bool | None = Field(
-        default=None,
-        description=(
-            "Force (true) or suppress (false) a shadow A/B run against the real "
-            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
-        ),
-    )
 
 
-class PlanFeatureInput(BaseModel):
+class PlanFeatureInput(_OrchestrationInput):
     """Input for fusion_plan_feature tool."""
 
-    feature_description: str = Field(description="Feature to implement")
-    context: str = Field(default="", description="Project context")
+    feature_description: str = Field(description="The feature to implement")
     constraints: str = Field(default="", description="Constraints and requirements")
-    file_snippets: list[str] = Field(default_factory=list)
     existing_patterns: str = Field(default="", description="Existing patterns to follow")
-    budget: str = Field(default="medium", description="Budget level")
-    strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
-    detail: Literal["compact", "full"] = Field(
-        default="compact",
-        description=(
-            "compact: the answer, top claims, confidence and one cost line. "
-            "full: every claim, the cost breakdown and all warnings"
-        ),
-    )
-    shadow_baseline: bool | None = Field(
-        default=None,
-        description=(
-            "Force (true) or suppress (false) a shadow A/B run against the real "
-            "baseline model; defaults to FUSION_SHADOW_MODE env behavior"
-        ),
-    )
 
 
 class EvalAnswerInput(BaseModel):
@@ -168,6 +136,7 @@ class EvalAnswerInput(BaseModel):
     context: str = Field(default="", description="Context used to generate the answer")
     expected_criteria: list[str] = Field(default_factory=list)
     rubric: str = Field(default="", description="Evaluation rubric")
+    detail: Literal["compact", "full"] = Field(default="compact", description=DETAIL_DESCRIPTION)
 
 
 class FusionStatsInput(BaseModel):
@@ -252,3 +221,66 @@ class ToolOutput(BaseModel):
             total_cost_usd=result.total_cost_usd,
             total_latency_ms=result.total_latency_ms,
         )
+
+
+class ToolEnvelope(BaseModel):
+    """What every Fusion tool returns: text for the model to read, plus a typed record."""
+
+    display_markdown: str = Field(description="The answer, ready to read; the model's main input")
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Caveats: provider failures, cost-cap shifts, soft-timeout notices",
+    )
+
+
+class FusionToolResult(ToolEnvelope):
+    """Result of the tools that run the panel (ask, review, debug, decide, plan, eval).
+
+    Compact responses carry the first block of fields; ``detail: full`` adds the second.
+    """
+
+    run_id: str = Field(description="Handle for the stored run: resource fusion://runs/{run_id}")
+    strategy: str | None = Field(default=None, description="The strategy that produced the answer")
+    confidence: float | None = Field(default=None, description="0 to 1, calibrated by agreement")
+    cost_usd: float | None = Field(
+        default=None, description="Estimated Fusion spend; null if unknown"
+    )
+    latency_s: float = Field(default=0.0, description="Wall time of the run in seconds")
+    models_called: int = Field(default=0, description="Successful model calls")
+    partial: bool = Field(
+        default=False,
+        description="True when the soft time limit cut the run short and this is the panel digest",
+    )
+    halted: str | None = Field(
+        default=None,
+        description="Why no answer was produced: insufficient_context, quorum, budget or timeout",
+    )
+    details_uri: str = Field(description="Where the full record of this run can be read")
+    # detail="full" only
+    result: dict[str, Any] | None = Field(
+        default=None, description="Task-specific structured result"
+    )
+    claims: list[dict[str, Any]] | None = Field(default=None, description="Claims across the panel")
+    agreement: dict[str, Any] | None = Field(default=None, description="Agreement measurements")
+    usage: dict[str, Any] | None = Field(
+        default=None, description="Per-model tokens, cost, latency"
+    )
+    cost_comparison: dict[str, Any] | None = Field(default=None, description="Versus the baseline")
+    routing: dict[str, Any] | None = Field(default=None, description="Why these models were chosen")
+    evals: dict[str, Any] | None = Field(default=None, description="Scoring of each stage")
+    raw_outputs: list[dict[str, Any]] | None = Field(
+        default=None, description="Each panel answer, when include_raw_outputs is set"
+    )
+
+
+class StatsToolResult(ToolEnvelope):
+    """Result of fusion_stats."""
+
+    result: dict[str, Any] = Field(description="The cumulative numbers behind the summary")
+
+
+class CompareToolResult(ToolEnvelope):
+    """Result of fusion_compare_claude_runs."""
+
+    result: dict[str, Any] = Field(description="Verdicts, deltas and per-arm evaluations")
+    evals: dict[str, Any] = Field(description="Run ids and scores of the two evaluations")

@@ -103,7 +103,39 @@ Panel members receive role prompts defined in `src/fusion/orchestration/prompts.
 - `fusion_stats`
 
 `src/fusion/mcp_server/tools.py` converts MCP input schemas into orchestration pipeline
-inputs and returns Pydantic output models as JSON dictionaries.
+inputs and returns the pipelines' output models as dictionaries (`FusionTools`, also used directly
+by tests and the CLI). `response.py` shapes those into what the server returns: compact text plus a
+typed record by default, everything with `detail: full`. `schemas.py` holds the inputs (one shared
+base, with the old context names folded into `context`) and the typed outputs the tools declare as
+`outputSchema`. `server.py` adds tool annotations and descriptions, three resources
+(`fusion://runs/{id}`, `fusion://stats`, `fusion://strategies`), three prompts, and the stdio and
+HTTP transports. The tool contract is in [INTEGRATIONS.md](INTEGRATIONS.md#mcp-tool-reference).
+
+**Progress, cancellation and the soft limit.** `orchestration/progress.py` holds a per-request
+sink in a `ContextVar`; the server installs one that calls `Context.report_progress`, and the
+pipeline calls `progress.report` as each stage starts (a stage's `label`) and as each panel member
+finishes. Without a sink it does nothing. A cancelled request raises `CancelledError` through the
+stages: `CallGateway.call` records the interrupted call on the ledger and re-raises, and the
+fan-out and refinement cancel the tasks they started before re-raising, so no provider call
+outlives the request. `BasePipeline.soft_timeout_s` (real mode only; the server sets it from
+`FUSION_TOOL_SOFT_TIMEOUT_S`) wraps the panel, refinement and judge/synthesis stages in one
+deadline; when it passes, `SoftTimeoutRecovery` finishes the run without another model call from
+what the panel produced (claims, deterministic scores, the digest) or halts with `timeout` when
+there were no answers.
+
+### Installers and the plugin
+
+`src/fusion/install/` holds `fusion install <client>`. `common.py` has the server command
+(`uvx --from git+<repo> fusion mcp`, or `uv run --directory PATH` for a clone), an atomic merge into
+an `mcpServers` JSON file that never touches other servers or keys and refuses malformed input, and
+the launch check (start the server on the mock provider, list its tools). `claude_code.py` registers
+the server with `claude mcp add` (user scope), merges `.mcp.json` (project scope) or installs the
+plugin through `claude plugin`; it only reads Claude Code's own config. Every install is idempotent
+and has a dry run. The plugin lives in `plugin/` (manifest in `.claude-plugin/`, `.mcp.json`,
+commands, skills, the `fusion-advisor` subagent), and `.claude-plugin/marketplace.json` at the repo
+root lists it; tests keep the two server definitions, the tool names the components mention and
+Claude Code's own `claude plugin validate` in agreement. Usage is in
+[INTEGRATIONS.md](INTEGRATIONS.md#claude-code).
 
 ### Providers
 

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from fusion.config.loader import FanoutConfig, ModelEntry
 from fusion.orchestration.claims import panel_answer_schema
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
+from fusion.orchestration.progress import report as report_progress
 from fusion.orchestration.prompts import build_user_prompt, get_role_prompt, get_system_prompt
 from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
@@ -82,6 +83,7 @@ async def fanout_to_panel(
     gateway: CallGateway | None = None,
     members: Mapping[str, PanelMember] | None = None,
     min_successful: int | None = None,
+    label: str = "panel",
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
@@ -91,7 +93,8 @@ async def fanout_to_panel(
     provider's queue never holds up another's. With ``early_return`` the fan-out stops waiting
     shortly after quorum; with ``hedge_after_ms`` a slow member is re-asked of another model.
     ``min_successful`` replaces the configured quorum (a cascade's first wave needs two answers
-    whatever the panel's quorum is).
+    whatever the panel's quorum is). ``label`` names the wave in progress messages
+    ("panel 2/3 done"). Cancelling the caller cancels every call still in flight.
     """
     fanout_config = config or FanoutConfig()
     panel = _Panel(
@@ -110,6 +113,7 @@ async def fanout_to_panel(
         ),
         task_type=task_type,
         min_successful=min_successful,
+        label=label,
     )
     return await panel.run()
 
@@ -138,7 +142,9 @@ class _Panel:
         user_prompt: str,
         task_type: TaskType,
         min_successful: int | None = None,
+        label: str = "panel",
     ) -> None:
+        self.label = label
         self.panel_models = panel_models
         self.registry_models = registry_models
         self.providers = providers
@@ -155,6 +161,7 @@ class _Panel:
         self._attempts: list[_Attempt] = []
         self._hedged: dict[str, str] = {}  # slow member -> model that was asked instead
         self._cancel_message = "Cancelled by global panel timeout"
+        self._reported = 0
 
     # -- one call ---------------------------------------------------------------------------
 
@@ -256,7 +263,40 @@ class _Panel:
                 self._launch(slow.member, candidate)
             due = self._hedge_due()
 
+    def _finished(self) -> int:
+        """Members that have an outcome: an answer, or their own call's failure."""
+        return sum(
+            any(
+                a.member == member
+                and a.result is not None
+                and (a.result.success or a.model == member)
+                for a in self._attempts
+            )
+            for member in self.panel_models
+        )
+
+    async def _report_progress(self) -> None:
+        done = self._finished()
+        while self._reported < done:  # members that finish together are still reported one by one
+            self._reported += 1
+            await report_progress(f"{self.label} {self._reported}/{len(self.panel_models)} done")
+
     async def run(self) -> FanoutResult:
+        try:
+            return await self._run()
+        except asyncio.CancelledError:
+            # The caller gave up: no call may outlive it (a straggler is still billed).
+            await self._cancel_all()
+            raise
+
+    async def _cancel_all(self) -> None:
+        live = self._live()
+        for task in live:
+            task.cancel()
+        if live:
+            await asyncio.gather(*live, return_exceptions=True)
+
+    async def _run(self) -> FanoutResult:
         started = time.perf_counter()
         loop = asyncio.get_running_loop()
         early = self.config.early_return
@@ -276,6 +316,7 @@ class _Panel:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             self._settle()
+            await self._report_progress()
             now = loop.time()
             self._hedge_slow_members(now)
             reached = stop_at is not None and self._successes() >= stop_at
