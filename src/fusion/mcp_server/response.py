@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 # The compact display text stays under about this many tokens, whatever the answer's length.
 COMPACT_MAX_TOKENS = 1500
+# fusion_digest caps its compact text at the answer budget plus this much for the heading,
+# confidence and cost lines.
+DIGEST_OVERHEAD_TOKENS = 200
 
 _FULL_FIELDS = (
     "result",
@@ -76,8 +79,11 @@ def hardened(fields: dict[str, Any]) -> dict[str, Any]:
     return dict(cleaned)
 
 
-def present_run(output: dict[str, Any], detail: str) -> FusionToolResult:
-    """The tool response for one pipeline output (a ``model_dump`` of its output model)."""
+def present_run(
+    output: dict[str, Any], detail: str, *, max_tokens: int = COMPACT_MAX_TOKENS
+) -> FusionToolResult:
+    """The tool response for one pipeline output (a ``model_dump`` of its output model); a
+    compact text is cut to ``max_tokens``."""
     run_id = str(output["run_id"])
     cost = output.get("cost_latency") or {}
     usage = output.get("usage") or {}
@@ -85,7 +91,9 @@ def present_run(output: dict[str, Any], detail: str) -> FusionToolResult:
     markdown = str(output.get("display_markdown", ""))
     full = detail == "full"
     fields: dict[str, Any] = {
-        "display_markdown": markdown if full else cap_markdown(markdown, run_id),
+        "display_markdown": (
+            markdown if full else cap_markdown(markdown, run_id, max_tokens=max_tokens)
+        ),
         "warnings": list(output.get("warnings", [])),
         "run_id": run_id,
         "strategy": routing.get("strategy"),
@@ -96,9 +104,11 @@ def present_run(output: dict[str, Any], detail: str) -> FusionToolResult:
         "partial": bool(output.get("partial", False)),
         "halted": output.get("halt_reason"),
         "details_uri": details_uri(run_id),
+        "host_tokens_saved_estimate": output.get("host_tokens_saved_estimate"),
     }
     if full:
         fields.update({name: output.get(name) for name in _FULL_FIELDS})
+        fields["workspace"] = output.get("workspace")
     return FusionToolResult(**hardened(fields))
 
 

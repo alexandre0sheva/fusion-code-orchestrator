@@ -78,6 +78,9 @@ class FusionStats:
     shadow_avg_baseline_score: float | None = None
     shadow_avg_fusion_latency_ms: float | None = None
     shadow_avg_baseline_latency_ms: float | None = None
+    # Tokens the host did not send because Fusion read the files or diff itself (bytes / 4).
+    host_tokens_saved_estimate: int = 0
+    workspace_runs: int = 0
 
     @property
     def shadow_win_rate_percent(self) -> float | None:
@@ -402,6 +405,19 @@ class RunStore:
             ).fetchone()
             stats.baseline_estimate_runs = baseline_row["n"] or 0
             stats.total_baseline_estimated_cost_usd = baseline_row["baseline_cost"] or 0.0
+
+            saved_row = conn.execute(
+                """
+                SELECT COUNT(*) AS n,
+                       COALESCE(SUM(CAST(json_extract(
+                           input_json, '$.workspace.host_tokens_saved_estimate'
+                       ) AS INTEGER)), 0) AS saved
+                FROM runs
+                WHERE json_extract(input_json, '$.workspace') IS NOT NULL
+                """
+            ).fetchone()
+            stats.workspace_runs = saved_row["n"] or 0
+            stats.host_tokens_saved_estimate = saved_row["saved"] or 0
 
             task_rows = conn.execute(
                 """

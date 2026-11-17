@@ -8,7 +8,7 @@ returns text only; Claude Code applies edits and runs commands itself.
 plugin/
   .claude-plugin/plugin.json   manifest (name `fusion`, so commands are /fusion:*)
   .mcp.json                    the server: uvx --python ">=3.11" --managed-python --from git+<repo> fusion mcp
-  commands/                    /fusion:ask review debug plan decide eval stats bench ab
+  commands/                    /fusion:ask review debug plan decide eval digest stats bench ab
   skills/                      fusion-orchestrator, fusion-review, -debug, -decide, -plan, -eval
   agents/fusion-advisor.md     returns a short verdict; can read files and call Fusion only
 ```

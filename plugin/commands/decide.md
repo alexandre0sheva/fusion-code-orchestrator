@@ -9,7 +9,8 @@ If no question was given, ask for the decision and the options.
 
 Call the `fusion_decide_architecture` tool from the Fusion MCP server with the question in
 `question`, the options in `options`, the constraints (scale, team, deadlines, existing stack) in
-`constraints` and a short description of the system in `context`.
+`constraints`, a short description of the system in `context`, and the files that show the current
+design in `paths` (Fusion reads them itself).
 
 Present the recommended option, its tradeoffs and risks, how reversible it is and the migration
 steps. Say where you disagree with the panel and why. Report the cost line.

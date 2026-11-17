@@ -16,6 +16,7 @@ from fusion.orchestration.claims import AgreementReport, ClaimCluster
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.policy import RoutingDecision
 from fusion.telemetry.cost import CostComparison, UsageSummary
+from fusion.workspace import WorkspaceReport
 
 Detail = Literal["compact", "full"]
 
@@ -75,6 +76,7 @@ class CodeReviewInput(BaseModel):
     max_models: int | None = None
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
+    workspace: WorkspaceReport | None = None
 
 
 class FusionAskInput(BaseModel):
@@ -91,6 +93,7 @@ class FusionAskInput(BaseModel):
     max_models: int | None = None
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
+    workspace: WorkspaceReport | None = None
 
 
 class FusionAskOutput(BaseModel):
@@ -161,6 +164,7 @@ class DebugInput(BaseModel):
     max_cost_usd: float | None = None
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
+    workspace: WorkspaceReport | None = None
 
 
 class DebugOutput(BaseModel):
@@ -200,6 +204,7 @@ class ArchitectureDecisionInput(BaseModel):
     max_cost_usd: float | None = None
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
+    workspace: WorkspaceReport | None = None
 
 
 class ArchitectureDecisionOutput(BaseModel):
@@ -241,6 +246,7 @@ class ImplementationPlanInput(BaseModel):
     max_cost_usd: float | None = None
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
+    workspace: WorkspaceReport | None = None
 
 
 class ImplementationPlanOutput(BaseModel):

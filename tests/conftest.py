@@ -16,6 +16,9 @@ def _force_test_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("FUSION_OPENROUTER_PRIVACY", raising=False)
+    # The repo's .env is loaded at CLI import; a project-root override from it would make the
+    # workspace tests read this repository instead of their temp project.
+    monkeypatch.delenv("FUSION_READ_ROOT", raising=False)
     monkeypatch.delenv("OLLAMA_ENABLED", raising=False)
     monkeypatch.delenv("LMSTUDIO_ENABLED", raising=False)
 

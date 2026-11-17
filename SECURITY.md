@@ -16,8 +16,10 @@ https://github.com/alexandre0sheva/fusion-code-orchestrator
 ## Threat model
 
 Fusion is a local process, the MCP server `fusion mcp` or the CLI, that Claude Code (or you) calls
-with text. It sends that text to model providers with your API keys, and returns text. Claude Code
-stays the component that edits files and runs commands: the MCP tools have no file or shell access.
+with text and, optionally, the names of project files or a git range to read. It sends that
+material to model providers with your API keys, and returns text. Claude Code stays the component
+that edits files and runs commands: the MCP tools read only what a call names, under the project
+root ([Reading the project](#reading-the-project)), and never write to it or run a shell.
 
 **What it protects**
 
@@ -41,6 +43,7 @@ stays the component that edits files and runs commands: the MCP tools have no fi
 | Threat | Control |
 |--------|---------|
 | A secret in a diff or log reaches a provider | [Redaction](#secret-redaction) at the start of a run and on every outbound request |
+| A call names a secret file, a path outside the project or a symlink out of it | [Reading the project](#reading-the-project): such paths are refused before anything is read |
 | A secret is written to disk | The run database stores the redacted copy of the input; errors are redacted before they are stored |
 | An instruction hidden in forwarded text steers a model | [Delimiters and a data-only rule](#prompt-injection) in every prompt, and tools that return text and never act |
 | A model's output carries terminal escapes, bidi overrides or a huge payload | [Cleaning and size caps](#output-hardening) before the host or a terminal sees it |
@@ -55,7 +58,7 @@ caller (the caller already has your files and shell). Fusion does not defend aga
 
 | Destination | What is sent | When |
 |-------------|--------------|------|
-| Model providers (Anthropic, OpenAI, Google) | The system prompt and the task: the diff, question, context, file snippets and changed-file names, after redaction. Later calls also carry model output: refinement (other models' answers), judge, synthesis. The API key goes in a request header, never in a URL | Every run, to the models its strategy names |
+| Model providers (Anthropic, OpenAI, Google) | The system prompt and the task: the diff, question, context, file snippets and changed-file names, and the project files or `git diff` a call names in `paths`, `globs` or `diff_ref`, after redaction. Later calls also carry model output: refinement (other models' answers), judge, synthesis. The API key goes in a request header, never in a URL | Every run, to the models its strategy names |
 | OpenRouter, and the host it picks for the model | The same as a model provider, for open-weight models and for vendor models whose own key is unset (or whose catalog `route` is `openrouter`). OpenRouter sees every such prompt and answer and forwards them to one of the model's hosts; hosts that may train on prompts are excluded by your account setting and by the `provider.ignore` list on every request ([CONFIGURATION.md](docs/CONFIGURATION.md#openrouter-routes-and-data-policy)); hosts that retain or log prompts are allowed. Headers carry the key and a generic `X-Title`, nothing about you | Only with `OPENROUTER_API_KEY` set |
 | The baseline and judge models | The task prompt goes to the baseline model; the task and both answers go to the judge model | Only when shadow A/B is on (`FUSION_SHADOW_MODE`) |
 | Provider model-list endpoints | A request carrying your key, no prompt | `fusion doctor --live`, `fusion models check --live` |
@@ -88,7 +91,7 @@ private code without `--redact`.
 | Output hardening | Terminal escapes, control characters and bidi overrides are removed from every string a tool returns, and sizes are capped |
 | Deterministic safety checks | Flag secret leakage, dangerous shell commands and unsupported file references in answers |
 | Judge skepticism | LLM-judge output is self-evaluated; deterministic checks run even if the judge fails |
-| MCP boundary | MCP orchestration tools call pipelines only: no repo writes, no shell execution |
+| MCP boundary | MCP orchestration tools call pipelines only: no repo writes, no shell execution. They read only the files and diff a call names, under the project root, refusing secret, ignored and out-of-root paths (below) |
 | Local dashboard | `fusion dashboard` is read-only, listens on 127.0.0.1, answers only loopback `Host` names (so a web page elsewhere cannot reach it by DNS rebinding), sends a strict Content-Security-Policy, and shows the redacted input of a run, never the stored raw one unless `FUSION_LOG_RAW_PROMPTS` is true |
 | Benchmark sandbox | `fusion bench` runs patches and hidden tests from a dataset you chose in a limited, scrubbed sandbox; never reachable through MCP (see below) |
 | Supply chain | Locked and audited dependencies, actions pinned to commit SHAs, Dependabot; see below |
@@ -113,6 +116,33 @@ are covered too. A warning says when the gateway removed something.
 The entropy rule is the one most likely to redact something that is not a secret (a long base64
 test fixture). Tune it with `FUSION_REDACT_ENTROPY`, `FUSION_REDACT_ENTROPY_THRESHOLD` and
 `FUSION_REDACT_ENTROPY_MIN_LENGTH` ([docs/CONFIGURATION.md](docs/CONFIGURATION.md#environment-variables)).
+
+## Reading the project
+
+A call may name files (`paths`, `globs`) or a git range (`diff_ref`) for Fusion to read instead of
+pasting them ([INTEGRATIONS.md](docs/INTEGRATIONS.md#reading-the-project) has the inputs and how
+the project root is chosen). `WorkspaceReader` (`src/fusion/workspace/`) reads; it never writes,
+and a test hashes a project before and after a read and requires it byte-identical.
+
+| Refused or skipped | How |
+|--------------------|-----|
+| Paths outside the root | `../`, absolute paths elsewhere, and symlinks (of a file or of a directory on the way) whose real path leaves the root |
+| `.git` | Any path with a `.git` component |
+| Ignored files | `git check-ignore` decides, so nested `.gitignore` files, `.git/info/exclude` and the global excludes count. Globs list candidates with `git ls-files`, so ignored trees are never walked. Outside a git repository no ignore rules apply |
+| Secret files | By name, case-insensitive: `.env`, `.env.*`, `*.env`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `id_dsa*`, `id_ecdsa*`, `id_ed25519*`, `secrets.*`, `.netrc`, `.pgpass` (`SECRET_FILE_PATTERNS` in `security/redaction.py`). A symlink is checked by its own name and its target's. Such files are also left out of a `diff_ref` diff |
+| Binaries | A NUL byte in the first 8 KB, or text that is not UTF-8 |
+| Size | Files over 128 KB are not opened; reading stops at 320 KB per call (`FUSION_WORKSPACE_MAX_FILE_BYTES`, `FUSION_WORKSPACE_MAX_BYTES`). A diff over the limit is refused |
+| Devices, FIFOs, directories | Only regular files are read |
+
+Every refusal is reported with its reason in the response's warnings and stored with the run (paths
+and reasons, not content). What is read goes through [secret redaction](#secret-redaction) before
+it reaches a model or the run database.
+
+`diff_ref` runs `git diff` read-only: no checkout, the ref must look like a revision or range (no
+leading `-`, no spaces), and git runs with external diff drivers, textconv filters and the fsmonitor
+hook turned off and `GIT_OPTIONAL_LOCKS=0`, so a repository's own configuration cannot make the
+read run a program or rewrite the index. `GIT_DIR` and similar variables are cleared, so the diff
+is always of the project root.
 
 ## Prompt injection
 
@@ -218,6 +248,8 @@ datasets you did not write.
 - Through OpenRouter, the "no training" rule rests on OpenRouter's own record of each host's policy
   and on your account setting, which Fusion cannot read. The ignore list is only as current as the
   last `fusion models check --live`, which reads an undocumented OpenRouter endpoint.
+- The secret-file deny list goes by file name. A secret kept in an ordinarily named file is caught
+  only by redaction, with its limits above. Outside a git repository `.gitignore` is not applied.
 - Always verify Fusion recommendations against your codebase before applying them.
 
 ## What not to commit

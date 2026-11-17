@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from fusion.config.env import is_test_mode
@@ -11,11 +13,13 @@ from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
     DebugErrorInput,
     DecideArchitectureInput,
+    DigestInput,
     EvalAnswerInput,
     FusionAskInput,
     FusionStatsInput,
     PlanFeatureInput,
     ReviewDiffInput,
+    _OrchestrationInput,
 )
 from fusion.orchestration.pipelines import (
     AnswerEvalPipeline,
@@ -50,6 +54,7 @@ from fusion.providers.base import close_providers
 from fusion.routing.budget import BudgetLevel
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
+from fusion.workspace import WorkspaceReader, WorkspaceReport
 
 
 def _winner_from_delta(
@@ -139,8 +144,74 @@ def soft_timeout_from_env() -> float | None:
     return value or None
 
 
+@dataclass
+class Gathered:
+    """What a call asked Fusion to read from the project, ready for a pipeline input."""
+
+    snippets: list[str] = field(default_factory=list)  # ``file_snippets`` form
+    files: list[str] = field(default_factory=list)  # paths read, relative to the root
+    diff: str = ""
+    report: WorkspaceReport | None = None
+
+    def background(self, ref: str | None) -> str:
+        """The diff as background text for tools other than review."""
+        return f"Changes (git diff {ref}):\n{self.diff}" if self.diff.strip() else ""
+
+
+READ_ROOT_ENV = "FUSION_READ_ROOT"
+
+
+def default_root() -> Path:
+    """The project root when the MCP client names none: ``FUSION_READ_ROOT``, else cwd."""
+    configured = os.environ.get(READ_ROOT_ENV, "").strip()
+    return Path(configured).expanduser() if configured else Path.cwd()
+
+
+def gather_workspace(input: _OrchestrationInput, root: Path | None) -> Gathered:
+    """Read the call's ``diff_ref``, ``paths`` and ``globs`` under ``root`` (``default_root()``
+    when None). The diff is read first, so it has first claim on the per-call byte limit. Raises
+    ``WorkspaceError`` (a ``ValueError``) for a bad ref or glob; unreadable files are skipped."""
+    if not input.reads_workspace:
+        return Gathered()
+    reader = WorkspaceReader.from_env(root or default_root())
+    diff = reader.git_diff(input.diff_ref) if input.diff_ref else ""
+    read = reader.read_paths([*input.paths, *reader.expand_globs(input.globs)])
+    return Gathered(
+        snippets=[s.as_file_snippet() for s in read],
+        files=[s.path for s in read],
+        diff=diff,
+        report=reader.report(),
+    )
+
+
+def _with_workspace(output: dict[str, Any], gathered: Gathered) -> dict[str, Any]:
+    if gathered.report is not None:
+        output["workspace"] = gathered.report.model_dump()
+        output["host_tokens_saved_estimate"] = gathered.report.host_tokens_saved_estimate
+    return output
+
+
+def _joined(*parts: str) -> str:
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+def _unique(*lists: list[str]) -> list[str]:
+    return list(dict.fromkeys(item for items in lists for item in items))
+
+
+DIGEST_INSTRUCTIONS = (
+    "Answer from the files provided, in at most {tokens} tokens (about {words} words). Be "
+    "concrete: name the files, functions and lines that matter. If the material does not "
+    "answer the question, say so instead of guessing."
+)
+
+
 class FusionTools:
-    """Handlers for fusion MCP tools."""
+    """Handlers for fusion MCP tools.
+
+    Each panel tool takes ``root``: the project directory that ``paths``, ``globs`` and
+    ``diff_ref`` are read from (the MCP client's root; None means ``default_root()``).
+    """
 
     def __init__(
         self,
@@ -185,14 +256,17 @@ class FusionTools:
         await close_providers(self.providers)
         self.run_store.close()
 
-    async def fusion_ask(self, input: FusionAskInput) -> dict[str, Any]:
+    async def fusion_ask(
+        self, input: FusionAskInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
         """Answer a general coding task using Fusion as a model-like panel."""
+        got = gather_workspace(input, root)
         result = await self._ask.ask(
             PipelineFusionAskInput(
                 prompt=input.prompt,
-                context=input.context,
-                file_snippets=input.file_snippets,
-                changed_files=input.changed_files,
+                context=_joined(input.context, got.background(input.diff_ref)),
+                file_snippets=[*input.file_snippets, *got.snippets],
+                changed_files=_unique(input.changed_files, got.files),
                 budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
                 max_cost_usd=input.max_cost_usd,
@@ -200,18 +274,26 @@ class FusionTools:
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
                 shadow_baseline=input.shadow_baseline,
+                workspace=got.report,
             )
         )
-        return result.model_dump()
+        return _with_workspace(result.model_dump(), got)
 
-    async def fusion_review_diff(self, input: ReviewDiffInput) -> dict[str, Any]:
+    async def fusion_review_diff(
+        self, input: ReviewDiffInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
         """Review a code diff using multi-model orchestration."""
+        got = gather_workspace(input, root)
+        diff = _joined(input.diff, got.diff)
+        if not diff.strip():
+            msg = f"git diff {input.diff_ref} has no changes under the project root to review"
+            raise ValueError(msg)
         result = await self._code_review.review(
             PipelineCodeReviewInput(
-                diff=input.diff,
-                changed_files=input.changed_files,
+                diff=diff,
+                changed_files=_unique(input.changed_files, got.files),
                 repo_context=input.context,
-                file_snippets=input.file_snippets,
+                file_snippets=[*input.file_snippets, *got.snippets],
                 goals=input.goals,
                 budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
@@ -220,12 +302,16 @@ class FusionTools:
                 max_models=input.max_models,
                 include_raw_outputs=input.include_raw_outputs,
                 shadow_baseline=input.shadow_baseline,
+                workspace=got.report,
             )
         )
-        return result.model_dump()
+        return _with_workspace(result.model_dump(), got)
 
-    async def fusion_debug_error(self, input: DebugErrorInput) -> dict[str, Any]:
+    async def fusion_debug_error(
+        self, input: DebugErrorInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
         """Debug an error using multi-model orchestration."""
+        got = gather_workspace(input, root)
         error = input.error_message
         if input.stack_trace:
             error += f"\n\nStack trace:\n{input.stack_trace}"
@@ -234,53 +320,89 @@ class FusionTools:
                 error_message=error,
                 logs=input.logs,
                 code_context=input.context,
-                file_snippets=input.file_snippets,
-                recent_changes=input.recent_changes,
+                file_snippets=[*input.file_snippets, *got.snippets],
+                recent_changes=_joined(input.recent_changes, got.background(input.diff_ref)),
                 environment=input.environment,
                 budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
                 max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
+                workspace=got.report,
             )
         )
-        return result.model_dump()
+        return _with_workspace(result.model_dump(), got)
 
-    async def fusion_decide_architecture(self, input: DecideArchitectureInput) -> dict[str, Any]:
+    async def fusion_decide_architecture(
+        self, input: DecideArchitectureInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
         """Make an architecture decision using multi-model orchestration."""
+        got = gather_workspace(input, root)
         result = await self._architecture.decide(
             PipelineArchitectureInput(
                 decision_question=input.question,
                 constraints=input.constraints,
                 options=input.options,
-                repo_context=input.context,
-                file_snippets=input.file_snippets,
+                repo_context=_joined(input.context, got.background(input.diff_ref)),
+                file_snippets=[*input.file_snippets, *got.snippets],
                 budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
                 max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
+                workspace=got.report,
             )
         )
-        return result.model_dump()
+        return _with_workspace(result.model_dump(), got)
 
-    async def fusion_plan_feature(self, input: PlanFeatureInput) -> dict[str, Any]:
+    async def fusion_plan_feature(
+        self, input: PlanFeatureInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
         """Create an implementation plan using multi-model orchestration."""
+        got = gather_workspace(input, root)
         result = await self._plan.plan(
             PipelinePlanInput(
                 feature_request=input.feature_description,
                 constraints=input.constraints,
-                repo_context=input.context,
+                repo_context=_joined(input.context, got.background(input.diff_ref)),
                 existing_patterns=input.existing_patterns,
-                file_snippets=input.file_snippets,
+                file_snippets=[*input.file_snippets, *got.snippets],
                 budget=BudgetLevel(input.budget),
                 strategy=input.strategy,
                 max_cost_usd=input.max_cost_usd,
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
+                workspace=got.report,
             )
         )
-        return result.model_dump()
+        return _with_workspace(result.model_dump(), got)
+
+    async def fusion_digest(
+        self, input: DigestInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
+        """Cheap models read large material from the project and return a short answer."""
+        got = gather_workspace(input, root)
+        if not got.snippets and not got.diff.strip():
+            skipped = got.report.skipped_warning() if got.report else None
+            msg = f"Nothing to digest: nothing could be read. {skipped or ''}"
+            raise ValueError(msg.strip())
+        tokens = input.max_answer_tokens
+        rule = DIGEST_INSTRUCTIONS.format(tokens=tokens, words=int(tokens * 0.75))
+        result = await self._ask.ask(
+            PipelineFusionAskInput(
+                prompt=f"{input.question}\n\n{rule}",
+                context=_joined(input.context, got.background(input.diff_ref)),
+                file_snippets=[*input.file_snippets, *got.snippets],
+                changed_files=got.files,
+                budget=BudgetLevel(input.budget),
+                strategy=input.strategy,
+                max_cost_usd=input.max_cost_usd,
+                detail=input.detail,
+                shadow_baseline=input.shadow_baseline,
+                workspace=got.report,
+            )
+        )
+        return _with_workspace(result.model_dump(), got)
 
     async def fusion_eval_answer(self, input: EvalAnswerInput) -> dict[str, Any]:
         """Evaluate an answer using multi-model orchestration."""
@@ -335,6 +457,8 @@ class FusionTools:
                 for s in record.steps
             ],
             "output": record.output_data,
+            # What was read from the project and what was refused (paths and reasons only).
+            "workspace": record.input_data.get("workspace"),
         }
 
     def strategies_overview(self) -> dict[str, Any]:

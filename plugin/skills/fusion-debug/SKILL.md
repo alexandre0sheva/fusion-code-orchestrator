@@ -10,7 +10,8 @@ Call `fusion_debug_error` with:
 
 - `error_message` and `stack_trace`
 - `logs`: only the relevant lines
-- `context`: the code around the failure, and `recent_changes` if it started after an edit
+- `paths`: the files involved in the failure, which Fusion reads itself (do not paste them)
+- `diff_ref` (such as `HEAD`) if it started after an edit; `context` for what the code does
 - `environment`: language and library versions, OS
 
 You get ranked hypotheses with a way to verify each. Run the cheapest check for the likeliest cause

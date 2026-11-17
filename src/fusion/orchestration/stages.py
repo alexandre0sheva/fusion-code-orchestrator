@@ -137,6 +137,8 @@ class RedactStage(_Stage):
             "strategy": ctx.strategy,
             "mode": state.mode.value,
         }
+        if ctx.workspace is not None:  # paths and reasons only: the text is in file_snippets
+            record["workspace"] = ctx.workspace.model_dump()
         if self.deps.security.log_raw_prompts:
             return record
         record.update(

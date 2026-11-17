@@ -125,8 +125,10 @@ records a blind pairwise verdict. Details: [docs/ARCHITECTURE.md](docs/ARCHITECT
 | `fusion_eval_answer` | Answer quality evaluation |
 | `fusion_compare_claude_runs` | Compare Claude Code + Opus vs Claude Code + Fusion |
 | `fusion_stats` | Cumulative spend vs baseline, savings, shadow A/B win-rate |
+| `fusion_digest` | Cheap models read large files or a diff and answer one question briefly |
 
-Inputs, response envelope and budgets: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#mcp-tool-reference).
+Inputs (`paths`, `globs` and `diff_ref` let Fusion read files and `git diff` itself, read-only),
+response envelope and budgets: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#mcp-tool-reference).
 
 ## Common commands
 

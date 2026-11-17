@@ -1,4 +1,4 @@
-"""Commands that run the panel: ask, review-diff, debug, decide, plan and eval-answer.
+"""Commands that run the panel: ask, review-diff, debug, decide, plan, digest and eval-answer.
 
 They share one shape: the main input is an argument, ``--file`` or stdin; then ``--context``,
 ``--strategy``, ``--max-cost``, ``--detail``, ``--json``, ``--mock``, ``--db-path`` and ``--quiet``.
@@ -17,6 +17,8 @@ from rich.markdown import Markdown
 
 from fusion.cli.common import (
     EXIT_HALTED,
+    EXIT_USAGE,
+    CliError,
     ContextFileOption,
     ContextOption,
     DbPathOption,
@@ -38,11 +40,17 @@ from fusion.cli.common import (
     require_a_provider,
     run_tool,
 )
-from fusion.mcp_server.response import present_comparison, present_run
+from fusion.mcp_server.response import (
+    COMPACT_MAX_TOKENS,
+    DIGEST_OVERHEAD_TOKENS,
+    present_comparison,
+    present_run,
+)
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
     DebugErrorInput,
     DecideArchitectureInput,
+    DigestInput,
     EvalAnswerInput,
     FusionAskInput,
     PlanFeatureInput,
@@ -51,13 +59,33 @@ from fusion.mcp_server.schemas import (
 
 FileOption = Annotated[
     list[Path] | None,
-    typer.Option("--file", "-f", help="Attach a file to the question (repeatable)"),
+    typer.Option(
+        "--file",
+        "-f",
+        help="A project file for the panel to read (repeatable). Read like the MCP `paths`: "
+        "under the current directory, skipping secret, ignored, binary and oversize files",
+    ),
+]
+GlobOption = Annotated[
+    list[str] | None,
+    typer.Option("--glob", help="Read the project files matching a glob, e.g. 'src/**/*.py'"),
+]
+DiffRefOption = Annotated[
+    str | None,
+    typer.Option("--diff-ref", help="Read `git diff <REF>` itself, e.g. HEAD~1 or main...HEAD"),
 ]
 
 
-def emit_run(output: dict[str, Any], *, detail: Detail, as_json: bool, quiet: bool) -> None:
+def emit_run(
+    output: dict[str, Any],
+    *,
+    detail: Detail,
+    as_json: bool,
+    quiet: bool,
+    max_tokens: int = COMPACT_MAX_TOKENS,
+) -> None:
     """Print a finished run (stdout) and exit 3 if it has no answer."""
-    result = present_run(output, detail.value)
+    result = present_run(output, detail.value, max_tokens=max_tokens)
     if as_json:
         echo_json(result.model_dump(exclude_none=True))
     else:
@@ -85,11 +113,12 @@ def _go(
     detail: Detail,
     as_json: bool,
     quiet: bool,
+    max_tokens: int = COMPACT_MAX_TOKENS,
 ) -> None:
     require_a_provider(mock)
     tools = make_tools(db_path, mock)
     output = run_tool(tools, call, quiet=quiet)
-    emit_run(output, detail=detail, as_json=as_json, quiet=quiet)
+    emit_run(output, detail=detail, as_json=as_json, quiet=quiet, max_tokens=max_tokens)
 
 
 def ask(
@@ -112,12 +141,10 @@ def ask(
     Example: fusion ask "Why does this retry loop never back off?" --file src/http.py
     """
     question = primary_text(prompt, None, what="the question", flag="the PROMPT argument")
-    snippets = [f"{path}\n{read_file(path)}" for path in file or []]
     request = FusionAskInput(
         prompt=question,
         context=context_text(context, context_file),
-        file_snippets=snippets,
-        changed_files=[str(path) for path in file or []],
+        paths=[str(path) for path in file or []],
         strategy=strategy,
         max_cost_usd=check_max_cost(max_cost),
         detail=detail.value,
@@ -136,6 +163,7 @@ def review_diff(
     file: Annotated[
         Path | None, typer.Option("--file", "-f", help="The diff file (- reads stdin)")
     ] = None,
+    diff_ref: DiffRefOption = None,
     goals: Annotated[str, typer.Option(help="What to focus on, such as security")] = "",
     context: ContextOption = "",
     context_file: ContextFileOption = None,
@@ -149,11 +177,13 @@ def review_diff(
 ) -> None:
     """Review a diff with the panel.
 
-    Example: git diff main | fusion review-diff --file -
+    Examples: fusion review-diff --diff-ref main...HEAD
+              git diff main | fusion review-diff --file -
     """
-    diff = primary_text(None, file, what="a diff")
+    diff = "" if diff_ref and file is None else primary_text(None, file, what="a diff")
     request = ReviewDiffInput(
         diff=diff,
+        diff_ref=diff_ref,
         goals=goals,
         context=context_text(context, context_file),
         strategy=strategy,
@@ -378,9 +408,59 @@ def compare_claude_runs(
         typer.echo(result.display_markdown)
 
 
+def digest(
+    question: Annotated[
+        str | None, typer.Argument(help="What you want to know about the files (- reads stdin)")
+    ] = None,
+    file: FileOption = None,
+    glob: GlobOption = None,
+    diff_ref: DiffRefOption = None,
+    max_answer_tokens: Annotated[
+        int, typer.Option("--max-answer-tokens", min=50, max=4000, help="Longest answer, tokens")
+    ] = 600,
+    context: ContextOption = "",
+    strategy: StrategyOption = None,
+    max_cost: MaxCostOption = None,
+    detail: DetailOption = Detail.compact,
+    as_json: JsonOption = False,
+    mock: MockOption = False,
+    db_path: DbPathOption = None,
+    quiet: QuietOption = False,
+) -> None:
+    """Have cheap models read project files and answer one question briefly.
+
+    Example: fusion digest "Where are retries handled?" --glob 'src/**/*.py'
+    """
+    text = primary_text(question, None, what="the question", flag="the QUESTION argument")
+    if not (file or glob or diff_ref):
+        msg = "name the material to read with --file, --glob or --diff-ref"
+        raise CliError(msg, code=EXIT_USAGE)
+    request = DigestInput(
+        question=text,
+        paths=[str(path) for path in file or []],
+        globs=list(glob or []),
+        diff_ref=diff_ref,
+        max_answer_tokens=max_answer_tokens,
+        context=context.strip(),
+        strategy=strategy,
+        max_cost_usd=check_max_cost(max_cost),
+        detail=detail.value,
+    )
+    _go(
+        lambda tools: tools.fusion_digest(request),
+        mock=mock,
+        db_path=db_path,
+        detail=detail,
+        as_json=as_json,
+        quiet=quiet,
+        max_tokens=max_answer_tokens + DIGEST_OVERHEAD_TOKENS,
+    )
+
+
 def register(app: typer.Typer) -> None:
     """Add the run commands to the root app."""
     app.command("ask")(ask)
+    app.command("digest")(digest)
     app.command("review-diff")(review_diff)
     app.command("debug")(debug)
     app.command("decide")(decide)

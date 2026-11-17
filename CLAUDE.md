@@ -22,7 +22,7 @@ Quality gate before saying a task is done: pytest, ruff and mypy all pass.
 
 `mcp_server/` tool handlers and schemas · `orchestration/` staged pipeline (`stages`, `ledger`,
 `factory`), fanout, refine, synthesis, prompts · `providers/` direct API adapters + mock · `routing/` classifier, registry, policy, budget ·
-`evals/` judge + deterministic checks · `benchmark/` shadow A/B and legacy compare · `bench/` studies (`fusion bench`) · `telemetry/`
+`evals/` judge + deterministic checks · `workspace/` read-only project reads (paths, globs, git diff) · `benchmark/` shadow A/B and legacy compare · `bench/` studies (`fusion bench`) · `telemetry/`
 cost and usage · `storage/` SQLite · `config/` YAML + env · `security/` redaction + prompt/output hardening · `cli/` Typer app.
 Also: `plugin/` Claude Code plugin, `install/` client installers (`fusion install`), `evals/` datasets and runners, `tests/`.
 
@@ -30,7 +30,8 @@ Also: `plugin/` Claude Code plugin, `install/` client installers (`fusion instal
 
 - Python 3.11+, Pydantic v2 models, full type hints (mypy strict), async for all provider I/O.
 - Never `print` to stdout in code reachable from `fusion mcp`: stdout carries JSON-RPC. Log to stderr.
-- MCP orchestration tools stay side-effect free (no repo writes, no shell).
+- MCP orchestration tools stay side-effect free (no repo writes, no shell); they read the project
+  only through `fusion.workspace`.
 - Tests must run offline. Use `MockProvider` or `httpx.MockTransport`; mark real-API tests `@pytest.mark.live`.
 - Never commit `.env`, API keys, `*.db`, or `bench-results/`. Never print keys.
 - Ask before spending money on live APIs. The roadmap-wide live budget is $20 total.

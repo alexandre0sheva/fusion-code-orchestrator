@@ -17,6 +17,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Price tiers computed from price (`nano`, `low`, `medium`, `high`, `premium` by blended price `(3 × input + output) / 4`, rule in `catalog.yaml` `tiering:`); `fusion models list` shows blended price, tier and coming tier changes, and takes `--on DATE`.
 - Long-context prices (`above_prompt_tokens` rows: Haiku 5.5 above 100K prompt tokens, GPT-6.x above 272K); the ledger and the `max_cost_usd` guard price each call by its own prompt size.
 - `fusion models check` and `fusion doctor` warn when an enabled model is not the newest of its family and when a price changes within 30 days; `--live` also flags a newer model listed by the provider and a price page that redirects.
+- The panel tools take `paths`, `globs` and `diff_ref` (such as `HEAD~1` or `main...HEAD`) and read those files or that `git diff` themselves, read-only and under the project root (the client's root, `FUSION_READ_ROOT`, or the server's cwd), so the host no longer pastes them; `fusion_review_diff` needs no `diff` when `diff_ref` is given. Paths outside the root, ignored by `.gitignore`, secret (`.env*`, keys), binary or too large are skipped with a reason in the warnings and the stored run. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#reading-the-project).
+- `fusion_digest` MCP tool, `fusion digest` command and `/fusion:digest`: cheap models read large files or a diff and answer one question in at most `max_answer_tokens` (default 600).
+- Responses that read the project carry `host_tokens_saved_estimate` (bytes Fusion read ÷ 4), and `fusion stats` / `fusion_stats` sum it.
+- `fusion review-diff --diff-ref REF`; `fusion ask -f` now reads through the same reader, so a secret, ignored or out-of-directory file is skipped with a warning instead of sent.
 
 ### Changed
 

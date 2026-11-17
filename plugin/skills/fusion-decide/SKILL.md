@@ -7,8 +7,8 @@ user-invocable: false
 # Fusion decide
 
 Call `fusion_decide_architecture` with the decision in `question`, the candidates in `options`,
-`constraints` (scale, team, deadline, existing stack) and a short `context` description of the
-system.
+`constraints` (scale, team, deadline, existing stack), a short `context` description of the
+system, and the files that show the current design in `paths`.
 
 Present the recommended option with its tradeoffs, risks, reversibility and migration steps, and
 say where you disagree with the panel. A recommendation from cheap models is an input to the

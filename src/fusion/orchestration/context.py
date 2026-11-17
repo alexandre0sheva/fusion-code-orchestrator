@@ -41,6 +41,7 @@ from fusion.security.policy import SecurityPolicy
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.cost import PricingRegistry
 from fusion.telemetry.traces import OrchestrationTrace
+from fusion.workspace import WorkspaceReport
 
 if TYPE_CHECKING:
     from fusion.orchestration.output import ResultPresenter
@@ -69,6 +70,9 @@ class PipelineContext:
     # Benchmark only: scores a patch by running the task's visible tests (the ``verified``
     # aggregator). 1.0 = all pass, -1.0 = the patch does not apply, None = cannot be verified.
     verifier: Callable[[str], Awaitable[float | None]] | None = None
+    # What the tool read from the user's project for this run (files, a git diff) and what it
+    # refused; stored with the run's input. None when the caller pasted everything.
+    workspace: WorkspaceReport | None = None
 
 
 @dataclass
@@ -205,6 +209,8 @@ class RunState:
         """Open a run. ``seed`` and ``redact`` override the mode's defaults; ``ledger`` lets the
         caller keep the run's cost record even if a stage raises."""
         warnings: list[str] = []
+        if ctx.workspace is not None and (skipped := ctx.workspace.skipped_warning()):
+            warnings.append(skipped)
         ledger = ledger or RunLedger(deps.clock)
         settings = MODE_SETTINGS[mode]
         redact_run = settings.redact if redact is None else redact

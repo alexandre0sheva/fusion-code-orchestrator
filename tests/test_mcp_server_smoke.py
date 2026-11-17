@@ -18,6 +18,7 @@ EXPECTED_TOOLS = {
     "fusion_eval_answer",
     "fusion_stats",
     "fusion_compare_claude_runs",
+    "fusion_digest",
 }
 
 

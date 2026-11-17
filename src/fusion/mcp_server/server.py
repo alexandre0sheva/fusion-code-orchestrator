@@ -10,11 +10,16 @@ import ipaddress
 import itertools
 import json
 import sys
+import warnings
 from collections.abc import AsyncIterator
 from contextlib import AbstractContextManager, asynccontextmanager
+from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from fusion.mcp_server.response import (
+    DIGEST_OVERHEAD_TOKENS,
     present_comparison,
     present_run,
     present_stats,
@@ -25,6 +30,7 @@ from fusion.mcp_server.schemas import (
     CompareToolResult,
     DebugErrorInput,
     DecideArchitectureInput,
+    DigestInput,
     EvalAnswerInput,
     FusionAskInput,
     FusionStatsInput,
@@ -45,7 +51,10 @@ INSTRUCTIONS = (
     "Fusion asks a panel of cheap models and returns text; you stay the executor and apply edits "
     "yourself. Use it for a second opinion on review, debugging, architecture, planning and "
     "hard coding questions, not for trivial edits. Each call takes tens of seconds and costs "
-    "cents; progress is reported while it runs. Responses are compact: the answer, the top "
+    "cents; progress is reported while it runs. Name files in `paths`/`globs` and a git range "
+    "in `diff_ref` instead of pasting them: Fusion reads them itself, read-only, under the "
+    "project root, and fusion_digest answers questions about large material in a few hundred "
+    "tokens. Responses are compact: the answer, the top "
     "claims, confidence and one cost line. Pass detail='full' for everything, or read "
     "fusion://runs/{run_id} later. Pass max_cost_usd to cap spend and strategy to pick a "
     "cheaper or faster form (see fusion://strategies). With the panel-digest strategy no model "
@@ -55,9 +64,13 @@ INSTRUCTIONS = (
 )
 
 _TEXT_ONLY = (
-    " Fusion sees only the text you send and returns text: it reads no files and runs nothing, "
-    "so check its claims against the code before editing. A call takes tens of seconds (a panel "
-    "is slower than one model) and costs cents; the response states the cost."
+    " Fusion returns text and runs nothing, so check its claims against the code before "
+    "editing. A call takes tens of seconds (a panel is slower than one model) and costs cents; "
+    "the response states the cost."
+)
+_READS = (
+    " Name files in `paths` (or `globs`) instead of pasting them: Fusion reads them itself, "
+    "read-only, under the project root, and skips secret, ignored, binary and oversize files."
 )
 _VERIFY = (
     _TEXT_ONLY + " Use strategy='solo-haiku' for the quickest answer or max_cost_usd to cap spend."
@@ -68,38 +81,50 @@ ASK_DESCRIPTION = (
     "with the points the models agree on. Call it for a second opinion on a hard implementation "
     "question when a wrong answer would be costly, or when you are unsure. Do not call it for "
     "trivial edits, for questions the code in front of you already answers, or for anything "
-    "that needs files read or commands run." + _VERIFY
+    "that needs commands run." + _READS + _VERIFY
 )
 REVIEW_DESCRIPTION = (
     "Review a code diff with a panel of cheap models and get findings grouped by how many "
     "models agree. Call it before committing or merging a non-trivial or risky change "
     "(security, concurrency, migrations, public APIs), or for an independent check of your own "
-    "patch. Do not call it for typo, formatting or one-line changes. Send the unified diff in "
-    "`diff` and background in `context`." + _VERIFY
+    "patch. Do not call it for typo, formatting or one-line changes. Pass `diff_ref` (such as "
+    "'HEAD~1' or 'main...HEAD') and Fusion reads the diff itself with a read-only `git diff`; "
+    "send `diff` text only for a change git cannot show. Put background in `context`, and name "
+    "related files in `paths` rather than pasting them." + _VERIFY
 )
 DEBUG_DESCRIPTION = (
     "Rank the likely root causes of an error and get steps to verify each one and a minimal fix "
     "strategy. Call it when you have an error message or stack trace and the cause is not "
     "obvious after a first look, or after a fix attempt failed. Do not call it when the message "
-    "already names the cause (a missing import, a typo)." + _VERIFY
+    "already names the cause (a missing import, a typo). Name the files involved in `paths` and "
+    "pass `diff_ref` when a recent change may be the cause." + _VERIFY
 )
 ARCHITECTURE_DESCRIPTION = (
     "Compare design options and get a recommendation with tradeoffs, risks, reversibility and "
     "a migration plan. Call it before committing to a choice that is hard to reverse (storage, "
     "queues, framework, service boundaries). Do not call it for choices that are easy to "
-    "reverse or that project conventions already settle." + _VERIFY
+    "reverse or that project conventions already settle." + _READS + _VERIFY
 )
 PLAN_DESCRIPTION = (
     "Draft an implementation plan for a feature: the sequence of steps, affected modules, API "
     "and data changes, tests to add, risks and open questions. Call it at the start of a "
     "multi-file feature when the approach is not obvious. Do not call it for small changes you "
-    "can already sketch." + _VERIFY
+    "can already sketch." + _READS + _VERIFY
 )
 EVAL_DESCRIPTION = (
     "Score an answer against its question and a rubric: strengths, weaknesses, unsupported "
     "claims and missing points. Call it to check a draft answer or explanation before you act on "
     "it or present it. Do not call it to find out whether code works or a fact is true: it "
     "judges only the text you pass in and can run nothing." + _TEXT_ONLY
+)
+DIGEST_DESCRIPTION = (
+    "Have cheap models read large material from the project (files in `paths`/`globs`, or a "
+    "`diff_ref` diff) and return a short answer to one question, at most `max_answer_tokens`. "
+    "Call it when answering would mean reading many or long files into your own context: a "
+    "summary of a module, where something is handled, what a large diff changes. Do not call "
+    "it for a file you need to edit (read that yourself) or for one short file. Fusion reads "
+    "read-only under the project root and skips secret, ignored, binary and oversize files."
+    + _TEXT_ONLY
 )
 STATS_DESCRIPTION = (
     "Show cumulative Fusion usage: money spent against the baseline model's estimated cost, "
@@ -122,6 +147,41 @@ def _progress_to(ctx: Any) -> AbstractContextManager[None]:
         await ctx.report_progress(progress=next(counter), total=None, message=message)
 
     return progress_sink(sink)
+
+
+ROOTS_TIMEOUT_S = 5.0
+
+
+async def client_root(ctx: Any) -> Path | None:
+    """The first filesystem root the MCP client declares, or None (then ``FUSION_READ_ROOT``
+    or the server's cwd is the project root). None too for clients without the roots
+    capability, transports with no channel for server-to-client requests, and clients that
+    do not answer within ``ROOTS_TIMEOUT_S``."""
+    from mcp.shared.exceptions import MCPDeprecationWarning
+    from mcp.types import ClientCapabilities, RootsCapability
+
+    session = getattr(ctx, "session", None)
+    if session is None or not getattr(session, "can_send_request", True):
+        return None  # MCP 2026-07-28 transports may have no channel for server requests
+    try:
+        if not session.check_client_capability(ClientCapabilities(roots=RootsCapability())):
+            return None
+        with warnings.catch_warnings():  # roots are deprecated from MCP 2026-07-28 (SEP-2577)
+            warnings.simplefilter("ignore", MCPDeprecationWarning)
+            async with asyncio.timeout(ROOTS_TIMEOUT_S):
+                listed = await session.list_roots()
+    except Exception as exc:  # no back channel, a timeout, a client error: fall back to cwd
+        print(f"fusion: could not list the client's roots ({exc}); using cwd", file=sys.stderr)
+        return None
+    for root in listed.roots:
+        uri = str(root.uri)
+        if uri.startswith("file://"):
+            return Path(url2pathname(urlparse(uri).path))
+    return None
+
+
+async def _root_for(input: Any, ctx: Any) -> Path | None:
+    return await client_root(ctx) if getattr(input, "reads_workspace", False) else None
 
 
 def create_mcp_server(*, db_path: str | None = None) -> Any:
@@ -161,7 +221,7 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     )
     async def fusion_ask(input: FusionAskInput, ctx: Context) -> ToolResult:
         with _progress_to(ctx):
-            output = await tools.fusion_ask(input)
+            output = await tools.fusion_ask(input, root=await _root_for(input, ctx))
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
@@ -171,7 +231,7 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     )
     async def fusion_review_diff(input: ReviewDiffInput, ctx: Context) -> ToolResult:
         with _progress_to(ctx):
-            output = await tools.fusion_review_diff(input)
+            output = await tools.fusion_review_diff(input, root=await _root_for(input, ctx))
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
@@ -181,7 +241,7 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     )
     async def fusion_debug_error(input: DebugErrorInput, ctx: Context) -> ToolResult:
         with _progress_to(ctx):
-            output = await tools.fusion_debug_error(input)
+            output = await tools.fusion_debug_error(input, root=await _root_for(input, ctx))
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
@@ -193,7 +253,8 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         input: DecideArchitectureInput, ctx: Context
     ) -> ToolResult:
         with _progress_to(ctx):
-            output = await tools.fusion_decide_architecture(input)
+            root = await _root_for(input, ctx)
+            output = await tools.fusion_decide_architecture(input, root=root)
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
@@ -203,8 +264,19 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     )
     async def fusion_plan_feature(input: PlanFeatureInput, ctx: Context) -> ToolResult:
         with _progress_to(ctx):
-            output = await tools.fusion_plan_feature(input)
+            output = await tools.fusion_plan_feature(input, root=await _root_for(input, ctx))
         return to_tool_result(present_run(output, input.detail))
+
+    @mcp.tool(
+        description=DIGEST_DESCRIPTION,
+        annotations=panel_tool("Digest project files"),
+        output_schema=run_schema,
+    )
+    async def fusion_digest(input: DigestInput, ctx: Context) -> ToolResult:
+        with _progress_to(ctx):
+            output = await tools.fusion_digest(input, root=await _root_for(input, ctx))
+        cap = input.max_answer_tokens + DIGEST_OVERHEAD_TOKENS
+        return to_tool_result(present_run(output, input.detail, max_tokens=cap))
 
     @mcp.tool(
         description=EVAL_DESCRIPTION,
@@ -280,16 +352,22 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         description="Have Fusion's panel review a diff before you commit it.",
     )
     def review_this_diff(diff: str = "", focus: str = "") -> str:
-        source = (
-            f"Review this diff:\n\n{diff}"
-            if diff.strip()
-            else "Get the diff to review with `git diff` (add `--staged` for staged changes)."
-        )
         goal = f" Focus on: {focus}." if focus.strip() else ""
+        if diff.strip():
+            how = (
+                f"Review this diff:\n\n{diff}\n\nCall the `fusion_review_diff` tool with the "
+                "diff in `diff`"
+            )
+        else:
+            how = (
+                "Review my latest changes. Call the `fusion_review_diff` tool with `diff_ref` "
+                "set to the committed range to review (such as 'HEAD~1' or 'main...HEAD'); "
+                "Fusion reads that `git diff` itself. For uncommitted work, get the text with "
+                "`git diff` (add `--staged` for staged changes) and pass it in `diff`"
+            )
         return (
-            f"{source}\n\nCall the `fusion_review_diff` tool with the diff in `diff`, the "
-            f"relevant background in `context`{goal} Then check each finding against the code "
-            "and tell me which ones you confirmed, which you rejected and why."
+            f"{how}, and the relevant background in `context`.{goal} Then check each finding "
+            "against the code and tell me which ones you confirmed, which you rejected and why."
         )
 
     @mcp.prompt(

@@ -72,7 +72,7 @@ and, from a local clone, `claude mcp add --scope user fusion -- uv run --directo
 
 | | Name | Use |
 |--|------|-----|
-| Commands (you type them) | `/fusion:ask`, `/fusion:review`, `/fusion:debug`, `/fusion:plan`, `/fusion:decide`, `/fusion:eval` | One per tool; they gather the input (the diff, the error) and tell Claude how to read the answer |
+| Commands (you type them) | `/fusion:ask`, `/fusion:review`, `/fusion:debug`, `/fusion:plan`, `/fusion:decide`, `/fusion:eval`, `/fusion:digest` | One per tool; they name the input (the files, the `diff_ref` range, the error) and tell Claude how to read the answer |
 | | `/fusion:stats` | Spend, savings and shadow A/B win-rate |
 | | `/fusion:bench` | Summarise the latest benchmark run from `bench-results/` (read-only; never starts a study) |
 | | `/fusion:ab` | Run a task with and without Fusion and compare the two |
@@ -136,7 +136,7 @@ Every refusal is decided before anything is written. By hand, the file is
 [`integrations/cursor/mcp.json`](../integrations/cursor/mcp.json). Provider keys come from the
 environment Cursor starts in (launch it from a shell that has them exported).
 
-**Smoke test.** (1) Settings > Tools & MCP lists `fusion` with eight tools. (2) In Agent chat ask
+**Smoke test.** (1) Settings > Tools & MCP lists `fusion` with nine tools. (2) In Agent chat ask
 "call fusion_stats": it answers with a spend summary and calls no model. (3) Ask "use Fusion to
 review this diff" with a staged change: the agent calls `fusion_review_diff` and reports findings.
 (4) `fusion install cursor` again says "nothing to do".
@@ -230,18 +230,22 @@ takes tens of seconds and costs cents.
 | `fusion_decide_architecture` | A hard-to-reverse design choice | Choices that are easy to reverse or settled by convention |
 | `fusion_plan_feature` | A plan for a multi-file feature whose approach is unclear | Small changes |
 | `fusion_eval_answer` | Scoring a draft answer against a rubric | Finding out whether code works or a fact is true |
+| `fusion_digest` | A short answer about material too large to read yourself: what a module does, where something is handled, what a big diff changes | A file you are about to edit; one short file |
 | `fusion_compare_claude_runs` | Measuring Claude Code + Opus against Claude Code + Fusion | Normal work |
 | `fusion_stats` | Spend, savings and shadow A/B win-rate (free, calls no model) | |
 
 ### Inputs
 
 The orchestration tools share these inputs (each tool adds its own, such as `diff` or
-`error_message`):
+`error_message`; `fusion_digest` takes `question` and `max_answer_tokens`, default 600):
 
 | Input | Meaning |
 |-------|---------|
 | `context` | The one place for background text. `repo_context` and `repo_summary` (review) and `code_context` (debug) are still accepted, folded into `context`, and no longer in the schema |
-| `file_snippets` | Short code excerpts, each prefixed with its path |
+| `paths` | Project files for Fusion to read itself, instead of pasting them ([Reading the project](#reading-the-project)) |
+| `globs` | Patterns such as `src/**/*.py`; at most 200 files |
+| `diff_ref` | A git revision or range (`HEAD~1`, `main...HEAD`, a sha) whose `git diff` Fusion reads. For `fusion_review_diff` it replaces `diff`, which is then optional; other tools get the diff as background |
+| `file_snippets` | Short code excerpts, each prefixed with its path; prefer `paths` |
 | `strategy` | A strategy name (`solo-haiku`, `panel-duo`, `panel-nano`, `panel-mid`, `panel-refine`, `panel-cascade`, `panel-vote`, `panel-digest`); overrides `budget`. The list is the `fusion://strategies` resource; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets) |
 | `budget` | The older preset (`low`, `medium`, `high`, `local_only`); selects a strategy |
 | `max_cost_usd` | A hard cap for this call, lowering (never raising) the strategy's own; the run is shifted to a cheaper form or refused before any model is called, see [CONFIGURATION.md](CONFIGURATION.md#cost-and-latency-caps) |
@@ -253,6 +257,36 @@ share, the disputed ones and the single-model ones, then each model's answer, an
 is the aggregator. The tool descriptions say so, so the agent keeps what the models agree on and
 checks the rest against the code before relying on it.
 
+### Reading the project
+
+Fusion reads only what a call names in `paths`, `globs` and `diff_ref`, read-only, and never
+writes to the project. Paths are relative to the **project root**: the client's first root when the
+client answers `roots/list`, else `FUSION_READ_ROOT`, else the directory the server runs in.
+
+| Client | Root in practice |
+|--------|------------------|
+| Claude Code | The project directory: Claude Code starts the stdio server there |
+| Cursor | The client's root if it answers `roots/list`; otherwise set `FUSION_READ_ROOT` in the server's `env` in `mcp.json` |
+| Codex | The server's working directory (Codex's `cwd` for the server); otherwise set `FUSION_READ_ROOT` |
+| `fusion mcp --transport http` | Set `FUSION_READ_ROOT`: an HTTP server is not started in your project |
+
+The Cursor and Codex rows are from their documentation, not from driving the clients. A quick check
+is `fusion_digest` with `paths: ["README.md"]`: a wrong root shows up as `not found` in the
+warnings. Roots are deprecated in the MCP 2026-07-28 revision, and transports without a channel for
+server-to-client requests cannot ask for them; that is when the fallbacks apply.
+
+What is refused or skipped, each with its reason in `warnings` and in the stored run: paths outside
+the root (`../`, absolute paths elsewhere, symlinks that lead out), anything inside `.git`, files
+`.gitignore` excludes, secret files (`.env*`, keys and certificates, `secrets.*`; the list is in
+[SECURITY.md](../SECURITY.md#reading-the-project)), binaries, files over 128 KB, and files past
+320 KB read in one call (about 80K tokens). A `diff_ref` diff counts against the same limit; one that
+is too large is refused with a message to narrow the range. Everything read has secrets redacted
+before it goes to a model. The limits are `FUSION_WORKSPACE_MAX_FILE_BYTES` and
+`FUSION_WORKSPACE_MAX_BYTES` ([CONFIGURATION.md](CONFIGURATION.md#environment-variables)).
+
+Each response that read the project carries `host_tokens_saved_estimate`: the bytes Fusion read
+that the host did not have to send, divided by 4. `fusion_stats` sums it.
+
 ### Responses
 
 The text content is `display_markdown`; the same record is returned as structured content.
@@ -262,12 +296,17 @@ The text content is `display_markdown`; the same record is returned as structure
 | `display_markdown` | yes | The answer, the top five claims, confidence and one cost line, cut at about 1,500 tokens (the cut says where the rest is) |
 | `run_id`, `details_uri` | yes | Handle for the stored run: `fusion://runs/{run_id}` |
 | `strategy`, `confidence`, `cost_usd`, `latency_s`, `models_called` | yes | Headline numbers; `cost_usd` is absent when a price is unknown |
-| `warnings` | yes | Timeouts, provider failures, cost-cap shifts, soft-limit notices |
+| `warnings` | yes | Timeouts, provider failures, cost-cap shifts, soft-limit notices, project paths not read |
+| `host_tokens_saved_estimate` | yes | Present when the call named `paths`, `globs` or `diff_ref`: tokens the host did not send |
 | `partial`, `halted` | yes | `partial`: the soft time limit cut the run short and the answer is the panel digest. `halted`: why there is no answer (`insufficient_context`, `quorum`, `budget`, `timeout`) |
 | `result` | `full` only | Task-specific structured result |
 | `claims`, `agreement` | `full` only | The panel's claims grouped across models; agreement score, evidence rate, calibrated `confidence` |
 | `usage`, `cost_comparison`, `routing`, `evals` | `full` only | Per-model tokens, cost and latency; Fusion versus the baseline ([COSTS.md](COSTS.md)); why these models; scoring of each stage |
 | `raw_outputs` | `full` only, with `include_raw_outputs` | Each panel answer |
+| `workspace` | `full` only | What was read from the project (path, bytes, redactions) and what was skipped, with reasons |
+
+`fusion_digest` cuts its compact text at `max_answer_tokens` plus about 200 tokens for the
+heading and cost line.
 
 `fusion_stats` returns `display_markdown`, `warnings` and `result`; `fusion_compare_claude_runs`
 adds `evals`.
@@ -293,13 +332,13 @@ adds `evals`.
 
 | Resource | Contents |
 |----------|----------|
-| `fusion://runs/{run_id}` | One stored run: the full answer, claims, per-call cost and warnings (not the text you sent) |
+| `fusion://runs/{run_id}` | One stored run: the full answer, claims, per-call cost, warnings and what was read from the project (not the text you sent) |
 | `fusion://stats` | The `fusion_stats` summary |
 | `fusion://strategies` | The strategies a call may name and what each budget preset means |
 
 | Prompt | Starts |
 |--------|--------|
-| `review-this-diff` (`diff`, `focus`) | A review with `fusion_review_diff`, then checking each finding against the code |
+| `review-this-diff` (`diff`, `focus`) | A review with `fusion_review_diff` (by `diff_ref` when no diff is given), then checking each finding against the code |
 | `debug-this-error` (`error`, `context`) | A diagnosis with `fusion_debug_error`, then running its verification steps |
 | `plan-this-feature` (`feature`, `constraints`) | A plan with `fusion_plan_feature`, then fitting it to the repository |
 

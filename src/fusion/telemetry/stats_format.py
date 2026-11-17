@@ -43,6 +43,11 @@ def format_stats_markdown(
         lines.append(f"- Estimated savings: ${stats.estimated_savings_usd:.4f}{pct_text}")
     else:
         lines.append("- Baseline estimate: no runs with baseline data yet")
+    if stats.workspace_runs:
+        lines.append(
+            f"- Host tokens saved (Fusion read the files itself): "
+            f"~{stats.host_tokens_saved_estimate:,} over {stats.workspace_runs} runs"
+        )
 
     lines.extend(["", "### Shadow A/B vs baseline (real head-to-head)"])
     if stats.shadow_total:

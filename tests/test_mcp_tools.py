@@ -34,6 +34,8 @@ ARGUMENTS: dict[str, dict[str, Any]] = {
     },
     "fusion_plan_feature": {"feature_description": "Add a dark mode toggle to the settings page"},
     "fusion_eval_answer": {"question": "What is 2+2?", "answer": "4"},
+    # read-only, from the test run's cwd (this repository)
+    "fusion_digest": {"question": "What is this project?", "paths": ["pyproject.toml"]},
     "fusion_stats": {},
     "fusion_compare_claude_runs": {
         "task_prompt": "Fix the bug",

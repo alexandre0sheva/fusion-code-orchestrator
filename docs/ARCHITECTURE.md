@@ -107,13 +107,21 @@ Panel members receive role prompts defined in `src/fusion/orchestration/prompts.
 - `fusion_eval_answer`
 - `fusion_compare_claude_runs`
 - `fusion_stats`
+- `fusion_digest`
 
 `src/fusion/mcp_server/tools.py` converts MCP input schemas into orchestration pipeline
 inputs and returns the pipelines' output models as dictionaries (`FusionTools`, also used directly
 by tests and the CLI). `response.py` shapes those into what the server returns: compact text plus a
 typed record by default, everything with `detail: full`. `schemas.py` holds the inputs (one shared
 base, with the old context names folded into `context`) and the typed outputs the tools declare as
-`outputSchema`. `server.py` adds tool annotations and descriptions, three resources
+`outputSchema`. Before a pipeline runs, `gather_workspace` in `tools.py` reads what the call
+names in `paths`, `globs` and `diff_ref` through `fusion.workspace.WorkspaceReader` (`reader.py`
+for files and globs, `git.py` for read-only git), under the root the server took from the client's
+`roots/list`, `FUSION_READ_ROOT` or its cwd. The text joins `file_snippets` (or becomes the
+review's diff), and the reader's `WorkspaceReport` (read, skipped with reasons, bytes,
+`host_tokens_saved_estimate`) travels on `PipelineContext.workspace` into the stored run input and
+the response. `fusion_digest` is the ask pipeline with a short-answer instruction and a tighter
+compact cap. `server.py` adds tool annotations and descriptions, three resources
 (`fusion://runs/{id}`, `fusion://stats`, `fusion://strategies`), three prompts, and the stdio and
 HTTP transports. The tool contract is in [INTEGRATIONS.md](INTEGRATIONS.md#mcp-tool-reference).
 
@@ -130,7 +138,7 @@ what the panel produced (claims, deterministic scores, the digest) or halts with
 there were no answers.
 
 **The command line.** `src/fusion/cli/` is split by job: `main.py` (the root app, `--set`, `--verbose`,
-the error contract), `run_cmds.py` (ask, review-diff, debug, decide, plan, eval-answer),
+the error contract), `run_cmds.py` (ask, review-diff, debug, decide, plan, digest, eval-answer),
 `runs_cmds.py`, `config_cmds.py`, `doctor.py`, `models_cmd.py`, with `common.py` (exit codes, shared
 flags, input reading) and `live.py` (the live view). `app.py` only re-exports `app`. The live view
 listens on the progress channel above plus a second one, `progress.call_observer`: the call gateway
@@ -326,7 +334,8 @@ overhead and are never counted as Fusion cost. All shadow failures degrade to wa
 ### Stats
 
 `RunStore.get_stats()` aggregates cumulative totals: run counts, Fusion spend, baseline
-estimates, per-task-type breakdown, and shadow win/tie/loss counts. Rendering lives in
+estimates, per-task-type breakdown, shadow win/tie/loss counts, and the host tokens saved by
+runs that read the project themselves (summed from the stored `workspace` input). Rendering lives in
 `src/fusion/telemetry/stats_format.py`, surfaced through the `fusion stats` CLI command,
 the `fusion_stats` MCP tool, and a one-line lifetime footer on every real-mode run's
 `display_markdown` at `detail: full` (benchmark mode omits it).
@@ -490,6 +499,7 @@ routed. Usage is in [CONFIGURATION.md](CONFIGURATION.md#dashboard).
 ## Safety boundaries
 
 The orchestration MCP tools are side-effect free inside MCP: they do not execute shell
-commands in user repositories or edit files themselves. That boundary should not block
+commands in user repositories or edit files themselves. They read only the files and git diff a
+call names, read-only and under the project root ([SECURITY.md](../SECURITY.md#reading-the-project)). That boundary should not block
 Claude Code. Claude Code can use Fusion's answer like a cheaper model response, then edit,
 run tests, and continue the normal coding workflow.

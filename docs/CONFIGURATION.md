@@ -71,8 +71,9 @@ fusion ask "How should I retry a failed HTTP call?"
 
 | Command | Does |
 |---------|------|
-| `fusion ask PROMPT [-f FILE]...` | Ask the panel any coding question; `-f` attaches files |
-| `fusion review-diff -f DIFF` | Review a diff (`git diff main \| fusion review-diff -f -`) |
+| `fusion ask PROMPT [-f FILE]...` | Ask the panel any coding question; `-f` names project files for it to read, with the rules of the MCP `paths` input: under the current directory, skipping secret, ignored, binary and oversize files ([Reading the project](INTEGRATIONS.md#reading-the-project)) |
+| `fusion review-diff --diff-ref REF` or `-f DIFF` | Review `git diff REF` read by Fusion itself (`--diff-ref main...HEAD`), or a diff file (`git diff \| fusion review-diff -f -`) |
+| `fusion digest QUESTION [-f FILE]... [--glob PATTERN]... [--diff-ref REF]` | Have cheap models read large material and answer in at most `--max-answer-tokens` (default 600) |
 | `fusion debug [ERROR] [-f TRACE] [--logs-file LOG]` | Ranked root causes and how to check each |
 | `fusion decide [QUESTION]`, `fusion plan [FEATURE]` | An architecture decision, an implementation plan (`-f FILE` reads the text from a file) |
 | `fusion eval-answer`, `fusion compare-claude-runs` | Score an answer, compare Claude Code runs |
@@ -202,6 +203,9 @@ Restart the shell afterwards. Completion covers commands, subcommands and flags.
 | `FUSION_REDACT_ENTROPY_THRESHOLD` | Bits of Shannon entropy per character a token needs for the entropy rule to redact it | `4.5` |
 | `FUSION_REDACT_ENTROPY_MIN_LENGTH` | Shortest token, in characters, the entropy rule considers | `32` |
 | `FUSION_DEFAULT_PROVIDER` | Set to `mock` for offline mode | unset (live) |
+| `FUSION_READ_ROOT` | Project root for `paths`, `globs` and `diff_ref` when the MCP client names no root ([INTEGRATIONS.md](INTEGRATIONS.md#reading-the-project)) | the server's working directory |
+| `FUSION_WORKSPACE_MAX_FILE_BYTES` | Largest project file Fusion reads; bigger ones are skipped | `128000` |
+| `FUSION_WORKSPACE_MAX_BYTES` | Most bytes one call reads from the project (files and diff together) | `320000` |
 | `FUSION_TOOL_SOFT_TIMEOUT_S` | Seconds an MCP tool call may run before it returns the panel's digest with a warning; `0` or `off` disables ([INTEGRATIONS.md](INTEGRATIONS.md#progress-cancellation-and-the-soft-time-limit)) | `90` |
 
 How the shadow A/B works and how to read its results: [BENCHMARKING.md](BENCHMARKING.md#shadow-ab-live-measurement).

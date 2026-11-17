@@ -36,7 +36,24 @@ CONTEXT_DESCRIPTION = (
     "Background the panel needs and cannot see: what the code does, the relevant files or "
     "constraints. More relevant context gives better answers; do not paste whole files here."
 )
-SNIPPETS_DESCRIPTION = "Short code excerpts, one per item, each prefixed with its file path"
+SNIPPETS_DESCRIPTION = (
+    "Short code excerpts, one per item, each prefixed with its file path. Prefer `paths`: "
+    "Fusion reads the files itself, so you do not spend tokens pasting them"
+)
+PATHS_DESCRIPTION = (
+    "Files for the panel to read, relative to the project root (the client's first root, else "
+    "the server's working directory). Read-only; files outside the root, ignored by "
+    ".gitignore, secret (.env, keys), binary or too large are skipped and the warnings say why"
+)
+GLOBS_DESCRIPTION = (
+    "Glob patterns of files to read under the project root, such as 'src/**/*.py'; the same "
+    "rules as `paths` apply, and at most 200 files are read"
+)
+DIFF_REF_DESCRIPTION = (
+    "A git revision or range whose diff Fusion reads itself (read-only `git diff <ref>`, no "
+    "checkout), such as 'HEAD~1', 'main...HEAD' or a commit sha. For a review it replaces "
+    "`diff`; for other tools the diff is added as background"
+)
 SHADOW_DESCRIPTION = (
     "Force (true) or suppress (false) a shadow A/B run against the real baseline model; "
     "defaults to FUSION_SHADOW_MODE env behavior. A shadow run spends extra money."
@@ -55,6 +72,9 @@ class _OrchestrationInput(BaseModel):
 
     context: str = Field(default="", description=CONTEXT_DESCRIPTION)
     file_snippets: list[str] = Field(default_factory=list, description=SNIPPETS_DESCRIPTION)
+    paths: list[str] = Field(default_factory=list, description=PATHS_DESCRIPTION)
+    globs: list[str] = Field(default_factory=list, description=GLOBS_DESCRIPTION)
+    diff_ref: str | None = Field(default=None, description=DIFF_REF_DESCRIPTION)
     budget: Literal["low", "medium", "high", "local_only"] = Field(
         default="medium", description="Budget preset; ignored when strategy is set"
     )
@@ -78,13 +98,32 @@ class _OrchestrationInput(BaseModel):
         folded["context"] = "\n\n".join(texts)
         return folded
 
+    @property
+    def reads_workspace(self) -> bool:
+        """Whether the call names material for Fusion to read from the project."""
+        return bool(self.paths or self.globs or self.diff_ref)
+
 
 class ReviewDiffInput(_OrchestrationInput):
     """Input for fusion_review_diff tool."""
 
     CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ("repo_context", "repo_summary")
 
-    diff: str = Field(description="The git diff or patch to review, as unified diff text")
+    diff: str = Field(
+        default="",
+        description=(
+            "The unified diff to review. Leave it empty and pass `diff_ref` instead to have "
+            "Fusion read the diff itself"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _needs_a_diff(self) -> ReviewDiffInput:
+        if not self.diff.strip() and not self.diff_ref:
+            msg = "give the change to review: `diff_ref` (such as 'HEAD~1') or the `diff` text"
+            raise ValueError(msg)
+        return self
+
     changed_files: list[str] = Field(default_factory=list, description="Changed file paths")
     goals: str = Field(default="", description="What to focus on, such as security or concurrency")
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
@@ -126,6 +165,29 @@ class PlanFeatureInput(_OrchestrationInput):
     feature_description: str = Field(description="The feature to implement")
     constraints: str = Field(default="", description="Constraints and requirements")
     existing_patterns: str = Field(default="", description="Existing patterns to follow")
+
+
+class DigestInput(_OrchestrationInput):
+    """Input for fusion_digest: cheap models read large material and return a small answer."""
+
+    question: str = Field(description="What you want to know about the material, standing alone")
+    max_answer_tokens: int = Field(
+        default=600,
+        ge=50,
+        le=4000,
+        description="Longest answer you want back, in tokens; the response is cut to fit",
+    )
+    budget: Literal["low", "medium", "high", "local_only"] = Field(
+        default="low",
+        description="Budget preset; ignored when strategy is set. Default low: one cheap model",
+    )
+
+    @model_validator(mode="after")
+    def _needs_material(self) -> DigestInput:
+        if not self.reads_workspace:
+            msg = "name the material to read: `paths`, `globs` or `diff_ref`"
+            raise ValueError(msg)
+        return self
 
 
 class EvalAnswerInput(BaseModel):
@@ -256,7 +318,14 @@ class FusionToolResult(ToolEnvelope):
         description="Why no answer was produced: insufficient_context, quorum, budget or timeout",
     )
     details_uri: str = Field(description="Where the full record of this run can be read")
+    host_tokens_saved_estimate: int | None = Field(
+        default=None,
+        description="Tokens you did not have to send because Fusion read the files or diff itself",
+    )
     # detail="full" only
+    workspace: dict[str, Any] | None = Field(
+        default=None, description="What was read from the project and what was skipped, and why"
+    )
     result: dict[str, Any] | None = Field(
         default=None, description="Task-specific structured result"
     )

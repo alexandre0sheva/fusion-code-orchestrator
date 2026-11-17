@@ -8,6 +8,7 @@ stays readable for the model.
 
 from __future__ import annotations
 
+import fnmatch
 import math
 import os
 import re
@@ -272,3 +273,32 @@ def redact_value(value: Any) -> Any:
 def redact_error(text: str) -> str:
     """An error message that is safe to store or show: a provider often quotes the request back."""
     return redact_secrets(text).text
+
+
+# ----------------------------------------------------------------------------- secret files
+
+# File names Fusion never reads from a workspace, matched case-insensitively against the base
+# name. SSH keys are named explicitly (not ``id_*``) so a source file such as ``id_generator.py``
+# is still readable.
+SECRET_FILE_PATTERNS: tuple[str, ...] = (
+    ".env",
+    ".env.*",
+    "*.env",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa*",
+    "id_dsa*",
+    "id_ecdsa*",
+    "id_ed25519*",
+    "secrets.*",
+    ".netrc",
+    ".pgpass",
+)
+
+
+def is_secret_file(path: str) -> bool:
+    """Whether a file's name puts it on the deny list (``SECRET_FILE_PATTERNS``)."""
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in SECRET_FILE_PATTERNS)

@@ -7,8 +7,8 @@ user-invocable: false
 # Fusion: when to ask the panel
 
 Fusion asks a panel of cheap models in parallel and returns one answer with the points they agree
-on. It sees only the text you send and returns text: it reads no files, runs nothing and edits
-nothing. You stay the executor.
+on. It reads the project files and git diff you name (read-only), returns text, runs nothing and
+edits nothing. You stay the executor.
 
 ## Call it when
 
@@ -18,17 +18,23 @@ nothing. You stay the executor.
 - a feature spans several files and the approach is unclear: `fusion_plan_feature`
 - you are unsure and a wrong answer would be costly: `fusion_ask`
 - you are about to rely on a draft answer: `fusion_eval_answer`
+- answering means reading many or long files (what a module does, where something is handled,
+  what a large diff changes): `fusion_digest` reads them and returns a few hundred tokens
 
 ## Do not call it for
 
 - one-line fixes, typos, formatting, renames, or code you can read and judge directly
-- anything that needs files read or commands run: do that yourself first, then send what matters
+- anything that needs commands run: do that yourself first, then send what matters
+- a file you are about to edit: read it yourself
 - a question you already answered with high confidence
 
 ## How to use the answer
 
-- Send focused input: the diff, or the error with its stack trace and the code around it, plus a
-  few lines of `context`. Short excerpts in `file_snippets`, each prefixed with its path.
+- Name material instead of pasting it: files in `paths` (or `globs`), a change in `diff_ref`
+  (`HEAD` for uncommitted work, `main...HEAD` for a branch). Fusion reads them itself under the
+  project root, skips secret, ignored, binary and oversize files (the warnings list them), and
+  the response's `host_tokens_saved_estimate` says what that saved you. Add a few lines of
+  `context` for what the code cannot show.
 - A call takes tens of seconds and costs cents. `strategy: "solo-haiku"` is the quickest and
   cheapest; `max_cost_usd` caps the spend. The response states the cost.
 - The reply is compact: the answer, the top claims, confidence and one cost line. Claims backed by

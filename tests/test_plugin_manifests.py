@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugin"
 FIXTURES = Path(__file__).parent / "fixtures"
 TOOL_PREFIX = f"mcp__plugin_{PLUGIN_NAME}_fusion__"
-COMMANDS = {"ask", "review", "debug", "plan", "decide", "stats", "bench", "eval", "ab"}
+COMMANDS = {"ask", "review", "debug", "plan", "decide", "stats", "bench", "eval", "ab", "digest"}
 SKILLS = {
     "fusion-orchestrator",
     "fusion-review",
@@ -155,6 +155,30 @@ async def test_the_advisor_subagent_is_confined_to_reading_and_fusion(tmp_path: 
     assert not {"permissionMode", "hooks", "mcpServers", "initialPrompt"} & set(meta)
     for mentioned in re.findall(r"`(fusion_[a-z_]+)`", body):
         assert mentioned in tools, mentioned
+
+
+def test_plugin_tells_the_host_to_name_files_instead_of_pasting_them() -> None:
+    """Roadmap Task 5: Fusion reads `paths` and `diff_ref` itself, so the host saves tokens."""
+    texts = {
+        p.relative_to(PLUGIN).as_posix(): p.read_text(encoding="utf-8")
+        for p in [
+            *PLUGIN.glob("commands/*.md"),
+            *PLUGIN.glob("skills/*/SKILL.md"),
+            *PLUGIN.glob("agents/*.md"),
+        ]
+    }
+    for name in ("commands/review.md", "skills/fusion-review/SKILL.md", "agents/fusion-advisor.md"):
+        assert "`diff_ref`" in texts[name], name
+    for name in (
+        "commands/ask.md",
+        "commands/debug.md",
+        "skills/fusion-orchestrator/SKILL.md",
+        "skills/fusion-debug/SKILL.md",
+        "commands/digest.md",
+    ):
+        assert "`paths`" in texts[name], name
+    assert all("reads no files" not in text for text in texts.values())
+    assert "`fusion_digest`" in texts["skills/fusion-orchestrator/SKILL.md"]
 
 
 def test_the_old_layout_is_gone() -> None:
