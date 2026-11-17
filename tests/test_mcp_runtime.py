@@ -219,17 +219,21 @@ async def test_progress_without_a_listener_is_silent_and_a_broken_listener_is_ha
 # ------------------------------------------------------------------------------ HTTP transport
 
 
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
+def _listening_socket() -> socket.socket:
+    """A localhost socket bound to a free port. The test owns it and closes it: cancelling the
+    server skips uvicorn's graceful shutdown, which would otherwise leave the socket to the garbage
+    collector and surface a ResourceWarning in whichever unrelated test collects it."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    return sock
 
 
 async def test_the_http_transport_serves_the_same_tools_on_localhost(tmp_path: Path) -> None:
     server = create_mcp_server(db_path=str(tmp_path / "http.db"))
-    port = _free_port()
+    sock = _listening_socket()
+    port = int(sock.getsockname()[1])
     serving = asyncio.create_task(
-        server.run_http_async(host="127.0.0.1", port=port, show_banner=False)
+        server.run_http_async(host="127.0.0.1", port=port, show_banner=False, sockets=[sock])
     )
     try:
         async with asyncio.timeout(30):
@@ -248,6 +252,7 @@ async def test_the_http_transport_serves_the_same_tools_on_localhost(tmp_path: P
     finally:
         serving.cancel()
         await asyncio.gather(serving, return_exceptions=True)
+        sock.close()
 
 
 def test_http_refuses_a_public_address_unless_told_otherwise() -> None:

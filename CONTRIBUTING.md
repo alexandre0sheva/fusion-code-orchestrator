@@ -61,6 +61,13 @@ done
 - A test that calls a real provider must be marked `@pytest.mark.live`. It is skipped by default
   and runs with `uv run pytest -m live`. Live tests cost money; run them only deliberately.
 - Add or update tests for routing, fan-out, costs, evals, MCP output and storage changes.
+- CI runs the tests in parallel (`pytest -n auto`, pytest-xdist), so a test must not depend on
+  another test or on wall-clock speed. Assert on ordering, ratios and the run ledger's own timeline
+  (`tests/test_concurrency.py` shows how), never on an absolute millisecond ceiling: a busy runner
+  stalls the event loop for hundreds of milliseconds. A scripted delay is a safe lower bound only.
+- A test that runs the shipped dataset's code in the sandbox takes minutes: mark it
+  `@pytest.mark.slow`. `uv run pytest -q` still runs it; CI runs it in its own `dataset` job and the
+  test matrix runs `-m "not live and not slow"`.
 - **Property tests** (`tests/test_properties.py`, Hypothesis) state what must hold for any input:
   claim clustering and agreement, cost arithmetic, the benchmark statistics, redaction and output
   cleaning. When one fails, Hypothesis prints the smallest input; fix the code or, if the property

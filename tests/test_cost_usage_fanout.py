@@ -86,9 +86,10 @@ async def test_parallel_fanout_wall_time_is_not_sum() -> None:
     elapsed = time.perf_counter() - started
     assert result.success_count == 3
     assert result.quorum_met
-    assert elapsed < 2.0
-    assert result.panel_wall_latency_ms < 2000
-    assert result.total_model_call_latency_ms >= 2900
+    assert result.total_model_call_latency_ms >= 2900  # three calls of a second each
+    # Overlapping calls: the wall time is below the calls' summed time, whatever the runner's load.
+    assert result.panel_wall_latency_ms < result.total_model_call_latency_ms
+    assert elapsed < result.total_model_call_latency_ms / 1000
 
 
 @pytest.mark.asyncio

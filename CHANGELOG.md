@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Dependencies updated to current releases (FastMCP 4.2, Typer 0.29, Pydantic 2.14, Starlette 1.10, Ruff 0.17, pytest 9.2, pytest-asyncio 1.5, Playwright 1.65 and the rest of `uv.lock`), with the minimum versions in `pyproject.toml` raised to the tested ones; `pytest-xdist` is a new dev dependency.
+- GitHub Actions bumped and SHA-pinned: `astral-sh/setup-uv` v10.3.3, `actions/upload-artifact` v7.0.2, `actions/download-artifact` v8.0.2 (and `pypa/gh-action-pypi-publish` v1.14.3 in the switched-off PyPI job).
+- CI runs the tests in parallel (`pytest -n auto`; about 2 minutes on 4 workers) and checks the shipped dataset by running its tasks in a separate `dataset` job; the timing tests assert on ordering and ratios instead of millisecond ceilings that a busy runner could miss.
+
+### Security
+
+- `uv.lock` now pins authlib 1.9.8, dnspython 2.9.2, joserfc 1.8.0 and opentelemetry-api 1.45.2, which fix the advisories that failed the CI `audit` job; `pip-audit` reports none.
+
 ## [0.2.0] - 2026-10-06
 
 An evidence-backed release: a benchmark mode that measures the panel against a single model on ground

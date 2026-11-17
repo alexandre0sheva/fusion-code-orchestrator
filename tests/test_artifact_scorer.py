@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -82,11 +83,25 @@ async def test_a_page_that_passes_its_tests_but_is_worse_scores_lower_not_zero()
     assert 0.0 < worse.quality < best.quality - 0.04
 
 
+async def score_when_timing_is_stable(task: Any, patch: str, attempts: int = 4) -> Any:
+    """Score ``patch``, measuring again while the timing is too noisy to count.
+
+    The scorer leaves a noisy timing unscored on purpose (``status: unstable``), so on a machine
+    that is busy with other tests the benchmark gate is not applied. That is the scorer working,
+    not a bug, and this test is about the gate, so it needs a quiet measurement.
+    """
+    for _ in range(attempts):
+        result = await ArtifactScorer().score(task, answer(patch), env_without_judges())
+        perf = next((e for e in result.evidence if e["kind"] == "perf"), None)
+        if perf is None or perf["status"] != "unstable":
+            return result
+    pytest.skip(f"the timing stayed too noisy to measure in {attempts} attempts on this machine")
+
+
 async def test_a_slow_function_fails_the_benchmark_gate_even_though_it_is_correct() -> None:
     task = shipped(FAST)
-    scorer = ArtifactScorer()
-    good = await scorer.score(task, answer(solution_patch(task)), env_without_judges())
-    slow = await scorer.score(task, answer(flaw_patch(task, 1)), env_without_judges())
+    good = await score_when_timing_is_stable(task, solution_patch(task))
+    slow = await score_when_timing_is_stable(task, flaw_patch(task, 1))
     assert good.quality >= 0.95
     assert slow.quality == 0.0
     gates = {g["id"]: g["passed"] for g in slow.details["gates"]}

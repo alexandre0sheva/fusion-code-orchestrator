@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from fusion.bench import cli as cli_module
 from fusion.bench.cli import bench_app
 from fusion.bench.datasets.build import (
     AUTHORING_DIR,
@@ -308,8 +310,15 @@ def test_release_rules_demand_size_coverage_and_both_splits(tmp_path: Path) -> N
 # -- the shipped dataset -------------------------------------------------------------------------
 
 
-def test_v1_passes_the_release_rules() -> None:
+@pytest.mark.slow
+def test_v1_reference_solutions_and_flaws_behave_under_the_hidden_tests() -> None:
+    """Runs each executable task's solution, unpatched files and flaws in the sandbox (~2.5 min)."""
     report = validate_dataset(V1, Rules(release=True))
+    assert report.ok, messages(report)
+
+
+def test_v1_passes_the_release_rules() -> None:
+    report = validate_dataset(V1, Rules(release=True, run_code=False))  # structure, not execution
     assert report.ok, messages(report)
     stats = report.stats
     assert stats.tasks == 157
@@ -498,7 +507,17 @@ def test_generation_obeys_max_usd_and_the_spend_cap_and_records_spend(tmp_path: 
 # -- the CLI -------------------------------------------------------------------------------------
 
 
-def test_validate_exits_nonzero_on_errors_and_zero_on_a_good_dataset(tmp_path: Path) -> None:
+def test_validate_exits_nonzero_on_errors_and_zero_on_a_good_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The command's exit code and output do not depend on running the shipped tasks' code (that is
+    # the slow test above), so this one validates the structure only.
+    real = cli_module.validate_dataset
+    monkeypatch.setattr(
+        cli_module,
+        "validate_dataset",
+        lambda path, rules=None: real(path, replace(rules or Rules(), run_code=False)),
+    )
     good = CliRunner().invoke(bench_app, ["dataset", "validate", str(V1), "--release"])
     assert good.exit_code == 0, good.output
     assert "OK" in good.output and "157 tasks" in good.output

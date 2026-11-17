@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
       - name: Install dependencies
@@ -33,12 +33,31 @@ jobs:
       - name: Type check
         run: uv run mypy
       - name: Test (offline, mock providers)
-        run: uv run pytest -q --cov=fusion --cov-report=term
+        # -n auto: one worker per core. The slowest tests are listed so a regression shows up here.
+        # The sandboxed dataset check is marked slow and has its own job below.
+        run: uv run pytest -q -n auto -m "not live and not slow" --durations=15 --cov=fusion --cov-report=term
       - name: Coverage gate (at least 85% on each core package)
         run: |
           uv run coverage report --include="src/fusion/orchestration/*" --fail-under=85
           uv run coverage report --include="src/fusion/providers/*" --fail-under=85
           uv run coverage report --include="src/fusion/bench/*" --fail-under=85
+
+  dataset:
+    # Runs every executable benchmark task's reference solution and flaws in the sandbox (~2.5 min,
+    # timing tasks one at a time): once on one Python version, in parallel with the test matrix.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --all-groups --locked --python 3.12
+      - name: Check the shipped dataset by running it
+        run: uv run pytest -q -m slow --durations=5
 
   audit:
     runs-on: ubuntu-latest
@@ -46,7 +65,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Audit the locked dependencies for known vulnerabilities
         # Exports exactly what uv.lock pins (with hashes), so the audit covers what CI installs.
         run: |
@@ -60,7 +79,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Build the wheel and the source distribution
         run: uv build
       - name: Check the wheel carries the configs, dashboard, integrations and dataset

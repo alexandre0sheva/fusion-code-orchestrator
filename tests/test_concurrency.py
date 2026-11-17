@@ -1,7 +1,11 @@
 """Parallelism and latency: what overlaps, what waits, and what is cancelled.
 
 Providers here have scripted latencies, and assertions compare each call's start and end offsets
-from the run ledger (never wall-clock sleeps of the test itself), with wide margins.
+from the run ledger. They state what overlaps or what comes first, and compare a time with another
+measured in the same run (parallel wall time is below the sum of the calls' own durations). There
+are no absolute millisecond ceilings: a busy CI runner stalls the event loop for hundreds of
+milliseconds, and only ordering, ratios and lower bounds survive that. A scripted delay is a safe
+lower bound, because a sleep never returns early.
 """
 
 from __future__ import annotations
@@ -83,6 +87,15 @@ def _ends(spans: list[dict[str, Any]]) -> list[float]:
     return [float(s["end_ms"]) for s in spans]
 
 
+def _durations(spans: list[dict[str, Any]]) -> list[float]:
+    return [float(s["end_ms"]) - float(s["start_ms"]) for s in spans]
+
+
+def _overlap(spans: list[dict[str, Any]]) -> bool:
+    """Every call began before any of them finished: they ran at the same time, not in a row."""
+    return max(_starts(spans)) < min(_ends(spans))
+
+
 # ------------------------------------------------------------------------------ the panel
 
 
@@ -92,10 +105,13 @@ async def test_a_three_model_panel_takes_as_long_as_its_slowest_model_plus_synth
     delays = {"mock-fast": 0.12, "mock-security": 0.18, "mock-weak": 0.24, "synthesizer": 0.06}
     result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
     panel, synthesis = _spans(result, "panel"), _spans(result, "synthesis")
-    assert max(_starts(panel)) - min(_starts(panel)) < 100  # all three start together
-    assert 230 <= result.fanout.panel_wall_latency_ms < 330  # the slowest, not 0.54s summed
+    assert _overlap(panel)  # all three start together
+    # The slowest member sets the pace, not the 540 ms the three would take in a row: the wall time
+    # is at least the slowest delay and below the sum of the calls' own measured durations.
+    assert 235 <= result.fanout.panel_wall_latency_ms < sum(_durations(panel))
     assert synthesis[0]["start_ms"] >= max(_ends(panel)) - 5  # synthesis needs every answer
-    assert 290 <= result.total_latency_ms < 450  # slowest 240ms + synthesis 60ms, not 480ms
+    assert result.total_latency_ms >= 295  # slowest 240 ms + synthesis 60 ms
+    assert result.total_latency_ms < sum(_durations(panel)) + sum(_durations(synthesis))
 
 
 async def test_providers_do_not_starve_each_other_under_a_small_concurrency_cap() -> None:
@@ -136,7 +152,9 @@ async def test_providers_do_not_starve_each_other_under_a_small_concurrency_cap(
     )
     spans = {s["model"]: s for s in gateway.ledger.timeline()}
     assert result.success_count == 3
-    assert spans["fast-1"]["end_ms"] < 100  # not queued behind either slow call
+    # Not queued behind either slow call: it started at once and finished before the first of them.
+    assert spans["fast-1"]["start_ms"] < spans["slow-1"]["end_ms"]
+    assert spans["fast-1"]["end_ms"] < spans["slow-1"]["end_ms"]
     assert spans["slow-2"]["start_ms"] >= spans["slow-1"]["end_ms"] - 5  # same provider: serial
     assert providers["slowp"].max_in_flight == 1  # type: ignore[attr-defined]
 
@@ -172,7 +190,8 @@ async def test_a_provider_limiter_caps_in_flight_calls_across_the_panel() -> Non
     )
     assert provider.max_in_flight == 2  # the limiter, not the fan-out, holds the line
     assert result.success_count == 4
-    assert 0.15 <= time.perf_counter() - started < 0.4  # two waves of two
+    # Four 80 ms calls through two slots take at least two waves; the peak above shows two at once.
+    assert time.perf_counter() - started >= 0.15
 
 
 # --------------------------------------------------------------------------- early return
@@ -187,10 +206,10 @@ async def test_early_return_cancels_stragglers_and_records_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _early(monkeypatch, quorum=2, grace_ms=20)
-    delays = {"mock-fast": 0.05, "mock-security": 0.06, "mock-weak": 3.0}
+    delays = {"mock-fast": 0.05, "mock-security": 0.06, "mock-weak": 30.0}
     started = time.perf_counter()
     result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
-    assert time.perf_counter() - started < 1.0  # did not wait three seconds
+    assert time.perf_counter() - started < 15.0  # did not wait for the 30 s straggler
     assert result.fanout.early_return and result.fanout.success_count == 2
     straggler = next(c for c in result.fanout.calls if c.model_name == "mock-weak")
     assert straggler.status == "cancelled" and "early return" in (straggler.error or "")
@@ -214,7 +233,7 @@ async def test_early_return_never_stops_before_the_minimum_successful_responses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _early(monkeypatch, quorum=1, grace_ms=0)  # asks for 1, but min_successful_responses is 2
-    delays = {"mock-fast": 0.02, "mock-security": 0.12, "mock-weak": 3.0}
+    delays = {"mock-fast": 0.02, "mock-security": 0.12, "mock-weak": 30.0}
     result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
     assert {p.model_name for p in result.panel_results} == {"mock-fast", "mock-security"}
 
@@ -243,10 +262,10 @@ async def test_a_slow_member_is_hedged_to_another_panel_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "60")
-    delays = {"mock-fast": 3.0, "mock-security": 0.02}
+    delays = {"mock-fast": 30.0, "mock-security": 0.02}
     started = time.perf_counter()
     result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="solo-cheap"))
-    assert time.perf_counter() - started < 1.0
+    assert time.perf_counter() - started < 15.0  # did not wait for the 30 s member
     assert result.fanout.hedged == {"mock-fast": "mock-security"}
     assert [p.model_name for p in result.panel_results] == ["mock-security"]  # who really answered
     panel = {r.model_alias: r for r in result.ledger.records if r.stage == "panel"}
@@ -291,8 +310,8 @@ async def test_per_answer_judge_calls_run_at_once(
     result = await _pipe(tmp_path, Scripted({"judge": 0.1})).run(_ctx(strategy="panel-cheap"))
     judges = _spans(result, "judge")
     assert len(judges) == 3
-    assert max(_starts(judges)) - min(_starts(judges)) < 70
-    assert max(_ends(judges)) - min(_starts(judges)) < 220  # one wave, not three in a row
+    assert _overlap(judges)  # one wave, not three in a row
+    assert max(_ends(judges)) - min(_starts(judges)) < sum(_durations(judges))
 
 
 async def test_the_judge_runs_alongside_synthesis_when_synthesis_does_not_need_it(
@@ -305,8 +324,11 @@ async def test_the_judge_runs_alongside_synthesis_when_synthesis_does_not_need_i
     judges = _spans(result, "judge")
     assert synthesis["start_ms"] < min(_ends(judges))  # they overlap
     assert min(_starts(judges)) < synthesis["end_ms"]
-    assert abs(synthesis["start_ms"] - min(_starts(judges))) < 90
-    assert result.total_latency_ms < 420  # about the longer of the two, not 250 + 200
+    # About the longer of the two, not their sum: the pair finishes in less time than both together.
+    both = [synthesis, *judges]
+    assert max(_ends(both)) - min(_starts(both)) < sum(_durations([synthesis])) + max(
+        _durations(judges)
+    )
 
 
 async def test_synthesis_waits_for_the_judge_when_it_reads_its_scores(
@@ -358,31 +380,52 @@ async def test_a_failing_stage_cancels_its_concurrent_sibling_and_raises_unchang
 # ---------------------------------------------------------------------------------- shadow
 
 
+class GatedShadow(Scripted):
+    """The shadow baseline answers only once the synthesizer has: no timer decides who is first.
+
+    A run that waited for the shadow before synthesising would never open the gate. Tests run it
+    under ``_run_gated`` so such a regression fails in seconds instead of hanging.
+    """
+
+    def __init__(self, delay: Delay | dict[str, float] | float = 0.0) -> None:
+        super().__init__(delay)
+        self.gate = asyncio.Event()
+
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        role = request.metadata.get("role")
+        if role == "shadow_baseline":
+            await self.gate.wait()
+        response = await super().complete(request)
+        if role == "synthesizer":
+            self.gate.set()
+        return response
+
+
+async def _run_gated(pipe: Any, ctx: PipelineContext) -> Any:
+    async with asyncio.timeout(20):
+        return await pipe.run(ctx)
+
+
 async def test_the_shadow_baseline_runs_alongside_the_panel_not_after_it(tmp_path: Path) -> None:
-    delays = {"mock-fast": 0.2, "mock-security": 0.2, "mock-weak": 0.2, "shadow_baseline": 0.5}
-    pipe = _pipe(tmp_path, Scripted(delays))
-    began = time.perf_counter()
-    result = await pipe.run(_ctx(strategy="panel-cheap", shadow_baseline=True))
-    elapsed = (time.perf_counter() - began) * 1000
+    pipe = _pipe(tmp_path, GatedShadow({"mock-fast": 0.05, "mock-security": 0.05}))
+    result = await _run_gated(pipe, _ctx(strategy="panel-cheap", shadow_baseline=True))
     baseline = next(r for r in result.ledger.records if r.stage == "shadow_baseline")
     panel = _spans(result, "panel")
-    assert baseline.started_at_ms < 100 and baseline.started_at_ms <= min(_starts(panel)) + 90
-    assert baseline.started_at_ms < min(_ends(panel))  # overlaps the panel
+    assert baseline.started_at_ms < min(_ends(panel))  # starts with the panel, not after it
     assert result.shadow is not None and result.shadow.ran
     # Fusion's own time stops when its answer is ready; the shadow is collected after that.
-    assert result.total_latency_ms < 420
     assert result.shadow.fusion_latency_ms == pytest.approx(result.total_latency_ms)
     assert result.shadow.baseline_latency_ms is not None
-    assert result.shadow.baseline_latency_ms >= 480
-    assert elapsed < 650  # about the baseline's 500ms, not 500 + the 200ms panel and more
+    assert result.total_latency_ms < result.shadow.baseline_latency_ms  # Fusion did not wait for it
     assert result.total_cost_usd == result.ledger.total_cost().usd  # shadow cost is not Fusion's
 
 
 async def test_shadow_calls_are_not_part_of_the_critical_path(tmp_path: Path) -> None:
-    delays = {"shadow_baseline": 0.2, "mock-fast": 0.02, "mock-security": 0.02, "mock-weak": 0.02}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(shadow_baseline=True))
+    result = await _run_gated(_pipe(tmp_path, GatedShadow(0.02)), _ctx(shadow_baseline=True))
     metrics = result.task_metrics
-    assert metrics is not None and metrics.critical_path_ms < 150
+    assert metrics is not None
+    shadow = _spans(result, "shadow_baseline")
+    assert shadow and metrics.critical_path_ms < min(_ends(shadow))  # the path ends before it
     assert metrics.calls == len([r for r in result.ledger.records if "shadow" not in r.stage])
 
 
@@ -452,7 +495,7 @@ async def test_refinement_starts_after_every_round_one_answer_and_all_at_once(
     panel, refine = _spans(result, "panel"), _spans(result, "refine")
     assert len(refine) == 3
     assert min(_starts(refine)) >= max(_ends(panel)) - 5  # the barrier: all peers answered
-    assert max(_starts(refine)) - min(_starts(refine)) < 100  # then every revision starts together
+    assert _overlap(refine)  # then every revision starts together
 
 
 class Agreeing(Scripted):

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -205,10 +207,26 @@ def _invoke(*args: str) -> Any:
     return runner.invoke(app, ["bench", *args])
 
 
+@pytest.fixture(scope="module")
+def _study_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One simulated ablation study (about 20 s), made once per module with the real command."""
+    base = tmp_path_factory.mktemp("study-home")
+    with pytest.MonkeyPatch.context() as mp:
+        for name in ("config", "data", "project"):
+            (base / name).mkdir()
+            mp.setenv(f"FUSION_{name.upper()}_DIR", str(base / name))
+        mp.delenv("FUSION_DB_PATH", raising=False)
+        for key in [k for k in os.environ if k.upper().startswith("FUSION__")]:
+            mp.delenv(key, raising=False)
+        result = _invoke("run", "--suite", "ablation", "--mock", "--limit", "12", "--yes")
+        assert result.exit_code == 0, result.output
+    return base
+
+
 @pytest.fixture
-def run_id(fusion_home: Path) -> str:
-    result = _invoke("run", "--suite", "ablation", "--mock", "--limit", "12", "--yes")
-    assert result.exit_code == 0, result.output
+def run_id(fusion_home: Path, _study_home: Path) -> str:
+    """The module's study copied into this test's own home, so no test sees another's changes."""
+    shutil.copytree(_study_home, fusion_home, dirs_exist_ok=True)
     return next(p.name for p in (fusion_home / "project" / "bench-results").glob("bench-*"))
 
 
