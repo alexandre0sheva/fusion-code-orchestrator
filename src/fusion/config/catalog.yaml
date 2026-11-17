@@ -15,6 +15,9 @@
 # default_reasoning_effort is what Fusion sends when a request does not choose one. Panel models
 # default to the cheapest effort that works; baselines and the synthesizer keep provider defaults.
 # max_tokens must leave room for thinking tokens, which count against the output cap.
+# observed_ttft_ms / observed_decode_tps are measured speeds (median time to first token, decode
+# tokens per second) from the live study dated observed_on. They rank models for `speed: fast`,
+# hedges and same-tier fallbacks, and time the early-return grace. The 0.3.0 study refreshes them.
 
 # Price tiers are computed, never written by hand: blended = (3 x input + output) / 4 USD per 1M
 # tokens (a 3:1 input:output mix, typical of review and debug calls); the first threshold the
@@ -135,6 +138,9 @@ models:
     supports_reasoning_effort: true
     default_reasoning_effort: low
     retirement_not_before: 2027-10-07
+    observed_ttft_ms: 640  # 0.2.0 live study, median over arms (Claude Haiku 4.5 then)
+    observed_decode_tps: 116
+    observed_on: 2026-10-06
     prices:
       - input_per_1m: 0.10
         output_per_1m: 0.50
@@ -171,6 +177,9 @@ models:
     supports_reasoning_effort: true
     default_reasoning_effort: high
     retirement_not_before: 2027-09-28
+    observed_ttft_ms: 5880  # 0.2.0 live study, median over arms
+    observed_decode_tps: 188
+    observed_on: 2026-10-06
     prices:
       - input_per_1m: 2.0
         output_per_1m: 10.0
@@ -200,6 +209,9 @@ models:
     supports_reasoning_effort: true
     default_reasoning_effort: medium
     retirement_not_before: 2027-09-22
+    observed_ttft_ms: 4550  # 0.2.0 live study, median over arms
+    observed_decode_tps: 138
+    observed_on: 2026-10-06
     prices:
       - input_per_1m: 4.0
         output_per_1m: 20.0
@@ -311,6 +323,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
+    observed_ttft_ms: 4720  # 0.2.0 live study, median over arms
+    observed_decode_tps: 164
+    observed_on: 2026-10-06
     prices: &luna-prices
       - input_per_1m: 0.10
         output_per_1m: 0.50
@@ -345,6 +360,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
+    observed_ttft_ms: 4720  # 0.2.0 live study, median over arms
+    observed_decode_tps: 164
+    observed_on: 2026-10-06
     prices: *luna-prices
 
   gpt-terra:
@@ -404,6 +422,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: medium
+    observed_ttft_ms: 12160  # 0.2.0 live study, median over arms (GPT-6.1 Sol then)
+    observed_decode_tps: 74
+    observed_on: 2026-10-06
     prices:
       - input_per_1m: 2.0
         output_per_1m: 10.0
@@ -508,6 +529,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
+    observed_ttft_ms: 3000  # 0.2.0 live study, median over arms
+    observed_decode_tps: 153
+    observed_on: 2026-10-06
     prices:
       - input_per_1m: 0.75
         output_per_1m: 3.75

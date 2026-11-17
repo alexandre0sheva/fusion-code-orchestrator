@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from fusion.config.catalog import Catalog, ModelEntry, PriceTier, load_catalog
 from fusion.config.layers import (
@@ -24,6 +24,7 @@ __all__ = [
     "PriceTier",
     "EarlyReturn",
     "FanoutConfig",
+    "PromptCache",
     "ModelEntry",
     "ModelRegistryConfig",
     "RefinementConfig",
@@ -88,14 +89,43 @@ class BudgetConfig(BaseModel):
 
 
 class EarlyReturn(BaseModel):
-    """Stop waiting for stragglers once enough panelists have answered."""
+    """Stop waiting for stragglers once enough panelists have answered.
+
+    ``grace_ms`` is how long stragglers get after the quorum. ``auto`` times it from the catalog's
+    measured speeds: a straggler is expected to finish after its measured time to first token
+    plus the answered members' output length at its decode rate. The run waits until the next
+    straggler is expected, if that is within ``max_grace_ms``; it does not wait at all when every
+    straggler is overdue or due later than that. When no straggler has measured speeds, ``auto``
+    waits ``max_grace_ms``.
+    """
 
     quorum: int = Field(default=2, ge=1)  # answers needed (never below min_successful_responses)
-    grace_ms: float = Field(default=1500.0, ge=0)  # how long stragglers get after the quorum
+    grace_ms: float | Literal["auto"] = "auto"
+    max_grace_ms: float = Field(default=1000.0, ge=0)
+
+    @field_validator("grace_ms")
+    @classmethod
+    def _non_negative(cls, value: float | str) -> float | str:
+        if not isinstance(value, str) and value < 0:
+            msg = "grace_ms must be 'auto' or a number of milliseconds >= 0"
+            raise ValueError(msg)
+        return value
+
+
+PromptCache = Literal["auto", "always", "off"]
+
+
+def _off_is_none(value: Any) -> Any:
+    """``false`` / ``off`` in YAML switches a latency control off (the same as leaving it unset)."""
+    return None if value is False else value
 
 
 class FanoutConfig(BaseModel):
-    """Async panel fan-out controls."""
+    """Async panel fan-out controls.
+
+    The packaged ``routing_policies.yaml`` turns ``early_return`` and ``hedge_after_ms`` on; the
+    class defaults (off) apply only to a policy file that leaves them out.
+    """
 
     max_concurrency: int = Field(default=6, ge=1)  # in-flight calls per provider
     per_model_timeout_seconds: float = Field(default=45.0, gt=0)
@@ -105,6 +135,16 @@ class FanoutConfig(BaseModel):
     allow_partial_results: bool = True
     early_return: EarlyReturn | None = None  # off unless set
     hedge_after_ms: float | None = Field(default=None, gt=0)  # off unless set
+    # Explicit prompt-cache breakpoints (Anthropic): ``auto`` marks the shared prompt prefix only
+    # when the same model is asked it more than once in a fan-out; ``always`` marks every panel
+    # call (a cache write costs more than plain input); ``off`` never. OpenAI and Google cache
+    # identical prefixes by themselves.
+    prompt_cache: PromptCache = "auto"
+
+    @field_validator("early_return", "hedge_after_ms", mode="before")
+    @classmethod
+    def _switch_off(cls, value: Any) -> Any:
+        return _off_is_none(value)
 
 
 class RefinementConfig(BaseModel):

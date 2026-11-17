@@ -123,7 +123,8 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `solo-haiku` | 1 | $0.0013 | 0.02x |
 | `solo-luna` | 1 | $0.0013 | 0.02x |
 | `panel-cascade (first wave agrees)` | 2 | $0.0025 | 0.05x |
-| `panel-duo` | 3 | $0.0042 | 0.08x |
+| `panel-duo (panel agrees)` | 2 | $0.0025 | 0.05x |
+| `panel-duo (synthesizes)` | 3 | $0.0042 | 0.08x |
 | `panel-mixed` | 4 | $0.0054 | 0.11x |
 | `panel-open` | 5 | $0.0086 | 0.17x |
 | `solo-flash` | 1 | $0.0094 | 0.19x |

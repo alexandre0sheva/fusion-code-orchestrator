@@ -265,9 +265,11 @@ class PromptSpy(MockProvider):
     def __init__(self) -> None:
         super().__init__(latency_ms=0.0)
         self.system_prompts: dict[str, str] = {}
+        self.user_prompts: dict[str, str] = {}
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         self.system_prompts[request.model_id] = request.system_prompt
+        self.user_prompts[request.model_id] = request.user_prompt
         return await super().complete(request)
 
 
@@ -289,10 +291,12 @@ async def test_panel_persona_comes_from_the_catalog_not_the_alias() -> None:
         task_type=TaskType.DEBUGGING,
         primary_content="boom",
     )
-    assert "security-focused code reviewer" in spy.system_prompts["explicit-1"]
-    plain = spy.system_prompts["plain-1"]
-    assert "security-focused" not in plain
-    assert "expert debugger" in plain  # falls back to the task's own system prompt
+    # Every member gets the task's system prompt; a persona is appended to the shared prompt.
+    assert spy.system_prompts["explicit-1"] == spy.system_prompts["plain-1"]
+    assert "expert debugger" in spy.system_prompts["plain-1"]
+    assert "security-focused code reviewer" in spy.user_prompts["explicit-1"]
+    assert "security-focused" not in spy.user_prompts["plain-1"]
+    assert spy.user_prompts["explicit-1"].startswith(spy.user_prompts["plain-1"])
 
 
 # ---------------------------------------------------------------------- C3: no silent truncation

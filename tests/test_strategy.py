@@ -501,7 +501,9 @@ async def test_member_settings_reach_every_call_of_that_member(
     other = [r for r in spy.requests if r.model_id == "mock-security"]
     assert len(first) == 2  # panel answer and refinement
     assert all(r.temperature == 0.25 and r.reasoning_effort == "high" for r in first)
-    assert all("security-focused" in r.system_prompt for r in first[:1])
+    # The role is appended to the shared prompt, so every member sends the same system prompt.
+    assert all("security-focused" in r.user_prompt for r in first[:1])
+    assert first[0].system_prompt == other[0].system_prompt
     assert all(r.temperature is None and r.reasoning_effort is None for r in other)
 
 

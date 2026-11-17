@@ -261,6 +261,37 @@ async def test_anthropic_cache_prefix_marks_system_block() -> None:
     assert payload["messages"] == [{"role": "user", "content": "task"}]
 
 
+async def test_anthropic_puts_a_breakpoint_after_the_shared_prefix_of_the_prompt() -> None:
+    transport, seen = always(anthropic_ok())
+    prompt = "## Task\nFILES" + "\n## Request\nwhy?"
+    await anthropic(transport).safe_complete(
+        ModelRequest(
+            model_id=HAIKU,
+            system_prompt="rules",
+            user_prompt=prompt,
+            cache_prefix=True,
+            shared_prefix_chars=len("## Task\nFILES"),
+        )
+    )
+    content = body(seen[0])["messages"][0]["content"]
+    assert content == [
+        {"type": "text", "text": "## Task\nFILES", "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": "\n## Request\nwhy?"},
+    ]
+    assert "".join(block["text"] for block in content) == prompt  # the model reads the same text
+
+
+@pytest.mark.parametrize("split", [None, 0, 10_000])
+async def test_anthropic_without_a_usable_split_caches_the_whole_message_as_before(
+    split: int | None,
+) -> None:
+    transport, seen = always(anthropic_ok())
+    await anthropic(transport).safe_complete(
+        ModelRequest(model_id=HAIKU, user_prompt="task", shared_prefix_chars=split)
+    )
+    assert body(seen[0])["messages"] == [{"role": "user", "content": "task"}]
+
+
 async def test_anthropic_cache_prefix_covers_everything_before_the_last_message() -> None:
     transport, seen = always(anthropic_ok())
     request = ModelRequest(

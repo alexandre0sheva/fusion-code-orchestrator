@@ -4,21 +4,26 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from fusion.config.loader import FanoutConfig, ModelEntry
+from fusion.config.catalog import same_tier_spares, spare_tier
+from fusion.config.loader import EarlyReturn, FanoutConfig, ModelEntry
 from fusion.orchestration.claims import panel_answer_schema
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.progress import report as report_progress
-from fusion.orchestration.prompts import build_user_prompt, get_role_prompt, get_system_prompt
+from fusion.orchestration.prompts import compose_user_prompt, get_system_prompt, role_instruction
 from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
+from fusion.routing.budget import ANSWER_OUTPUT_TOKENS
 from fusion.routing.classifier import TaskType
 
 PanelStatus = Literal["success", "failed", "timeout", "missing_provider", "cancelled"]
+# Failures after which a member is asked of a same-tier model instead: the model is unknown or
+# retired (404/410), or its provider is down, overloaded or unreachable after the retries.
+FALLBACK_ERRORS = frozenset({"NotFound", "Server", "RateLimit", "Connection"})
 
 
 class PanelCallResult(BaseModel):
@@ -49,7 +54,10 @@ class FanoutResult(BaseModel):
     quorum_met: bool = True
     timed_out: bool = False
     early_return: bool = False  # stopped waiting for stragglers once quorum was in
+    grace_ms: int | None = None  # how long stragglers were given after the quorum
     hedged: dict[str, str] = Field(default_factory=dict)  # slow member -> model also asked
+    # failed member -> same-tier model asked instead ("" when there was none to ask)
+    fallbacks: dict[str, str] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
     @property
@@ -84,6 +92,7 @@ async def fanout_to_panel(
     members: Mapping[str, PanelMember] | None = None,
     min_successful: int | None = None,
     label: str = "panel",
+    avoid: Collection[str] = (),
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
@@ -92,9 +101,12 @@ async def fanout_to_panel(
     All calls start at once; ``max_concurrency`` caps in-flight calls per provider, so a slow
     provider's queue never holds up another's. With ``early_return`` the fan-out stops waiting
     shortly after quorum; with ``hedge_after_ms`` a slow member is re-asked of another model.
-    ``min_successful`` replaces the configured quorum (a cascade's first wave needs two answers
-    whatever the panel's quorum is). ``label`` names the wave in progress messages
-    ("panel 2/3 done"). Cancelling the caller cancels every call still in flight.
+    A member whose call fails for a reason in ``FALLBACK_ERRORS`` is asked of a same-tier model
+    instead, so one retired or failing model does not cost the quorum. Hedges and fallbacks never
+    ask a model in ``avoid`` (the strategy's other members). ``min_successful`` replaces the
+    configured quorum (a cascade's first wave needs two answers whatever the panel's quorum is).
+    ``label`` names the wave in progress messages ("panel 2/3 done"). Cancelling the caller
+    cancels every call still in flight.
     """
     fanout_config = config or FanoutConfig()
     panel = _Panel(
@@ -104,16 +116,14 @@ async def fanout_to_panel(
         config=fanout_config,
         gateway=gateway or standalone_gateway(registry_models, providers),
         members=members or {},
-        user_prompt=build_user_prompt(
-            task_type=task_type,
-            primary_content=primary_content,
-            context=context,
-            file_snippets=file_snippets,
-            changed_files=changed_files,
-        ),
         task_type=task_type,
+        primary_content=primary_content,
+        context=context,
+        file_snippets=file_snippets,
+        changed_files=changed_files,
         min_successful=min_successful,
         label=label,
+        avoid=avoid,
     )
     return await panel.run()
 
@@ -139,10 +149,14 @@ class _Panel:
         config: FanoutConfig,
         gateway: CallGateway,
         members: Mapping[str, PanelMember],
-        user_prompt: str,
         task_type: TaskType,
+        primary_content: str,
+        context: str = "",
+        file_snippets: list[str] | None = None,
+        changed_files: list[str] | None = None,
         min_successful: int | None = None,
         label: str = "panel",
+        avoid: Collection[str] = (),
     ) -> None:
         self.label = label
         self.panel_models = panel_models
@@ -151,7 +165,18 @@ class _Panel:
         self.config = config
         self.gateway = gateway
         self.members = members
-        self.user_prompt = user_prompt
+        self.avoid = frozenset(avoid)
+        # Every member gets the same system prompt and the same prompt prefix (a member's role is
+        # appended at the end), so providers' prompt caches can reuse it across calls.
+        prompt = compose_user_prompt(
+            task_type=task_type,
+            primary_content=primary_content,
+            context=context,
+            file_snippets=file_snippets,
+            changed_files=changed_files,
+        )
+        self.user_prompt = prompt.text
+        self.shared_prefix = prompt.shared_prefix
         self.task_type = task_type
         self.system_prompt = get_system_prompt(task_type)
         self.schema = panel_answer_schema()
@@ -160,6 +185,8 @@ class _Panel:
         self._slots: dict[str, asyncio.Semaphore] = {}
         self._attempts: list[_Attempt] = []
         self._hedged: dict[str, str] = {}  # slow member -> model that was asked instead
+        self._fallbacks: dict[str, str] = {}  # failed member -> model that was asked instead
+        self._grace_ms: float | None = None
         self._cancel_message = "Cancelled by global panel timeout"
         self._reported = 0
 
@@ -170,17 +197,24 @@ class _Panel:
             self._slots[provider] = asyncio.Semaphore(self.config.max_concurrency)
         return self._slots[provider]
 
+    def _cache_prefix(self) -> bool:
+        """Mark a prompt-cache breakpoint (explicit-cache providers) on this fan-out's calls?"""
+        mode = self.config.prompt_cache
+        return mode == "always" or (mode == "auto" and self.shared_prefix > 0)
+
     async def _call(self, alias: str, member: PanelMember | None) -> PanelCallResult:
         entry = self.registry_models[alias]
         persona = member.role if member and member.role != "auto" else entry.persona
         timeout = self.config.per_model_timeout_seconds
         request = ModelRequest(
             model_id=entry.model_id,
-            system_prompt=get_role_prompt(persona) if persona else self.system_prompt,
-            user_prompt=self.user_prompt,
+            system_prompt=self.system_prompt,
+            user_prompt=self.user_prompt + (role_instruction(persona) if persona else ""),
             max_tokens=entry.max_tokens,
             response_schema=self.schema,
             response_schema_name="panel_answer",
+            cache_prefix=self._cache_prefix(),
+            shared_prefix_chars=self.shared_prefix or None,
             timeout=timeout,
             metadata={"task_type": self.task_type.value, "role": "panel", "personality": persona},
             **member_overrides(member),
@@ -192,7 +226,7 @@ class _Panel:
         return _panel_result(alias, entry, response, self.config, self._cancel_message)
 
     def _launch(self, member: str, model: str) -> None:
-        # A hedge asks another model with its own catalog settings, not the member's overrides.
+        # A hedge or fallback asks another model with its own catalog settings, not the member's.
         settings = self.members.get(member) if model == member else None
         task = asyncio.create_task(self._call(model, settings))
         self._attempts.append(_Attempt(member, model, task))
@@ -200,11 +234,29 @@ class _Panel:
     # -- the wait ---------------------------------------------------------------------------
 
     def _settle(self) -> None:
-        for attempt in self._attempts:
+        for attempt in list(self._attempts):
             if attempt.result is None and attempt.task.done() and not attempt.task.cancelled():
                 attempt.result = attempt.task.result()
                 if attempt.result.success:
                     self._cancel_rivals(attempt)
+                else:
+                    self._fall_back(attempt)
+
+    def _fall_back(self, failed: _Attempt) -> None:
+        """A member's own call failed for good: ask a same-tier model instead, once."""
+        result = failed.result
+        assert result is not None
+        if (
+            failed.model != failed.member
+            or result.error_type not in FALLBACK_ERRORS
+            or failed.member in self._fallbacks
+            or any(a.member == failed.member and not a.task.done() for a in self._attempts)
+        ):
+            return  # a hedge is still running for the member, or there was a fallback already
+        spare = self._spare(failed.member)
+        self._fallbacks[failed.member] = spare or ""
+        if spare:
+            self._launch(failed.member, spare)
 
     def _cancel_rivals(self, winner: _Attempt) -> None:
         """A member answered: its other attempt (a hedge or the slow original) is not needed."""
@@ -221,18 +273,22 @@ class _Panel:
     def _live(self) -> set[asyncio.Task[PanelCallResult]]:
         return {a.task for a in self._attempts if not a.task.done()}
 
-    def _hedge_candidate(self) -> str | None:
-        used = {a.model for a in self._attempts}
-        for alias in self.registry_models:
-            entry = self.registry_models[alias]
-            if (
-                alias not in used
-                and entry.enabled
-                and "panel" in entry.roles
-                and entry.provider in self.providers
-            ):
-                return alias
-        return None
+    def _usable(self, alias: str) -> bool:
+        provider = self.providers.get(self.registry_models[alias].provider)
+        return provider is not None and provider.is_available()
+
+    def _spare(self, member: str) -> str | None:
+        """The model to ask in a member's place: same price tier, another vendor first, then
+        the fastest by measured speed. Never one already asked or one of the other members."""
+        taken = {a.model for a in self._attempts} | set(self.panel_models) | self.avoid
+        spares = same_tier_spares(
+            self.registry_models,
+            member,
+            output_tokens=ANSWER_OUTPUT_TOKENS,
+            exclude=taken,
+            usable=self._usable,
+        )
+        return spares[0] if spares else None
 
     def _hedge_due(self) -> float | None:
         """Loop time at which the next slow, unhedged member should be hedged."""
@@ -257,23 +313,54 @@ class _Panel:
                 and not a.task.done()
                 and a.started + (self.config.hedge_after_ms or 0) / 1000 <= now
             )
-            candidate = self._hedge_candidate()
+            candidate = self._spare(slow.member)
             self._hedged[slow.member] = candidate or ""
             if candidate:
                 self._launch(slow.member, candidate)
             due = self._hedge_due()
 
     def _finished(self) -> int:
-        """Members that have an outcome: an answer, or their own call's failure."""
-        return sum(
-            any(
-                a.member == member
-                and a.result is not None
-                and (a.result.success or a.model == member)
-                for a in self._attempts
-            )
-            for member in self.panel_models
-        )
+        """Members that have an outcome: an answer, or a failure with nothing left running."""
+        done = 0
+        for member in self.panel_models:
+            mine = [a for a in self._attempts if a.member == member]
+            answered = any(a.result is not None and a.result.success for a in mine)
+            gave_up = all(a.task.done() for a in mine) and any(a.result for a in mine)
+            done += answered or gave_up
+        return done
+
+    def _answer_tokens(self) -> int:
+        """Output length to expect from a straggler: what the members who answered wrote."""
+        sizes = [
+            a.result.response.output_tokens
+            for a in self._attempts
+            if a.result is not None
+            and a.result.success
+            and a.result.response is not None
+            and a.result.response.output_tokens
+        ]
+        return round(sum(sizes) / len(sizes)) if sizes else ANSWER_OUTPUT_TOKENS
+
+    def _grace_s(self, early: EarlyReturn, now: float) -> float:
+        """Seconds stragglers get once the quorum is in (see ``EarlyReturn``)."""
+        cap = early.max_grace_ms / 1000
+        if early.grace_ms != "auto":
+            return early.grace_ms / 1000
+        tokens = self._answer_tokens()
+        expected: list[float] = []
+        for attempt in self._attempts:
+            entry = self.registry_models.get(attempt.model)
+            if attempt.task.done() or entry is None:
+                continue
+            ms = entry.expected_answer_ms(tokens)
+            if ms is not None:
+                expected.append(attempt.started + ms / 1000)
+        if not expected:
+            return cap  # nothing measured: give stragglers the most the policy allows
+        # Wait for the next straggler only if it is due within the cap: waiting for one that is
+        # overdue, or due later than the cap, buys nothing.
+        due = [t - now for t in expected if now < t <= now + cap]
+        return min(due) if due else 0.0
 
     async def _report_progress(self) -> None:
         done = self._finished()
@@ -321,7 +408,9 @@ class _Panel:
             self._hedge_slow_members(now)
             reached = stop_at is not None and self._successes() >= stop_at
             if early and reached and quorum_deadline is None:
-                quorum_deadline = now + early.grace_ms / 1000
+                grace = self._grace_s(early, now)
+                self._grace_ms = grace * 1000
+                quorum_deadline = now + grace
             if now >= deadline:
                 timed_out = True
                 break
@@ -365,6 +454,13 @@ class _Panel:
                 if model
                 else f"Panel model {member} was slow; no other panel model was available to ask"
             )
+        for member, model in self._fallbacks.items():
+            tier = spare_tier(self.registry_models[member])
+            result.warnings.append(
+                f"Panel model {member} failed; asked {model} (same tier: {tier}) instead"
+                if model
+                else f"Panel model {member} failed; no other {tier}-tier panel model was available"
+            )
         if early_returned:
             result.early_return = True
             stopped = [c.model_name for c in calls if c.status == "cancelled"]
@@ -373,6 +469,9 @@ class _Panel:
                 f"{', '.join(stopped) or 'stragglers'}"
             )
         result.hedged = dict(self._hedged)
+        result.fallbacks = dict(self._fallbacks)
+        if self._grace_ms is not None:
+            result.grace_ms = round(self._grace_ms)
         return result
 
 

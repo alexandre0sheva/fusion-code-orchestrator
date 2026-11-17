@@ -21,6 +21,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `fusion_digest` MCP tool, `fusion digest` command and `/fusion:digest`: cheap models read large files or a diff and answer one question in at most `max_answer_tokens` (default 600).
 - Responses that read the project carry `host_tokens_saved_estimate` (bytes Fusion read ÷ 4), and `fusion stats` / `fusion_stats` sum it.
 - `fusion review-diff --diff-ref REF`; `fusion ask -f` now reads through the same reader, so a secret, ignored or out-of-directory file is skipped with a warning instead of sent.
+- Same-tier fallback: a panel model that is unknown or retired (HTTP 404/410, a new `NotFound` error), or whose provider fails with 5xx, a rate limit or no connection after retries, is replaced by another model of the same price tier (another vendor first), so `panel-duo` no longer loses its quorum to one failing model; the run says which model stood in.
+- Strategy field `skip_aggregator` (`agreement_threshold`, `use: vote | best_of`): no synthesis call when the panel already agrees, nothing is disputed and the task is not high risk; `routing.reasons` says whether synthesis was skipped or ran and why.
+- Strategy field `speed: fast | balanced`: `fast` ranks members by measured speed, so a cascade's first wave and a panel cut by `max_models` are the fastest models.
+- Catalog fields `observed_ttft_ms`, `observed_decode_tps` and `observed_on`: measured speeds (seeded from the 0.2.0 study) that time the early-return grace and rank models for `speed: fast`, hedges and fallbacks.
+- `fanout.prompt_cache` (`auto`, `always`, `off`): Anthropic cache breakpoints after the files a panel call reads; cached input tokens are summed per stage and per task in the run ledger.
 
 ### Changed
 
@@ -28,6 +33,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Strategies renamed: `panel-cheap` → `panel-nano`, `solo-cheap` → `solo-haiku`, `solo-frontier` → `solo-opus`. The old names (and config overrides written under them) keep working through `strategy_aliases` until 0.4.0.
 - The Anthropic adapter sends API version `2026-10-21` and never sends `temperature`, `top_p` or `top_k`; `supports_sampling_params` now defaults to false, so OpenAI, Google and unknown models get no sampling parameters unless their catalog entry allows them.
 - Claude Sonnet 5.5's cached-input price corrected to $0.10 (was $0.20); Google prices now cite `aistudio.google.com/docs/pricing`.
+- Faster by default: early return (`quorum: 2`, `grace_ms: auto`, waiting for a straggler only if its measured speed says it will finish within 1 s) and hedging after 15 s are on; `false` switches either off in config, and `off` per strategy or benchmark arm. Hedges ask a model of the same price tier (was: any panel model).
+- The default `panel-duo` skips its synthesis call when Haiku 5.5 and Luna agree (agreement ≥ 0.6) and returns their vote; on the simulated latency suite its median time per task is now below Opus 5.5's (live check in the 0.3.0 study).
+- Panel prompts put the file snippets first and the request after them, and every member gets the task's system prompt (a member's role is appended at the end), so calls about the same files share a cacheable prefix. The synthesis call is streamed, so its time to first token is recorded.
+- The `latency` benchmark suite compares Opus 5.5 alone, the default as shipped, the default with every latency control off, `panel-nano` and Luna at reasoning effort `none`.
 - The live-spend ledger is scoped by budget: 0.3.0 has its own $15 (`v0.3.0`) and 0.2.0's $15.66 no longer counts against it (entries without a `budget` field count as `v0.2.0`; new entries record theirs). `fusion bench spend` shows each budget's total and remaining, and the packaged suites stop at $14.50 instead of $18.
 
 - Dependencies updated to current releases (FastMCP 4.2, Typer 0.29, Pydantic 2.14, Starlette 1.10, Ruff 0.17, pytest 9.2, pytest-asyncio 1.5, Playwright 1.65 and the rest of `uv.lock`), with the minimum versions in `pyproject.toml` raised to the tested ones; `pytest-xdist` is a new dev dependency.

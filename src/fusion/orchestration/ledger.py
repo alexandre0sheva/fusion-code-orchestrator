@@ -101,6 +101,7 @@ class StageTotals(BaseModel):
     cost_usd: float = 0.0
     cost_known: bool = True
     input_tokens: int = 0
+    cached_tokens: int = 0  # input tokens served from a provider's prompt cache (in input_tokens)
     output_tokens: int = 0
     latency_ms: float = 0.0
 
@@ -112,6 +113,9 @@ class TaskMetrics(BaseModel):
     cost_usd: float
     cost_known: bool
     input_tokens: int
+    # Input tokens read from a provider's prompt cache (part of input_tokens, billed at the cached
+    # rate); 0 when no provider reported any.
+    cached_input_tokens: int = 0
     output_tokens: int
     reasoning_tokens: int
     calls: int
@@ -167,6 +171,7 @@ class RunLedger:
             totals.cost_usd += r.cost_usd or 0.0
             totals.cost_known = totals.cost_known and r.cost_known
             totals.input_tokens += r.input_tokens or 0
+            totals.cached_tokens += r.cached_tokens or 0
             totals.output_tokens += r.output_tokens or 0
             totals.latency_ms += r.latency_ms
         return stages
@@ -203,6 +208,7 @@ class RunLedger:
             cost_usd=cost.usd,
             cost_known=cost.known,
             input_tokens=sum(r.input_tokens or 0 for r in chosen),
+            cached_input_tokens=sum(r.cached_tokens or 0 for r in chosen),
             output_tokens=output_tokens,
             reasoning_tokens=sum(r.reasoning_tokens or 0 for r in chosen),
             calls=len(chosen),
@@ -335,7 +341,9 @@ class CallGateway:
             request, note = fit_to_context(request, entry)
         if note:
             self.warnings.append(note)
-        began = time.perf_counter()
+        # Timed on the ledger's clock (the run's own: virtual in a simulated study), so a cancelled
+        # or unmeasured call gets the same duration on every rerun.
+        began = self.ledger.now_ms()
         status: CallStatus = "success"
         call_started(stage, alias)
         try:
@@ -351,10 +359,10 @@ class CallGateway:
             # whoever cancelled (the fan-out stopping a straggler, the host dropping the request)
             # must see the task end cancelled, not a result.
             response = self._failure(provider, request, "CancelledError", "Cancelled")
-            response.latency_ms = (time.perf_counter() - began) * 1000.0
+            response.latency_ms = self.ledger.now_ms() - began
             self._record(stage, alias, response, entry, started_ms, "cancelled", trimmed=bool(note))
             raise
-        measured = (time.perf_counter() - began) * 1000.0
+        measured = self.ledger.now_ms() - began
         if response.latency_ms <= 0:
             response.latency_ms = measured
         if status == "success" and not response.ok:

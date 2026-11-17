@@ -128,14 +128,25 @@ ANSWER = {
 
 
 def _openrouter_answering_everything(seen: list[dict[str, Any]]) -> OpenRouterProvider:
+    usage = {"prompt_tokens": 200, "completion_tokens": 50, "cost": 0.0001}
+
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         seen.append(payload)
+        if payload.get("stream"):  # the aggregator's call is streamed
+            chunks = [
+                {"choices": [{"delta": {"content": json.dumps(ANSWER)}, "finish_reason": "stop"}]},
+                {"choices": [], "usage": usage},
+            ]
+            body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            return httpx.Response(
+                200, content=body.encode(), headers={"content-type": "text/event-stream"}
+            )
         return httpx.Response(
             200,
             json={
                 "choices": [{"message": {"content": json.dumps(ANSWER)}, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 200, "completion_tokens": 50, "cost": 0.0001},
+                "usage": usage,
             },
         )
 

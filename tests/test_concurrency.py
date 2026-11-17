@@ -240,7 +240,10 @@ async def test_early_return_never_stops_before_the_minimum_successful_responses(
 
 def test_fanout_latency_options_validate_and_layer(monkeypatch: pytest.MonkeyPatch) -> None:
     assert FanoutConfig().early_return is None and FanoutConfig().hedge_after_ms is None
-    assert EarlyReturn().quorum == 2 and EarlyReturn().grace_ms == 1500
+    assert EarlyReturn().quorum == 2 and EarlyReturn().grace_ms == "auto"
+    packaged = load_routing_policies().fanout  # the shipped policy turns both on
+    assert packaged.early_return == EarlyReturn(quorum=2, grace_ms="auto", max_grace_ms=1000)
+    assert packaged.hedge_after_ms == 15000
     _early(monkeypatch, quorum=3, grace_ms=250)
     monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "8000")
     fanout = load_routing_policies().fanout

@@ -42,12 +42,21 @@ def _image_block(image: ImagePart) -> dict[str, Any]:
 
 
 def _content(
-    message: Message, *, cache: bool, images: list[ImagePart]
+    message: Message, *, cache: bool, images: list[ImagePart], split: int | None = None
 ) -> str | list[dict[str, Any]]:
-    """Plain string, or content blocks when the message carries images or a cache breakpoint."""
+    """Plain string, or content blocks when the message carries images or a cache breakpoint.
+
+    ``split`` puts a breakpoint after that many characters (the prefix other calls share): the
+    text becomes two blocks, cached prefix then the rest, and reads the same to the model.
+    """
+    text = message.content
+    if split is not None and 0 < split < len(text):
+        head: dict[str, Any] = {"type": "text", "text": text[:split], "cache_control": _CACHE}
+        tail: dict[str, Any] = {"type": "text", "text": text[split:]}
+        return [*(_image_block(i) for i in images), head, tail]
     if not cache and not images:
-        return message.content
-    text_block: dict[str, Any] = {"type": "text", "text": message.content}
+        return text
+    text_block: dict[str, Any] = {"type": "text", "text": text}
     if cache:
         text_block["cache_control"] = _CACHE
     return [*(_image_block(i) for i in images), text_block]
@@ -102,8 +111,17 @@ class AnthropicProvider(HttpProvider):
             images = request.images if index == last and turn.role == "user" else []
             # Cache everything before the final message: the shared, reusable prefix.
             cache = request.cache_prefix and index == last - 1
+            # ...and, in the final user message, the part other calls share (the files).
+            split = (
+                request.shared_prefix_chars
+                if request.cache_prefix and index == last and turn.role == "user"
+                else None
+            )
             messages.append(
-                {"role": turn.role, "content": _content(turn, cache=cache, images=images)}
+                {
+                    "role": turn.role,
+                    "content": _content(turn, cache=cache, images=images, split=split),
+                }
             )
 
         payload: dict[str, Any] = {

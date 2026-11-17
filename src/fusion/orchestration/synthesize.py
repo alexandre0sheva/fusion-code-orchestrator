@@ -41,6 +41,8 @@ async def synthesize_responses(
         user_prompt=user_prompt,
         max_tokens=entry.max_tokens,
         json_mode=entry.supports_json,
+        # Streamed: the call's time to first token and decode rate are measured and recorded.
+        stream=entry.supports_streaming,
         metadata={
             "task_type": task_type.value,
             "role": "synthesizer",

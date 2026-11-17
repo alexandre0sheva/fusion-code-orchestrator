@@ -246,18 +246,50 @@ t0 ─┬─ panel member A ──────────┐
 - **Panel** (`fanout.py`): every call starts at once. `max_concurrency` caps in-flight calls *per
   provider*, so a provider that is slow or rate limited cannot hold up the others; the provider's own
   limiter (`provider_limits`) enforces its quota inside the provider. The per-model timeout starts
-  once the call has a fan-out slot. Optional `early_return` stops waiting `grace_ms` after
-  `quorum` answers (never fewer than `min_successful_responses`) and cancels the stragglers; optional
-  `hedge_after_ms` asks another panel-role model when a member is still silent, and whichever answers
-  first stands in for that member. A cancelled call is recorded in the ledger with its cost
-  unknown, because the provider may still bill it.
+  once the call has a fan-out slot. A cancelled call is recorded in the ledger with its cost
+  unknown, because the provider may still bill it. The latency path (all on by default):
+  - *Early return* stops waiting once `quorum` answers are in (never fewer than
+    `min_successful_responses`) and cancels the stragglers after a grace. With `grace_ms: auto`
+    the grace comes from the catalog's measured speeds (`observed_ttft_ms`,
+    `observed_decode_tps`): a straggler is expected after its time to first token plus, at its
+    decode rate, as many tokens as the members who answered wrote; the run waits for the next
+    expected straggler only if it is due within `max_grace_ms`. The grace used is
+    `FanoutResult.grace_ms`.
+  - *Hedging*: a member still silent after `hedge_after_ms` is also asked of a spare model, and
+    whichever answers first stands in for it.
+  - *Same-tier fallback*: a member whose call fails with `NotFound` (404/410, the model is unknown
+    or retired), `Server` (5xx after the adapter's retries), `RateLimit` or `Connection` is asked
+    of a spare at once, so one failing model does not cost the quorum (`FanoutResult.fallbacks`,
+    and a warning). Other failures (bad request, auth, timeout) are not retried elsewhere.
+  - *Spares* (`catalog.same_tier_spares`, for hedges and fallbacks): enabled panel-role models of
+    the failed or slow model's price tier (local and mock models only stand in for each other),
+    never the same model under another alias, never another member of the strategy (the
+    `avoid` list, so a cascade's second wave is not asked twice); another vendor first, then the
+    fastest by measured speed, then catalog order. A stand-in uses its own catalog settings.
+  - *One prompt prefix* (`prompts.compose_user_prompt`): every member gets the task type's system
+    prompt and the same user prompt, which puts the file snippets first and the request, context
+    and output rules after them; a member's role is appended at the very end. The length of the
+    file part travels as `ModelRequest.shared_prefix_chars`, so a later call about the same files
+    starts with the same text. OpenAI and Google cache such prefixes by themselves; for Anthropic
+    the fan-out sets `cache_prefix` (`fanout.prompt_cache: auto`, only when files were given) and
+    the adapter puts a `cache_control` breakpoint after the file part. Calls that run at the same
+    time cannot share a cache entry (it exists once the first response starts), so the reuse is
+    across calls, not across members of one fan-out. Cache reads are `CallRecord.cached_tokens`,
+    priced at the catalog's cached rate, and summed per stage and in `TaskMetrics`.
 - **Refinement**: each member's revision needs every peer's round-1 answer, so a round starts when
   the slowest member is in, and then all revisions run together. A round is skipped when the
   panel's agreement already reaches `refinement.skip_above_agreement`.
 - **Judge and synthesis**: per-answer judge calls run together, and the whole judge stage runs
   alongside synthesis (`ConcurrentStages`) unless the strategy sets `judge_feeds_synthesis`, in
   which case synthesis waits and receives the judge's scores. If one stage fails, the other is
-  cancelled and the original exception is raised.
+  cancelled and the original exception is raised. The synthesis call is streamed (its time to
+  first token and decode rate are recorded; the MCP response still arrives whole), and a strategy
+  with `skip_aggregator` makes no synthesis call at all when the panel already agrees (see
+  [Cascade, aggregators and caps](#cascade-aggregators-and-caps)).
+- **Speed-ranked choices**: a strategy with `speed: fast` ranks its members by measured speed for a
+  typical answer (`cascade.fastest_first`; never-measured models last), so a cascade's first wave
+  and a panel cut by `max_models` are its fastest members; `balanced` keeps the configured order
+  and a cascade's cheapest-first wave.
 - **Shadow baseline**: it needs only the task prompt, so `ShadowStartStage` starts it right after
   the context check and `ShadowStage` collects it after Fusion's answer is final. Fusion's wall time
   is stamped before the wait and shadow calls are excluded from Fusion's cost and critical path.
@@ -291,7 +323,11 @@ claim clusters and the ledger, never an answer's wording.
   `consensus` clusters, `best_of` scores each model by the mean share of the other models backing
   its clusters (halved when disputed) and returns that model's answer as written, and `digest`
   lists consensus, disputed and single-model clusters ahead of every answer for Claude Code to
-  merge. `llm` stays in `synthesize.py`.
+  merge. `llm` stays in `synthesize.py`. A strategy's `skip_aggregator` turns `llm` into its `use`
+  aggregator (`vote` or `best_of`) for a run whose answers pass the cascade's own test
+  (`cascade.agreement_decision`: two or more answers, agreement at least the threshold, nothing
+  disputed, not high risk); the routing reasons say which way it went ("Synthesis skipped: ..." or
+  "Synthesis ran: ..."). The default `panel-duo` uses it.
 - **Caps** (`budget_guard.py`, `routing/budget.py`). `BudgetStage` runs `preflight`: `plan_calls`
   lists the calls a strategy makes with assumed token counts (prompt size from the redacted text;
   fixed overheads and output sizes as constants in `routing/budget.py`), `forecast_calls` prices

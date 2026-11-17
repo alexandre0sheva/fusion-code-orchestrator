@@ -61,14 +61,17 @@ async def test_a_run_can_choose_its_seed(tmp_path: Path) -> None:
     assert {r.seed for r in spy.requests} == {0}  # the mode's own default
 
 
-async def test_benchmark_calls_stream_and_real_calls_do_not(tmp_path: Path) -> None:
+async def test_benchmark_calls_stream_and_real_calls_stream_only_the_aggregator(
+    tmp_path: Path,
+) -> None:
     spy = Spy()
     pipe = pipeline(tmp_path, spy)
     await pipe.run(context(), mode=Mode.BENCHMARK)
     assert spy.requests and all(r.stream for r in spy.requests)
     spy.requests.clear()
-    await pipe.run(context())
-    assert all(not r.stream for r in spy.requests)
+    await pipe.run(context(strategy="panel-nano"))
+    roles = {str(r.metadata.get("role")): r.stream for r in spy.requests}
+    assert roles == {"panel": False, "synthesizer": True}
 
 
 async def test_models_that_cannot_stream_are_never_asked_to() -> None:

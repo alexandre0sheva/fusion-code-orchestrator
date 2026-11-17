@@ -327,13 +327,17 @@ def test_a_rerun_replays_from_the_cache_at_zero_cost_and_says_so(
 
     second = _run(cfg, env_for("two"), "two")
     assert second.spent_usd == 0
-    assert second.cache_hits == sum(i.metrics.calls for i in second.items) > 0
+    # Every call that finished is replayed; a straggler that early return cancelled was never
+    # answered, so it cannot be (it is asked again, and cancelled again, at no cost).
+    finished = sum(1 for i in second.items for c in i.calls if c.status != "cancelled")
+    assert second.cache_hits == finished > 0
     before = {i.job_key: i for i in first.items}
     for new in second.items:
         old = before[new.job_key]
         assert new.metrics.cost_usd == 0 and not new.metrics.latency_valid
         assert new.answer == old.answer and new.score == old.score
-        assert all(c.cache_hit and c.cost_usd == 0 for c in new.calls)
+        replayed = [c for c in new.calls if c.status != "cancelled"]
+        assert all(c.cache_hit and c.cost_usd == 0 for c in replayed)
     assert not (tmp_path / "two" / "spend.json").exists()  # a free rerun records no spend
 
 

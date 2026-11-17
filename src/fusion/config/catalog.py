@@ -7,7 +7,9 @@ explicitly instead of silently going stale.
 
 from __future__ import annotations
 
+import math
 import re
+from collections.abc import Callable, Collection, Mapping
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -145,6 +147,12 @@ class ModelEntry(BaseModel):
     # or ignore them, so Fusion sends none unless the catalog says otherwise.
     supports_sampling_params: bool = False
     retirement_not_before: date | None = None
+    # Measured speed: median time to first token and decode rate of streamed calls, from a live
+    # study (``observed_on``). Used to pick fast models and to time the early-return grace; a model
+    # without them ranks after every model with them.
+    observed_ttft_ms: float | None = Field(default=None, ge=0)
+    observed_decode_tps: float | None = Field(default=None, gt=0)
+    observed_on: date | None = None
     route: Route = "auto"
     # The model's ID on OpenRouter (``anthropic/claude-haiku-5.5``); for provider ``openrouter``
     # it is the model ID itself.
@@ -219,6 +227,12 @@ class ModelEntry(BaseModel):
         if blended is None:
             return self.tiering.top_tier
         return self.tiering.tier_for(blended)
+
+    def expected_answer_ms(self, output_tokens: int) -> float | None:
+        """Time to write ``output_tokens`` at the measured speed; None when never measured."""
+        if self.observed_ttft_ms is None or self.observed_decode_tps is None:
+            return None
+        return self.observed_ttft_ms + output_tokens / self.observed_decode_tps * 1000.0
 
 
 # The roadmap's name for a catalog model entry.
@@ -308,6 +322,55 @@ class Catalog(BaseModel):
             if entry.provider == provider and entry.model_id == model_id:
                 return entry
         return None
+
+
+def speed_rank(entry: ModelEntry, output_tokens: int) -> float:
+    """Expected milliseconds to write an answer, for sorting; never-measured models sort last."""
+    expected = entry.expected_answer_ms(output_tokens)
+    return math.inf if expected is None else expected
+
+
+def spare_tier(entry: ModelEntry, on: date | None = None) -> str:
+    """The price tier a stand-in must share; local and mock models only stand in for each other."""
+    return "free" if entry.provider in FREE_PROVIDERS else entry.price_tier(on)
+
+
+def same_tier_spares(
+    models: Mapping[str, ModelEntry],
+    alias: str,
+    *,
+    output_tokens: int,
+    exclude: Collection[str] = (),
+    usable: Callable[[str], bool] | None = None,
+    role: str = "panel",
+) -> list[str]:
+    """Models that can stand in for ``alias``: same price tier and role, enabled and usable.
+
+    The same model under another alias (and anything in ``exclude``) never counts: a retired or
+    failing model fails under every name. Another vendor comes first (an outage tends to take a
+    whole provider down), then the fastest by measured speed, then catalog order.
+    """
+    failed = models[alias]
+    tier = spare_tier(failed)
+    taken = {(models[a].provider, models[a].model_id) for a in [alias, *exclude] if a in models}
+    candidates = [
+        (name, entry)
+        for name, entry in models.items()
+        if entry.enabled
+        and role in entry.roles
+        and (entry.provider, entry.model_id) not in taken
+        and spare_tier(entry) == tier
+        and (usable is None or usable(name))
+    ]
+    order = {name: i for i, name in enumerate(models)}
+    candidates.sort(
+        key=lambda item: (
+            item[1].provider == failed.provider,
+            speed_rank(item[1], output_tokens),
+            order[item[0]],
+        )
+    )
+    return [name for name, _ in candidates]
 
 
 def catalog_from_raw(

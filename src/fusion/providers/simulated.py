@@ -23,7 +23,7 @@ import math
 import random
 from collections.abc import Iterable
 from statistics import NormalDist
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -40,7 +40,7 @@ from fusion.providers.simulated_judge import JUDGE_ROLE, judge_reply
 
 if TYPE_CHECKING:
     from fusion.bench.spec import BenchTask, CodingTruth, TruthPoint
-    from fusion.config.catalog import Catalog
+    from fusion.config.catalog import Catalog, ModelEntry
     from fusion.providers.limits import ProviderLimiter
 
 __all__ = [
@@ -52,6 +52,7 @@ __all__ = [
     "SimWorld",
     "SimulatedProvider",
     "sim_models_from_catalog",
+    "speed_of",
 ]
 
 _NORMAL = NormalDist()
@@ -74,6 +75,7 @@ class SimModel(BaseModel):
     family: str = "generic"  # models of one family share part of their blind spots
     input_per_1m: float = Field(default=0.0, ge=0)
     output_per_1m: float = Field(default=0.0, ge=0)
+    cached_input_per_1m: float | None = Field(default=None, ge=0)  # None: the input price
     ttft_ms: float = Field(default=800.0, ge=0)
     tokens_per_s: float = Field(default=90.0, gt=0)
     answer_tokens: int = Field(default=800, ge=1)
@@ -82,22 +84,31 @@ class SimModel(BaseModel):
     position_bias: float = Field(default=0.0, ge=-1.0, le=1.0)
 
 
+def speed_of(entry: ModelEntry) -> tuple[float, float]:
+    """``(ttft_ms, decode tokens/s)``: the catalog's measured speed, else its latency tier's."""
+    if entry.observed_ttft_ms is not None and entry.observed_decode_tps is not None:
+        return entry.observed_ttft_ms, entry.observed_decode_tps
+    return TIER_SPEED[entry.latency_tier]
+
+
 def sim_models_from_catalog(catalog: Catalog, provider: str) -> dict[str, SimModel]:
     """A simulated twin of every catalog model of ``provider``, keyed by provider model id.
 
-    Prices are the catalog's, so a simulated study costs what the real one would be forecast to.
+    Prices are the catalog's, so a simulated study costs what the real one would be forecast to;
+    speeds are the catalog's measured ones where it has them (``speed_of``).
     """
     models: dict[str, SimModel] = {}
     for entry in catalog.models.values():
         if entry.provider != provider:
             continue
         price = entry.price_at()
-        ttft, speed = TIER_SPEED[entry.latency_tier]
+        ttft, speed = speed_of(entry)
         models[entry.model_id] = SimModel(
             skill=TIER_SKILL[entry.quality_tier],
             family=provider,
             input_per_1m=price.input_per_1m if price else 0.0,
             output_per_1m=price.output_per_1m if price else 0.0,
+            cached_input_per_1m=price.cached_input_per_1m if price else None,
             ttft_ms=ttft,
             tokens_per_s=speed,
             answer_tokens=TIER_TOKENS[entry.quality_tier],
@@ -184,7 +195,16 @@ def _claim(point: TruthPoint, index: int) -> dict[str, Any]:
 
 
 class SimulatedProvider(ModelProvider):
-    """A provider whose models are simulated. One instance can stand in for any real provider."""
+    """A provider whose models are simulated. One instance can stand in for any real provider.
+
+    With ``prompt_cache`` it keeps a prompt cache like a real provider's: a call whose prompt
+    prefix (the system prompt and the shared part of the user prompt) a finished earlier call to
+    the same model already sent reads it from the cache, reported as ``cached_input_tokens`` and
+    priced at the cached rate. ``automatic`` caches every prefix (OpenAI, Google), ``explicit``
+    only requests that ask with ``cache_prefix`` (Anthropic). Calls running at the same time do
+    not share. Simulated studies leave it ``off``: a cache shared by concurrent jobs would make a
+    study's results depend on the order its jobs ran in.
+    """
 
     def __init__(
         self,
@@ -195,8 +215,11 @@ class SimulatedProvider(ModelProvider):
         default: SimModel | None = None,
         limiter: ProviderLimiter | None = None,
         latency_scale: float = 1.0,
+        prompt_cache: Literal["off", "explicit", "automatic"] = "off",
     ) -> None:
         self.name = name
+        self.prompt_cache = prompt_cache
+        self._cache: set[tuple[str, str]] = set()
         self.models = models
         self.world = world
         self.default = default or SimModel()
@@ -238,6 +261,7 @@ class SimulatedProvider(ModelProvider):
             text = self._answer(request, spec, role, prompt, task)
             parsed = _parse(text)
             input_tokens = math.ceil((len(request.system_text()) + len(prompt)) / 3.0)
+            cached_tokens, prefix_key = self._cache_lookup(request, prompt)
             output_tokens = self._output_tokens(request, spec, role, task, text)
             jitter = 0.9 + 0.4 * self.world.uniform(
                 "jitter", request.model_id, request.seed, prompt[-80:]
@@ -245,10 +269,19 @@ class SimulatedProvider(ModelProvider):
             ttft = spec.ttft_ms * jitter
             latency_ms = ttft + output_tokens / spec.tokens_per_s * 1000.0 * jitter
             await asyncio.sleep(latency_ms / 1000.0 * self.latency_scale)
+            if prefix_key is not None:
+                self._cache.add(prefix_key)
         finally:
             self.in_flight -= 1
         decode, total = speed_metrics(output_tokens, latency_ms, ttft if request.stream else None)
-        cost = (input_tokens * spec.input_per_1m + output_tokens * spec.output_per_1m) / 1_000_000
+        cached_rate = (
+            spec.input_per_1m if spec.cached_input_per_1m is None else spec.cached_input_per_1m
+        )
+        cost = (
+            (input_tokens - cached_tokens) * spec.input_per_1m
+            + cached_tokens * cached_rate
+            + output_tokens * spec.output_per_1m
+        ) / 1_000_000
         return ModelResponse(
             provider=self.name,
             model=request.model_id,
@@ -256,6 +289,7 @@ class SimulatedProvider(ModelProvider):
             parsed_json=parsed,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cached_input_tokens=cached_tokens or None,
             actual_cost_usd=cost,
             latency_ms=latency_ms,
             ttft_ms=ttft if request.stream else None,
@@ -263,6 +297,18 @@ class SimulatedProvider(ModelProvider):
             total_tokens_per_s=total,
             finish_reason="stop",
         )
+
+    def _cache_lookup(
+        self, request: ModelRequest, prompt: str
+    ) -> tuple[int, tuple[str, str] | None]:
+        """``(cached input tokens, prefix to remember)`` for a call; ``(0, None)`` when uncached."""
+        mode = self.prompt_cache
+        if mode == "off" or (mode == "explicit" and not request.cache_prefix):
+            return 0, None
+        shared = request.shared_prefix_chars
+        prefix = request.system_text() + (prompt[:shared] if shared else prompt)
+        key = (request.model_id, prefix)
+        return (math.ceil(len(prefix) / 3.0) if key in self._cache else 0), key
 
     def _output_tokens(
         self, request: ModelRequest, spec: SimModel, role: str, task: BenchTask | None, text: str

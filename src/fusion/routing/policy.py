@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Literal, cast, get_args
 
 from pydantic import BaseModel, Field
 
-from fusion.config.catalog import PriceTier
+from fusion.config.catalog import PriceTier, speed_rank
 from fusion.config.layers import ConfigError
 from fusion.config.loader import RoutingPoliciesConfig, RoutingPolicyEntry, load_routing_policies
-from fusion.routing.budget import BudgetLevel
+from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, BudgetLevel
 from fusion.routing.classifier import (
     TaskClassifier,
     TaskType,
@@ -133,6 +133,10 @@ class Router:
     def _select_panel(self, strategy: Strategy, warnings: list[str]) -> list[str]:
         self._require_known(strategy)
         panel = [m.model for m in strategy.members if self._registry.is_enabled(m.model)]
+        if panel and strategy.speed == "fast":
+            # Fastest first, so a panel cut short (max_models) keeps the fastest members.
+            models = self._registry.models
+            panel.sort(key=lambda alias: speed_rank(models[alias], ANSWER_OUTPUT_TOKENS))
         if panel:
             return panel
         fallback = self._registry.by_role("panel")[: len(strategy.members)]

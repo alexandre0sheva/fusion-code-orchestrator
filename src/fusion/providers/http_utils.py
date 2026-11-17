@@ -21,6 +21,7 @@ from fusion.config.catalog import Catalog, ModelEntry, load_catalog
 from fusion.providers.base import (
     AuthError,
     BadRequestError,
+    ModelNotFoundError,
     ModelProvider,
     ModelRequest,
     ModelResponse,
@@ -147,6 +148,8 @@ def classify_status(status: int, message: str) -> ProviderError:
         return ProviderTimeoutError(message)
     if status == 429:
         return RateLimitError(message)
+    if status in (404, 410):
+        return ModelNotFoundError(message)
     if status >= 500:
         return ServerError(message)
     return BadRequestError(message)

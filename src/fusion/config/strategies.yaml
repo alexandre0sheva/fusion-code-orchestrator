@@ -15,6 +15,14 @@
 #              `cascade.agreement_threshold`, nothing disputed, task not high risk) the run ends
 #              there with `cascade.early_aggregator` (vote | best_of) and no synthesis call;
 #              otherwise the other members answer too and `rounds` and `aggregator` apply
+# skip_aggregator  {agreement_threshold, use: vote | best_of}: with an llm aggregator, skip the
+#              synthesis call when the answers agree that much (nothing disputed, task not high
+#              risk) and build the answer with `use` instead
+# speed        fast | balanced (default): `fast` ranks members by measured speed (catalog
+#              observed_*), so a cascade's first wave and a panel cut by max_models are the
+#              fastest; `balanced` keeps the configured order (a cascade goes cheapest first)
+# fanout       {early_return, hedge_after_ms}: this strategy's latency controls on top of the
+#              routing policy's (`off` switches one off)
 # max_cost_usd  hard cap: a run forecast over it is shifted down (no refinement/judge, smaller
 #              panel, cheapest model alone) and refused if even that is over; optional stages
 #              that would pass it are skipped. max_latency_s skips stages that would not fit.
@@ -113,13 +121,17 @@ strategies:
   panel-duo:
     kind: panel
     description: >-
-      Claude Haiku 5.5 and GPT-6 Luna, merged by Haiku. The default (`budget: medium`). Two
-      models means no spare: if one fails there is no quorum.
+      Claude Haiku 5.5 and GPT-6 Luna; when they agree their vote is the answer with no synthesis
+      call, otherwise Haiku merges them. The default (`budget: medium`). A model that fails is
+      replaced by another of its price tier, so one outage does not cost the quorum.
     members:
       - model: claude-haiku
       - model: gpt-luna
     aggregator: llm
     aggregator_model: claude-haiku
+    # 0.6: between the 0.2.0 ablation's cascade-0.5 (not worse than one model) and 0.7
+    # (inconclusive); the 0.3.0 study calibrates it.
+    skip_aggregator: {agreement_threshold: 0.6, use: vote}
 
   panel-mid:
     kind: panel

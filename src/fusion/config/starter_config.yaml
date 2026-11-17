@@ -19,6 +19,8 @@
 #   max_concurrency: 6
 #   per_model_timeout_seconds: 45
 #   global_timeout_seconds: 60
+#   early_return: false        # wait for every panel member (on by default)
+#   hedge_after_ms: false      # never ask a spare model when one is slow (on by default)
 
 # Strategies decide which models answer and how the answers are combined (`fusion strategies list`).
 # strategies:

@@ -13,14 +13,23 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, Field
 
+from fusion.config.catalog import speed_rank
 from fusion.config.loader import ModelEntry
 from fusion.orchestration.claims import AgreementReport
 from fusion.orchestration.fanout import FanoutResult
-from fusion.orchestration.strategy import CascadeSpec, PanelMember
-from fusion.routing.budget import price_per_million
+from fusion.orchestration.strategy import CascadeSpec, PanelMember, Strategy
+from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, price_per_million
 from fusion.telemetry.cost import PricingRegistry
 
-__all__ = ["CascadeOutcome", "cheapest_first", "decide", "merge_fanouts"]
+__all__ = [
+    "CascadeOutcome",
+    "agreement_decision",
+    "cascade_order",
+    "cheapest_first",
+    "decide",
+    "fastest_first",
+    "merge_fanouts",
+]
 
 _QUORUM_WARNING = "Panel quorum not met"
 
@@ -56,19 +65,60 @@ def cheapest_first(
     return sorted(members, key=price)  # sorted() is stable
 
 
-def decide(report: AgreementReport, *, risk: str, spec: CascadeSpec) -> tuple[bool, str]:
-    """Whether the first wave is enough: ``(exit_early, reason)``."""
+def fastest_first(
+    members: Sequence[PanelMember], models: Mapping[str, ModelEntry]
+) -> list[PanelMember]:
+    """Members from fastest to slowest by measured speed (catalog ``observed_*``) for a typical
+    answer; models never measured sort last, ties keep the configured order."""
+
+    def expected(member: PanelMember) -> float:
+        entry = models.get(member.model)
+        return speed_rank(entry, ANSWER_OUTPUT_TOKENS) if entry else math.inf
+
+    return sorted(members, key=expected)
+
+
+def cascade_order(
+    strategy: Strategy,
+    members: Sequence[PanelMember],
+    models: Mapping[str, ModelEntry],
+    pricing: PricingRegistry,
+) -> list[PanelMember]:
+    """The order a cascade asks its members in: fastest first for ``speed: fast``, else
+    cheapest first. The first ``cascade.first`` of them are the first wave."""
+    if strategy.speed == "fast":
+        return fastest_first(members, models)
+    return cheapest_first(members, models, pricing)
+
+
+def agreement_decision(
+    report: AgreementReport, *, risk: str, threshold: float, escalate_on_high_risk: bool
+) -> tuple[bool, str | None]:
+    """Whether the answers in ``report`` agree enough to need nothing more: ``(ok, why_not)``."""
     if report.n_models < 2:
-        return False, f"only {report.n_models} of the first {spec.first} models answered"
+        return False, f"only {report.n_models} model(s) answered"
     if report.contradicted:
         return False, f"{len(report.contradicted)} point(s) were disputed"
-    if risk == "high" and spec.escalate_on_high_risk:
+    if risk == "high" and escalate_on_high_risk:
         return False, "the task is high risk"
-    if report.score < spec.agreement_threshold:
-        return (
-            False,
-            f"agreement {report.score:.2f} is below the {spec.agreement_threshold:.2f} threshold",
-        )
+    if report.score < threshold:
+        return False, f"agreement {report.score:.2f} is below the {threshold:.2f} threshold"
+    return True, None
+
+
+def decide(report: AgreementReport, *, risk: str, spec: CascadeSpec) -> tuple[bool, str]:
+    """Whether the first wave is enough: ``(exit_early, reason)``."""
+    enough, why_not = agreement_decision(
+        report,
+        risk=risk,
+        threshold=spec.agreement_threshold,
+        escalate_on_high_risk=spec.escalate_on_high_risk,
+    )
+    if not enough:
+        assert why_not is not None
+        if report.n_models < 2:
+            why_not = f"only {report.n_models} of the first {spec.first} models answered"
+        return False, why_not
     return (
         True,
         f"the first {report.n_models} models agree ({report.score:.2f}, threshold "
@@ -104,6 +154,8 @@ def merge_fanouts(
         quorum_met=successes >= needed,
         timed_out=first.timed_out or second.timed_out,
         early_return=first.early_return or second.early_return,
+        grace_ms=second.grace_ms if second.grace_ms is not None else first.grace_ms,
         hedged={**first.hedged, **second.hedged},
+        fallbacks={**first.fallbacks, **second.fallbacks},
         warnings=warnings,
     )

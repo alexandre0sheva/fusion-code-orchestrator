@@ -81,12 +81,18 @@ def test_the_latency_suite_measures_time_so_the_cache_is_off() -> None:
     cfg = _bench_config("latency")
     assert cfg.cache is False
     book = arm_book(load_strategy_book(), cfg.arms)
-    early = book.get("early-return")
-    assert early.fanout is not None and early.fanout.early_return == EarlyReturn(
-        quorum=2, grace_ms=1500
-    )
-    assert book.get("hedged").fanout == FanoutOverride(hedge_after_ms=8000)
-    assert book.get("wait-for-all").fanout is None
+    assert book.get("solo-opus").kind == "solo"  # the median the default must match
+    default = book.get("default")
+    assert default.fanout is None and default.skip_aggregator is not None  # as shipped
+    assert book.for_budget("medium").members == default.members
+    off = book.get("levers-off")
+    assert off.skip_aggregator is None
+    assert off.fanout == FanoutOverride(early_return="off", hedge_after_ms="off")
+    base = FanoutConfig(early_return=EarlyReturn(), hedge_after_ms=9000)
+    stripped = off.fanout.applied_to(base)
+    assert stripped.early_return is None and stripped.hedge_after_ms is None
+    luna = next(m for m in book.get("luna-none").members if m.model == "gpt-luna")
+    assert luna.reasoning_effort == "none"
 
 
 @pytest.mark.parametrize("name", SUITES)
@@ -200,7 +206,7 @@ def test_a_dry_run_of_each_suite_works_on_simulated_models(fusion_home: Path, na
 def test_the_whole_latency_suite_runs_with_its_own_quota(fusion_home: Path) -> None:
     result = runner.invoke(app, ["bench", "run", "--suite", "latency", "--mock", "--yes"])
     assert result.exit_code == 0, result.output
-    assert "36/36" in result.output  # 9 tasks x 4 arms x 1 repeat
+    assert "45/45" in result.output  # 9 tasks x 5 arms x 1 repeat
 
 
 # ------------------------------------------------------------------------------- quotas

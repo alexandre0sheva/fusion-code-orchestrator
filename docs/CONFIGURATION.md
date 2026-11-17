@@ -283,7 +283,8 @@ Three catalog settings tune provider calls (all in `src/fusion/config/catalog.ya
 | `provider_limits.<provider>.max_concurrent` | top level | Most in-flight requests to that provider, shared by every call (panel, refinement, judge). |
 | `provider_limits.<provider>.rpm` | top level | Most request starts in any 60 s window. Omit either key for "unlimited". Set both to your account's real quota. |
 | `default_reasoning_effort` | per model | Effort sent when a request does not choose one (`none`..`max`; Gemini maps to `low`/`medium`/`high`; OpenRouter gets it as `reasoning: {effort}`). Panel models default to `low`; the baseline and synthesizer keep provider defaults so comparisons stay fair. |
-| `persona` | per model | Panel persona prompt (for example `security_reviewer`). Without one a model answers with the task's own system prompt. |
+| `persona` | per model | Panel persona (for example `security_reviewer`), appended to the end of the prompt so every member shares one system prompt and prompt prefix. |
+| `observed_ttft_ms`, `observed_decode_tps`, `observed_on` | per model | Measured median time to first token and decode rate from a live study (seeded from the 0.2.0 study; the 0.3.0 study refreshes them). They time the early-return grace and rank models for `speed: fast`, hedges and fallbacks; a model without them ranks after every model with them. |
 | `max_tokens` | per model | Output cap Fusion requests. Thinking tokens count against it, so reasoning models use 16384. |
 
 ## Strategies and budgets
@@ -318,7 +319,13 @@ strategies:
     max_cost_usd: 0.05           # optional hard cap, see "Cost and latency caps"
     max_latency_s: 60            # optional; stages that would not fit are skipped
     fanout:                      # optional: this strategy's own latency controls (see Fan-out)
-      early_return: {quorum: 2, grace_ms: 1500}
+      early_return: {quorum: 2, grace_ms: 1500}   # or `off`
+      hedge_after_ms: off
+    skip_aggregator:             # optional, llm aggregator only: no synthesis call when they agree
+      agreement_threshold: 0.6   # the answers must agree at least this much
+      use: vote                  # vote | best_of builds the answer instead
+      escalate_on_high_risk: true  # a high-risk task is always synthesized
+    speed: balanced              # balanced | fast (rank members by measured speed)
   my-cascade:
     kind: cascade                # cheapest members first, the rest only if they disagree
     members: [{model: claude-haiku}, {model: gpt-luna}, {model: gemini-flash}]
@@ -336,7 +343,7 @@ budget_strategies:
 | Strategy | Runs | Calls per task |
 |----------|------|----------------|
 | `solo-<model>` | one model alone: `solo-haiku`, `solo-sonnet`, `solo-opus`, `solo-fable`, `solo-luna`, `solo-terra`, `solo-sol`, `solo-astra`, `solo-flash`, `solo-hydrogen`, `solo-carbon`, `solo-argon` | 1 |
-| `panel-duo` (default) | Claude Haiku 5.5 + GPT-6 Luna, merged by Haiku 5.5; no spare model if one fails | 2 + 1 |
+| `panel-duo` (default) | Claude Haiku 5.5 + GPT-6 Luna; when they agree (0.6) their vote is the answer, otherwise Haiku 5.5 merges them; a failing model is replaced by another of its tier | 2, or 2 + 1 |
 | `panel-nano` | Haiku 5.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 5.5 | 3 + 1 |
 | `panel-mid` | GPT-6.1 Terra + Gemini 4 Hydrogen + Claude Sonnet 5.5, merged by Sonnet 5.5 | 3 + 1 |
 | `panel-open` | open-weight models through OpenRouter: DeepSeek V4.1 Flash + MiniMax M3.1 Flash + Qwen 3.8 Flash + GLM-5.3, merged by Haiku 5.5; needs `OPENROUTER_API_KEY`; a 0.3.0 ablation candidate, not a default | 4 + 1 |
@@ -389,6 +396,16 @@ How the fields behave:
   runs as one panel and says so. The default `agreement_threshold` of 0.7 is provisional until the
   benchmark study tunes it. `routing.reasons` and the stored run's `cascade` record which way it
   went and why.
+- **`skip_aggregator`** (an `llm` aggregator only) applies the cascade's test to the whole panel:
+  when at least two answered, their agreement is at least `agreement_threshold`, nothing is
+  disputed and the task is not high risk (unless `escalate_on_high_risk: false`), `use` (`vote` or
+  `best_of`) builds the answer and the synthesizer is not called. `routing.reasons` says
+  "Synthesis skipped: ..." or "Synthesis ran: ..." and why. The default `panel-duo` sets 0.6,
+  between the 0.2.0 ablation's cascade at 0.5 (not worse than one model) and at 0.7
+  (inconclusive); the 0.3.0 study calibrates it.
+- **`speed`**: `balanced` (default) keeps the configured member order, and a cascade's first wave is
+  its cheapest members. `fast` ranks members by measured speed for a typical answer (catalog
+  `observed_*`): a cascade's first wave and a panel cut by `max_models` are then the fastest.
 - A model may appear only once in a strategy.
 - `max_cost_usd` and `max_latency_s` are caps; see [Cost and latency caps](#cost-and-latency-caps).
 
@@ -495,24 +512,43 @@ fanout:
   min_successful_responses: 2
   cancel_on_global_timeout: true
   allow_partial_results: true
-  early_return: {quorum: 2, grace_ms: 1500}   # optional, off by default
-  hedge_after_ms: 8000                        # optional, off by default
+  early_return: {quorum: 2, grace_ms: auto, max_grace_ms: 1000}   # `false` switches it off
+  hedge_after_ms: 15000                                           # `false` switches it off
+  prompt_cache: auto                                              # auto | always | off
 ```
 
 `max_concurrency` is per provider: one provider's calls queue behind each other, other providers'
-do not. Two optional settings trade a little quality or cost for latency:
+do not. The latency controls are on by default (a policy file that leaves one out has it off):
 
 - `early_return`: once `quorum` members have answered (and at least `min_successful_responses`),
-  wait `grace_ms` more for the rest, then cancel them and carry on. The run warns which models were
-  dropped. A cancelled call may still be billed, so its cost is recorded as unknown.
-- `hedge_after_ms`: when a member has not answered after this long, ask the next enabled model with
-  the `panel` role that is not already in the panel. Whichever of the two answers first is used,
-  attributed to the model that actually answered, and the other is cancelled. With no spare model
-  the run says so and keeps waiting.
+  wait a grace for the rest, then cancel them and carry on. `grace_ms` is a number of milliseconds
+  or `auto`: the catalog's measured speed of each straggler (`observed_ttft_ms` plus the answered
+  members' output length at `observed_decode_tps`) says when it should finish, and the run waits
+  for the next one only if that is within `max_grace_ms`; it does not wait for a straggler that is
+  overdue or due later. With no measured straggler, `auto` waits `max_grace_ms`. The run warns
+  which models were dropped. A cancelled call may still be billed, so its cost is recorded as
+  unknown.
+- `hedge_after_ms`: when a member has not answered after this long, also ask a spare: an enabled
+  `panel`-role model of the same price tier that is not in the strategy, another vendor first,
+  then the fastest by measured speed. Whichever of the two answers first is used, attributed to
+  the model that actually answered, and the other is cancelled. With no spare the run says so and
+  keeps waiting.
+- **Same-tier fallback** (always on): a member whose call fails because the model is unknown or
+  retired (HTTP 404/410), or its provider returns 5xx, rate-limits or cannot be reached after the
+  adapter's retries, is asked of a spare chosen the same way, once. The run says which model
+  stood in ("Panel model X failed; asked Y (same tier: nano) instead"). Bad requests, auth errors
+  and timeouts are not retried on another model.
+- `prompt_cache`: every panel member gets the same system prompt and a user prompt that starts
+  with the file snippets (the request, context and member role come after), so a later call about
+  the same files starts with the same text. OpenAI and Google cache that by themselves. For
+  Anthropic, `auto` adds a cache breakpoint after the files when files were given, `always` on
+  every panel call, `off` never; a cache write costs more than plain input (Haiku 5.5: $0.125
+  against $0.10 per 1M tokens) and a read much less ($0.01). Cached input tokens are recorded per
+  call and priced at the cached rate.
 
-A strategy may set either control for itself with `fanout:` (`early_return` and `hedge_after_ms`
-only; the other limits stay the routing policy's), which is how the latency benchmark compares them
-on one panel.
+A strategy may set `early_return` and `hedge_after_ms` for itself with `fanout:` (the other limits
+stay the routing policy's), and `off` switches one off for that strategy, which is how the latency
+benchmark compares them on one panel.
 
 Fusion preserves partial panel results. A failed or timed-out model produces a warning and a usage
 record, but the run continues when quorum is met. If quorum is not met, Fusion returns a structured

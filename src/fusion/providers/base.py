@@ -47,6 +47,10 @@ class ModelRequest(BaseModel):
     thinking_budget_tokens: int | None = None
     # Cache everything before the last message (system prompt + shared task prefix).
     cache_prefix: bool = False
+    # How many characters at the start of the user prompt other calls share (the files). With
+    # ``cache_prefix``, an adapter that takes explicit breakpoints (Anthropic) puts one there; the
+    # text sent is the same either way.
+    shared_prefix_chars: int | None = Field(default=None, ge=0)
     # Stream over SSE to measure time-to-first-token and decode speed.
     stream: bool = False
     images: list[ImagePart] = Field(default_factory=list)
@@ -180,6 +184,12 @@ class BadRequestError(ProviderError):
 
 class ServerError(ProviderError):
     error_type = "Server"
+
+
+class ModelNotFoundError(BadRequestError):
+    """404 / 410: the model ID is unknown or retired (the provider will not serve it again)."""
+
+    error_type = "NotFound"
 
 
 def speed_metrics(

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 from fusion.config.loader import ModelEntry
-from fusion.orchestration.cascade import cheapest_first
+from fusion.orchestration.cascade import cascade_order, cheapest_first
 from fusion.orchestration.ledger import RunLedger
 from fusion.orchestration.strategy import Strategy
 from fusion.routing.budget import (
@@ -223,7 +223,8 @@ def preflight(
     for its first wave only; the mid-run guard decides whether it may escalate.
     """
     if plan.kind == "cascade":
-        plan = plan.model_copy(update={"members": cheapest_first(plan.members, models, pricing)})
+        ordered = cascade_order(plan, plan.members, models, pricing)
+        plan = plan.model_copy(update={"members": ordered})
 
     def forecast(strategy: Strategy) -> RunForecast:
         calls = plan_calls(

@@ -66,7 +66,8 @@ def _priced(strategy: Strategy, catalog: Catalog) -> bool:
 
 
 def cost_rows(catalog: Catalog, book: StrategyBook, *, on: date) -> list[CostRow]:
-    """One row per paid strategy (two for a cascade: it stops early, or it escalates)."""
+    """One row per paid strategy; two for a cascade (it stops early, or it escalates) and for a
+    strategy that skips its aggregator when the panel agrees (it does, or it synthesizes)."""
     pricing = PricingRegistry(catalog, today=on)
     rows: list[CostRow] = []
     for name in book.names():
@@ -78,6 +79,14 @@ def cost_rows(catalog: Catalog, book: StrategyBook, *, on: date) -> list[CostRow
             rows.append(CostRow(f"{name} (first wave agrees)", stop.calls, stop.usd))
             full = _cost(strategy, catalog, pricing, escalate=True)
             rows.append(CostRow(f"{name} (escalates)", full.calls, full.usd))
+        elif strategy.skip_aggregator is not None:
+            agreed = strategy.model_copy(
+                update={"aggregator": strategy.skip_aggregator.use, "aggregator_model": None}
+            )
+            skipped = _cost(agreed, catalog, pricing, escalate=True)
+            rows.append(CostRow(f"{name} (panel agrees)", skipped.calls, skipped.usd))
+            full = _cost(strategy, catalog, pricing, escalate=True)
+            rows.append(CostRow(f"{name} (synthesizes)", full.calls, full.usd))
         else:
             rows.append(_cost(strategy, catalog, pricing, escalate=True))
     return sorted(rows, key=lambda r: (r.usd, r.label))

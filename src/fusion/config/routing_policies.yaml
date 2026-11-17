@@ -42,9 +42,15 @@ fanout:
   min_successful_responses: 2
   cancel_on_global_timeout: true
   allow_partial_results: true
-  # Optional latency controls (both off by default):
-  # early_return: {quorum: 2, grace_ms: 1500}   # stop waiting for stragglers shortly after quorum
-  # hedge_after_ms: 8000                        # also ask another panel model when one is slow
+  # Latency controls (on by default; set either to false to switch it off, or per strategy and
+  # benchmark arm with `fanout:`). Early return stops waiting for stragglers once `quorum` answers
+  # are in; `grace_ms: auto` waits for the next straggler only if its measured speed (catalog
+  # observed_*) says it will finish within max_grace_ms.
+  early_return: {quorum: 2, grace_ms: auto, max_grace_ms: 1000}
+  # Also ask a same-tier model when a member has not answered after this long.
+  hedge_after_ms: 15000
+  # Anthropic prompt-cache breakpoints on the shared prompt prefix: auto | always | off.
+  prompt_cache: auto
 
 # Peer-refinement round controls; how many rounds run is a strategy's `rounds`.
 refinement:

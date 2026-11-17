@@ -14,13 +14,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from fusion.config.layers import ConfigError, format_validation_error, resolve_config
-from fusion.config.loader import EarlyReturn
+from fusion.config.loader import EarlyReturn, FanoutConfig
 from fusion.routing.budget import BudgetLevel
 
 if TYPE_CHECKING:
@@ -34,6 +41,7 @@ __all__ = [
     "Mode",
     "ModeSettings",
     "PanelMember",
+    "SkipAggregator",
     "Strategy",
     "StrategyBook",
     "load_strategy_book",
@@ -135,12 +143,44 @@ class CascadeSpec(BaseModel):
 
 class FanoutOverride(BaseModel):
     """Latency controls of the panel fan-out that one strategy sets for itself, on top of the
-    routing policy's ``fanout`` section (only the fields set here change)."""
+    routing policy's ``fanout`` section (only the fields set here change; ``off`` switches a
+    control off, so a benchmark arm can measure the panel without it)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    early_return: EarlyReturn | None = None  # stop waiting for stragglers shortly after quorum
-    hedge_after_ms: float | None = Field(default=None, gt=0)  # ask another model when one is slow
+    # stop waiting for stragglers shortly after quorum
+    early_return: EarlyReturn | Literal["off"] | None = None
+    # ask another model when one is slow
+    hedge_after_ms: Annotated[float, Field(gt=0)] | Literal["off"] | None = None
+
+    @field_validator("early_return", "hedge_after_ms", mode="before")
+    @classmethod
+    def _false_is_off(cls, value: Any) -> Any:
+        return "off" if value is False else value  # YAML reads `off` and `false` as False
+
+    def applied_to(self, config: FanoutConfig) -> FanoutConfig:
+        """``config`` with the fields this override sets (``off`` switches a control off)."""
+        updates = {
+            name: None if value == "off" else value
+            for name in self.model_fields_set
+            if (value := getattr(self, name)) is not None
+        }
+        return config.model_copy(update=updates) if updates else config
+
+
+class SkipAggregator(BaseModel):
+    """Skip an ``llm`` aggregator when the panel already agrees.
+
+    When at least two members answered, their agreement is at least ``agreement_threshold``, no
+    point is disputed and the task is not high risk, the final answer is built by ``use`` (no
+    model call) instead of the synthesizer, the same test a cascade applies to its first wave.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    agreement_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    use: Literal["vote", "best_of"] = "vote"
+    escalate_on_high_risk: bool = True
 
 
 class Strategy(BaseModel):
@@ -163,6 +203,11 @@ class Strategy(BaseModel):
     max_latency_s: float | None = Field(default=None, gt=0)
     cascade: CascadeSpec | None = None
     fanout: FanoutOverride | None = None  # this strategy's latency controls (see FanoutOverride)
+    skip_aggregator: SkipAggregator | None = None  # no synthesis call when the panel agrees
+    # fast: members ranked by measured speed (catalog observed_*), so a cascade's first wave and a
+    # panel cut by max_models are the fastest models; balanced: the configured order (a cascade
+    # still goes cheapest first).
+    speed: Literal["fast", "balanced"] = "balanced"
 
     @model_validator(mode="after")
     def _consistent(self) -> Strategy:
@@ -191,6 +236,8 @@ class Strategy(BaseModel):
             problems.append("judge_feeds_synthesis needs judge: light or full")
         if self.judge_feeds_synthesis and (self.kind == "solo" or self.aggregator != "llm"):
             problems.append("judge_feeds_synthesis needs an llm aggregator")
+        if self.skip_aggregator is not None and (self.kind == "solo" or self.aggregator != "llm"):
+            problems.append("skip_aggregator needs an llm aggregator to skip")
         if self.aggregator in NO_MODEL_AGGREGATORS and self.aggregator_model is not None:
             problems.append(
                 f"a {self.aggregator} aggregator calls no model, so aggregator_model must be unset"

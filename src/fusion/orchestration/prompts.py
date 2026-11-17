@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from fusion.routing.classifier import TaskType, canonical_task_key
 from fusion.security.untrusted import UNTRUSTED_RULES, wrap_untrusted
@@ -172,6 +172,62 @@ def get_system_prompt(task_type: TaskType, *, role: str | None = None) -> str:
     return f"{base}\n{_STRUCTURED_OUTPUT_RULES}"
 
 
+class UserPrompt(NamedTuple):
+    """A user prompt and how much of its start is shared with other calls.
+
+    ``shared_prefix`` counts the characters at the start that depend only on the task type and the
+    files (not on the request, the context or the member), so another call about the same files
+    starts with the same text and a provider's prompt cache can serve it; 0 when no files were
+    given.
+    """
+
+    text: str
+    shared_prefix: int
+
+
+def compose_user_prompt(
+    *,
+    task_type: TaskType,
+    primary_content: str,
+    context: str = "",
+    file_snippets: list[str] | None = None,
+    changed_files: list[str] | None = None,
+    claims: bool = True,
+) -> UserPrompt:
+    """Build the user prompt from input components, stable material first.
+
+    The files come first and the request near the end: long material before the question is what
+    providers recommend, and a prefix that stays the same across calls is what their prompt
+    caches reuse. ``claims`` asks for the panel's claim format; the shadow baseline gets the task
+    alone, in free form, so its answer can be compared as plain text.
+    """
+    key = canonical_task_key(task_type)
+    material = key in _MATERIAL_TASKS
+    primary = wrap_untrusted(primary_content) if material else primary_content
+    head = [f"## Task: {key}\n"]
+    snippets = file_snippets or []
+    if snippets:
+        head.append("## File Snippets")
+        for i, snippet in enumerate(snippets, 1):
+            head.append(f"\n### Snippet {i}\n{wrap_untrusted(snippet)}")
+    rest: list[str] = []
+    if context:
+        rest.append(f"\n## Additional Context\n{wrap_untrusted(context)}")
+    files = changed_files or []
+    if files:
+        listing = "\n".join(f"- {f}" for f in files)
+        rest.append(f"\n## Changed Files\n{wrap_untrusted(listing)}")
+    rest.append(f"\n## {'Input' if material else 'Request'}\n{primary}")
+    rest.append(
+        _CLAIM_RULES
+        if claims
+        else "\n## Output Format\nRespond with structured analysis. "
+        "Include test strategy and risk notes for coding tasks."
+    )
+    prefix = "\n".join(head) + "\n"
+    return UserPrompt(prefix + "\n".join(rest), len(prefix) if snippets else 0)
+
+
 def build_user_prompt(
     *,
     task_type: TaskType,
@@ -181,32 +237,21 @@ def build_user_prompt(
     changed_files: list[str] | None = None,
     claims: bool = True,
 ) -> str:
-    """Build the user prompt from input components.
+    """The user prompt's text (see ``compose_user_prompt``)."""
+    return compose_user_prompt(
+        task_type=task_type,
+        primary_content=primary_content,
+        context=context,
+        file_snippets=file_snippets,
+        changed_files=changed_files,
+        claims=claims,
+    ).text
 
-    ``claims`` asks for the panel's claim format; the shadow baseline gets the task alone, in free
-    form, so its answer can be compared as plain text.
-    """
-    key = canonical_task_key(task_type)
-    primary = wrap_untrusted(primary_content) if key in _MATERIAL_TASKS else primary_content
-    parts = [f"## Task: {key}\n", primary]
-    if context:
-        parts.append(f"\n## Additional Context\n{wrap_untrusted(context)}")
-    files = changed_files or []
-    if files:
-        listing = "\n".join(f"- {f}" for f in files)
-        parts.append(f"\n## Changed Files\n{wrap_untrusted(listing)}")
-    snippets = file_snippets or []
-    if snippets:
-        parts.append("\n## File Snippets")
-        for i, snippet in enumerate(snippets, 1):
-            parts.append(f"\n### Snippet {i}\n{wrap_untrusted(snippet)}")
-    parts.append(
-        _CLAIM_RULES
-        if claims
-        else "\n## Output Format\nRespond with structured analysis. "
-        "Include test strategy and risk notes for coding tasks."
-    )
-    return "\n".join(parts)
+
+def role_instruction(role: str) -> str:
+    """A panel member's role, appended after the shared prompt so every member sends the same
+    system prompt and prompt prefix."""
+    return f"\n\n## Your Role\n{_ROLE_PROMPTS.get(role, _ROLE_PROMPTS['coding_reviewer'])}"
 
 
 _PATCH_FIELD = (

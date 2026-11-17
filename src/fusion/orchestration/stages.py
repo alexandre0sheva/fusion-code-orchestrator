@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from fusion.benchmark.shadow import (
     call_shadow_baseline,
@@ -36,7 +36,13 @@ from fusion.orchestration.budget_guard import (
     refine_round_calls,
     synthesis_calls,
 )
-from fusion.orchestration.cascade import CascadeOutcome, cheapest_first, decide, merge_fanouts
+from fusion.orchestration.cascade import (
+    CascadeOutcome,
+    agreement_decision,
+    cascade_order,
+    decide,
+    merge_fanouts,
+)
 from fusion.orchestration.claims import (
     AgreementReport,
     ClaimCluster,
@@ -402,20 +408,14 @@ class PanelStage(_Stage):
             members={m.model: m for m in state.members},
             min_successful=min_successful,
             label=label,
+            avoid=state.panel_models,
         )
 
     def _fanout_config(self, state: RunState) -> FanoutConfig:
         """The routing policy's fan-out settings with the strategy's own latency controls on top."""
         config = self.deps.routing.budgets.fanout
         override = state.strategy.fanout if state.strategy else None
-        if override is None:
-            return config
-        updates = {
-            name: value
-            for name in override.model_fields_set
-            if (value := getattr(override, name)) is not None
-        }
-        return config.model_copy(update=updates)
+        return config if override is None else override.applied_to(config)
 
     def _accept(self, state: RunState, fanout: FanoutResult) -> RunState:
         state.fanout = fanout
@@ -430,7 +430,8 @@ class PanelStage(_Stage):
     async def _cascade(self, state: RunState, strategy: Strategy) -> RunState:
         spec = strategy.cascade
         assert spec is not None and state.routing is not None
-        ordered = cheapest_first(state.members, self.deps.registry.models, self.deps.pricing)
+        models, pricing = self.deps.registry.models, self.deps.pricing
+        ordered = cascade_order(strategy, state.members, models, pricing)
         state.members = ordered
         state.panel_models = [m.model for m in ordered]
         first_wave = state.panel_models[: spec.first]
@@ -760,13 +761,16 @@ class AggregateStage(_Stage):
     from the panel's own claims with no model call: the digest hands everything to Claude Code to
     merge, a vote keeps the points a majority backed, best-of returns the answer the others agree
     with most. ``llm`` makes one synthesizer call that sees the clusters as well as the answers,
-    unless the cost or latency cap leaves no room for it, in which case the digest is returned.
+    unless the cost or latency cap leaves no room for it, in which case the digest is returned,
+    or the strategy's ``skip_aggregator`` finds the panel already agrees.
     """
 
     async def run(self, state: RunState) -> RunState:
         assert state.strategy is not None and state.agreement is not None
         readable = _readable_answers(state)
         kind = aggregator_for(state.strategy, cascade_exited_early=state.cascade_exited_early)
+        if kind == "llm":
+            kind = self._skip(state) or kind
         if kind == "solo":
             response = state.successful[0][1]
             state.synth_response = response.model_copy(update={"text": readable[0][1]})
@@ -781,6 +785,30 @@ class AggregateStage(_Stage):
         else:
             state.synth_response = await self._synthesize(state, readable)
         return state
+
+    @staticmethod
+    def _skip(state: RunState) -> Literal["vote", "best_of"] | None:
+        """The no-call aggregator to use instead of synthesis, when the panel already agrees."""
+        skip = state.strategy.skip_aggregator if state.strategy else None
+        report = state.agreement
+        if skip is None or report is None or state.routing is None:
+            return None
+        enough, why_not = agreement_decision(
+            report,
+            risk=state.routing.risk,
+            threshold=skip.agreement_threshold,
+            escalate_on_high_risk=skip.escalate_on_high_risk,
+        )
+        if not enough:
+            state.routing.reasons.append(f"Synthesis ran: {why_not}")
+            return None
+        state.routing.reasons.append(
+            f"Synthesis skipped: the {report.n_models} answers agree ({report.score:.2f}, "
+            f"threshold {skip.agreement_threshold:.2f}); {skip.use} built the answer with no "
+            "model call"
+        )
+        state.synthesizer_model = state.routing.synthesizer_model = ""
+        return skip.use
 
     @staticmethod
     def _vote(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:

@@ -17,9 +17,9 @@ from dataclasses import dataclass, field
 from fusion.bench.scoring import Scorer, get_scorer
 from fusion.bench.spec import BenchConfig, BenchTask, select_tasks
 from fusion.orchestration.budget_guard import plan_calls
-from fusion.orchestration.cascade import cheapest_first
+from fusion.orchestration.cascade import cascade_order
 from fusion.orchestration.strategy import Strategy
-from fusion.providers.simulated import TIER_SPEED
+from fusion.providers.simulated import TIER_SPEED, speed_of
 from fusion.routing.budget import PlannedCall, estimate_tokens, forecast_calls
 from fusion.routing.model_registry import ModelRegistry
 from fusion.routing.policy import RoutingPolicy
@@ -101,7 +101,7 @@ class BenchPlan:
 
 def _call_seconds(call: PlannedCall, registry: ModelRegistry) -> float:
     entry = registry.models.get(call.alias)
-    ttft_ms, tokens_per_s = TIER_SPEED[entry.latency_tier if entry else "medium"]
+    ttft_ms, tokens_per_s = speed_of(entry) if entry else TIER_SPEED["medium"]
     return ttft_ms / 1000 + call.output_tokens / tokens_per_s
 
 
@@ -148,7 +148,7 @@ def estimate_job(
         strategy=strategy, explicit_type=task.task_type.value, content=task.prompt
     )
     members = (
-        cheapest_first(strategy.members, registry.models, pricing)
+        cascade_order(strategy, strategy.members, registry.models, pricing)
         if strategy.kind == "cascade"
         else strategy.members
     )
