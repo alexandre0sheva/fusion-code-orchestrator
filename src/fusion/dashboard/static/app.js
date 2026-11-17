@@ -324,7 +324,7 @@
     return api('/api/overview').then(function (o) {
       if (o.empty) {
         return empty('Nothing recorded yet', 'Fusion keeps every run in a local SQLite database, and this page reads it. Run something and it appears here. The offline mock provider is free and needs no keys.',
-          ['fusion ask "How should I retry a failed HTTP call?" --mock', 'fusion bench run -d v1 --arms solo-cheap,panel-duo --mock --limit 24']);
+          ['fusion ask "How should I retry a failed HTTP call?" --mock', 'fusion bench run -d v1 --arms solo-haiku,panel-duo --mock --limit 24']);
       }
       var p = o.paired, t = o.totals, root = h('div');
       var hero = h('div', { class: 'hero rise' }, h('span', { class: 'eyebrow', text: 'The thesis, in your numbers' }));
@@ -555,7 +555,7 @@
     return api('/api/bench').then(function (b) {
       if (!b.runs.length) {
         return empty('No benchmark runs yet', 'A benchmark measures whether the panel beats one big model on tasks with known answers. A simulated run is free and needs no keys.',
-          ['fusion bench run -d v1 --arms solo-cheap,panel-duo,panel-cheap --repeats 1 --mock --limit 24']);
+          ['fusion bench run -d v1 --arms solo-haiku,panel-duo,panel-nano --repeats 1 --mock --limit 24']);
       }
       var rows = b.runs.map(function (r) {
         return h('tr', null, h('td', { class: 'l' }, h('a', { href: '#/bench/' + r.run_id, text: r.run_id })), h('td', { class: 'l', text: r.dataset.split('/').pop() }),

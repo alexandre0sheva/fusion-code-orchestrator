@@ -20,7 +20,8 @@ returns the result with token, cost and latency telemetry. It never edits files 
 ## Does a cheap panel match a frontier model?
 
 On 34 held-out tasks with ground truth (code review, debugging, architecture, planning, coding,
-frontend, performance), 2 repeats each, $9.61 of live API spend:
+frontend, performance), 2 repeats each, $9.61 of live API spend (the v0.2.0 study, on that release's
+models; 0.3.0 moves to Haiku 5.5 and GPT-6.2 Sol, and `panel-cheap` is now `panel-nano`):
 
 | | Quality (95% CI) | Cost per solved task | Median seconds |
 |---|---|---|---|
@@ -104,8 +105,11 @@ Claude Code -> MCP tool -> redact -> route (strategy) -> cheap panel (parallel) 
 ```
 
 Panel calls run concurrently and tolerate partial failure. Which models run is a *strategy*
-(`fusion strategies list`); `panel-refine`, selected by the `high` budget, also has the panel models
-revise their answers after seeing anonymized peer answers (mixture-of-agents). Every run is stored in
+(`fusion strategies list`). The default, `panel-duo`, is Claude Haiku 5.5 + GPT-6 Luna (both in
+the `nano` price tier) merged by Haiku; the baseline is Claude Opus 5.5 (`high`). Tiers are computed
+from price ([COSTS.md](docs/COSTS.md#price-tiers)). `panel-refine`, selected by the `high` budget,
+also has the panel models revise their answers after seeing anonymized peer answers
+(mixture-of-agents). Every run is stored in
 SQLite and compared against a baseline model; an opt-in shadow mode also calls the real baseline and
 records a blind pairwise verdict. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

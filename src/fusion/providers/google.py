@@ -121,9 +121,11 @@ class GoogleProvider(HttpProvider):
             )
 
         config: dict[str, Any] = {"maxOutputTokens": request.max_tokens}
-        if request.temperature is not None and (entry is None or entry.supports_sampling_params):
+        # Only a catalog entry that says so gets sampling parameters; unknown models get none.
+        sampling = entry is not None and entry.supports_sampling_params
+        if sampling and request.temperature is not None:
             config["temperature"] = request.temperature
-        if request.seed is not None and (entry is None or entry.supports_sampling_params):
+        if sampling and request.seed is not None:
             config["seed"] = request.seed
         effort = self.effective_effort(request, entry)
         if effort is not None:

@@ -20,11 +20,11 @@ concurrency: 4
 cache: false
 judge_models: []
 arms:
-  - {name: wait-for-all, strategy: panel-cheap}
+  - {name: wait-for-all, strategy: panel-nano}
   - name: early-return
-    strategy: panel-cheap
+    strategy: panel-nano
     overrides: {fanout: {early_return: {quorum: 2, grace_ms: 1500}}}
   - name: hedged
-    strategy: panel-cheap
+    strategy: panel-nano
     overrides: {fanout: {hedge_after_ms: 8000}}
   - {name: cascade, strategy: panel-cascade}

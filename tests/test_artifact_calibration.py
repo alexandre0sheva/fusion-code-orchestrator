@@ -253,7 +253,7 @@ def test_a_study_is_unblocked_once_its_judges_are_calibrated_above_the_floor(
 
     dataset = dataset_of(tmp_path, "fe-landing-page")
     root = tmp_path / "results"
-    cfg = config(dataset, arms="solo-cheap", repeats=1, judge_models=["gemini-flash", "gpt-sol"])
+    cfg = config(dataset, arms="solo-haiku", repeats=1, judge_models=["gemini-flash", "gpt-sol"])
     run_virtual(run_bench(cfg, env=sim_env(cfg, root), run_id="r"))
     monkeypatch.setenv("FUSION_BENCH_DIR", str(root))
     blocked = json.loads(CliRunner().invoke(bench_app, ["show", "r", "--json"]).output)[

@@ -243,6 +243,8 @@ def _live(env: Mapping[str, str], check: LiveCheck) -> list[Check]:
         "unknown_id": "error",
         "skipped": "skip",
         "error": "error",
+        "newer": "warn",
+        "redirect": "warn",
     }
     out: list[Check] = []
     for item in check(keys):
@@ -251,7 +253,7 @@ def _live(env: Mapping[str, str], check: LiveCheck) -> list[Check]:
                 f"live:{item.alias}",
                 labels[item.status],
                 f"{item.provider}/{item.model_id}" + (f" ({item.detail})" if item.detail else ""),
-                "fusion models check --live" if item.status in {"unknown_id", "error"} else "",
+                "fusion models check --live" if item.status not in {"ok", "skipped"} else "",
             )
         )
     return out

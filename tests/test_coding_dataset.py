@@ -353,7 +353,7 @@ def test_a_study_scores_every_arm_by_running_the_hidden_tests(tmp_path: Path) ->
     data = _write_jsonl(tmp_path / "tiny.jsonl", 6)
     cfg = config(
         data,
-        arms="solo-frontier,solo-cheap,panel-cheap,panel-vote,panel-cascade,best-of-n-verified",
+        arms="solo-opus,solo-haiku,panel-nano,panel-vote,panel-cascade,best-of-n-verified",
         repeats=2,
     )
     run = _run(cfg, tmp_path / "a")
@@ -368,12 +368,12 @@ def test_a_study_scores_every_arm_by_running_the_hidden_tests(tmp_path: Path) ->
         a: [i.metrics.quality for i in run.items if i.arm == a] for a in {i.arm for i in run.items}
     }
     mean = {a: sum(q) / len(q) for a, q in by_arm.items()}
-    assert mean["solo-frontier"] >= mean["solo-cheap"]  # skill shows through the whole harness
+    assert mean["solo-opus"] >= mean["solo-haiku"]  # skill shows through the whole harness
 
 
 def test_a_study_on_patches_is_exactly_repeatable(tmp_path: Path) -> None:
     data = _write_jsonl(tmp_path / "tiny.jsonl", 3)
-    cfg = config(data, arms="solo-cheap,panel-cheap,best-of-n-verified", repeats=2)
+    cfg = config(data, arms="solo-haiku,panel-nano,best-of-n-verified", repeats=2)
 
     def stable(run: Any) -> list[Any]:
         rows = [i.model_dump(mode="json", exclude={"run_id", "metrics"}) for i in run.items]
@@ -404,7 +404,7 @@ def test_the_run_command_works_on_the_shipped_coding_dataset(
             "--dataset",
             "coding",
             "--arms",
-            "solo-cheap,panel-cheap,best-of-n-verified",
+            "solo-haiku,panel-nano,best-of-n-verified",
             "--repeats",
             "1",
             "--limit",

@@ -1230,7 +1230,7 @@ class SoftTimeoutRecovery(_Stage):
         engine = self.deps.eval_engine
         text = (
             f"No answer was ready after {limit:.0f}s (the soft time limit), so the run was "
-            "stopped. Try a cheaper or faster strategy (for example solo-cheap), a smaller "
+            "stopped. Try a cheaper or faster strategy (for example solo-haiku), a smaller "
             "input, or raise FUSION_TOOL_SOFT_TIMEOUT_S."
         )
         state.final_answer = text

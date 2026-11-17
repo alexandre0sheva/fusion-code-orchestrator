@@ -348,7 +348,7 @@ def test_v1_splits_are_disjoint_and_loaded_by_name() -> None:
     assert not {t.id for t in dev} & {t.id for t in test}
     assert {t.split for t in dev} == {"dev"}
     assert (
-        BenchConfig(dataset=V1, arms=[{"name": "a", "strategy": "solo-cheap"}], max_usd=1).split
+        BenchConfig(dataset=V1, arms=[{"name": "a", "strategy": "solo-haiku"}], max_usd=1).split
         == "dev"
     )  # type: ignore[list-item]
 
@@ -566,12 +566,12 @@ def test_the_run_command_selects_a_split(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv("FUSION_BENCH_DIR", str(tmp_path / "results"))
     out = CliRunner().invoke(
         bench_app,
-        ["plan", "--dataset", str(V1), "--arms", "solo-cheap", "--mock", "--split", "test"],
+        ["plan", "--dataset", str(V1), "--arms", "solo-haiku", "--mock", "--split", "test"],
     )
     assert out.exit_code == 0, out.output
     assert "69 tasks x 1 arms" in out.output
     default = CliRunner().invoke(
-        bench_app, ["plan", "--dataset", str(V1), "--arms", "solo-cheap", "--mock"]
+        bench_app, ["plan", "--dataset", str(V1), "--arms", "solo-haiku", "--mock"]
     )
     assert "88 tasks x 1 arms" in default.output
 

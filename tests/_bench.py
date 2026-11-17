@@ -46,7 +46,7 @@ def write_dataset(path: Path, count: int = 4) -> Path:
     return path
 
 
-def config(dataset: Path, arms: str = "solo-cheap,panel-cheap", **kw: Any) -> BenchConfig:
+def config(dataset: Path, arms: str = "solo-haiku,panel-nano", **kw: Any) -> BenchConfig:
     values: dict[str, Any] = {
         "dataset": dataset,
         "arms": parse_arms(arms),

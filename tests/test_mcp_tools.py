@@ -213,7 +213,7 @@ async def test_progress_messages_arrive_in_order_and_only_increase(server: Any) 
     async with Client(server) as client:
         await client.call_tool(
             "fusion_ask",
-            {"input": {"prompt": "How do I retry an HTTP call?", "strategy": "panel-cheap"}},
+            {"input": {"prompt": "How do I retry an HTTP call?", "strategy": "panel-nano"}},
             progress_handler=on_progress,
         )
     messages = [m or "" for _, _, m in seen]
@@ -263,7 +263,7 @@ async def test_stats_and_strategies_are_resources(server: Any) -> None:
         strategies = json.loads((await client.read_resource("fusion://strategies"))[0].text)  # type: ignore[union-attr]
         stats = (await client.read_resource("fusion://stats"))[0].text  # type: ignore[union-attr]
     names = {s["name"] for s in strategies["strategies"]}
-    assert {"solo-cheap", "panel-duo", "panel-digest"} <= names
+    assert {"solo-haiku", "panel-duo", "panel-digest"} <= names
     assert strategies["budget_presets"]["medium"] in names
     assert stats.strip()
 

@@ -195,7 +195,7 @@ This is what each client's documentation says (read 2026-10-06), not something e
 the client; the smoke tests are how to check a given install. Where a feature is missing:
 
 - **No progress:** the call looks like it is hanging for up to a minute. Fusion's soft limit still
-  returns a digest after 90 s, and `strategy: "solo-cheap"` answers in a few seconds.
+  returns a digest after 90 s, and `strategy: "solo-haiku"` answers in a few seconds.
 - **No resources:** ask for `detail: "full"` instead of reading `fusion://runs/{run_id}`; the stats
   come from `fusion_stats`.
 - **No prompts:** the tools are the same, and the guidance file (rule, AGENTS.md block) already says
@@ -240,7 +240,7 @@ The orchestration tools share these inputs (each tool adds its own, such as `dif
 |-------|---------|
 | `context` | The one place for background text. `repo_context` and `repo_summary` (review) and `code_context` (debug) are still accepted, folded into `context`, and no longer in the schema |
 | `file_snippets` | Short code excerpts, each prefixed with its path |
-| `strategy` | A strategy name (`solo-cheap`, `panel-duo`, `panel-cheap`, `panel-refine`, `panel-cascade`, `panel-vote`, `panel-digest`); overrides `budget`. The list is the `fusion://strategies` resource; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets) |
+| `strategy` | A strategy name (`solo-haiku`, `panel-duo`, `panel-nano`, `panel-mid`, `panel-refine`, `panel-cascade`, `panel-vote`, `panel-digest`); overrides `budget`. The list is the `fusion://strategies` resource; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets) |
 | `budget` | The older preset (`low`, `medium`, `high`, `local_only`); selects a strategy |
 | `max_cost_usd` | A hard cap for this call, lowering (never raising) the strategy's own; the run is shifted to a cheaper form or refused before any model is called, see [CONFIGURATION.md](CONFIGURATION.md#cost-and-latency-caps) |
 | `detail` | `compact` (default) or `full`, below |

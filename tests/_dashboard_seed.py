@@ -17,7 +17,7 @@ from fusion.storage.run_store import RunStepRecord, RunStore
 
 RAW_SECRET = "sk-raw-secret-DO-NOT-LEAK-0123456789"
 TASKS = ["code_review", "debug", "architecture", "plan", "default"]
-STRATEGIES = [("panel-duo", 0.5), ("panel-cheap", 0.2), ("solo-cheap", 0.2), ("panel-cascade", 0.1)]
+STRATEGIES = [("panel-duo", 0.5), ("panel-nano", 0.2), ("solo-haiku", 0.2), ("panel-cascade", 0.1)]
 MODELS = ["claude-haiku", "gpt-luna", "gemini-flash", "claude-sonnet"]
 QUESTIONS = [
     "Why does this retry loop never back off after a 429?",
@@ -87,7 +87,7 @@ def seed_runs(db_path: Path, *, runs: int = 48, days: int = 18, seed: int = 7) -
     for index in range(runs):
         strategy = rng.choices(names, weights)[0]
         task = rng.choice(TASKS)
-        panel = {"solo-cheap": MODELS[:1], "panel-cheap": MODELS[:3]}.get(strategy, MODELS[:2])
+        panel = {"solo-haiku": MODELS[:1], "panel-nano": MODELS[:3]}.get(strategy, MODELS[:2])
         calls = _calls(rng, strategy, panel)
         cost = sum(c["cost_usd"] for c in calls)
         baseline = cost * rng.uniform(5.5, 11.0)

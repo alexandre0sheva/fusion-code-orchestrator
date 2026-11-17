@@ -139,14 +139,18 @@ class PricingRegistry:
         provider: str,
         model_id: str,
         alias: str | None = None,
+        prompt_tokens: int = 0,
     ) -> ResolvedPrice | None:
-        """Find the price in effect today for a catalog alias or a provider model ID."""
+        """Find the price in effect today for a catalog alias or a provider model ID.
+
+        ``prompt_tokens`` (all input tokens of one request) selects a long-context price row.
+        """
         entry = self._catalog.models.get(alias) if alias else None
         if entry is None:
             entry = self._catalog.find(provider, model_id)
         if entry is None:
             return None
-        schedule = entry.price_at(self._today or date.today())
+        schedule = entry.price_for(self._today or date.today(), prompt_tokens)
         if schedule is None:
             return None
         alias_name = entry.alias or _pricing_key(provider, model_id)
@@ -181,6 +185,7 @@ class PricingRegistry:
             response.provider,
             response.model,
             model_entry.alias if model_entry else None,
+            prompt_tokens=input_tokens,
         )
         if resolved is None:
             missing_key = _pricing_key(response.provider, response.model)
@@ -214,7 +219,7 @@ class PricingRegistry:
         pricing_alias: str | None = None,
     ) -> CostEstimate:
         """Estimate what a token volume would cost on a model (used for baselines)."""
-        resolved = self.lookup(provider, model_id, pricing_alias)
+        resolved = self.lookup(provider, model_id, pricing_alias, prompt_tokens=input_tokens)
         if resolved is None:
             missing_key = pricing_alias or _pricing_key(provider, model_id)
             return CostEstimate(

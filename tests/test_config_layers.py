@@ -148,7 +148,7 @@ def test_loaders_use_the_resolved_config(user_file: Path, project_file: Path) ->
     assert load_routing_policies().fanout.max_concurrency == 5
     baselines = load_baseline().baselines
     assert [b.name for b in baselines] == ["Sol only"]
-    assert baselines[0].model_id == "gpt-6.1-sol"
+    assert baselines[0].model_id == "gpt-6.2-sol"
 
 
 def test_explicit_paths_bypass_layering(user_file: Path) -> None:

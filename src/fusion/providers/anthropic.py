@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import base64
 import os
-import re
 import time
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 
-from fusion.config.catalog import Catalog, ModelEntry
+from fusion.config.catalog import Catalog
 from fusion.providers.base import (
     AuthError,
     BadRequestError,
@@ -25,23 +24,10 @@ from fusion.providers.base import (
 from fusion.providers.http_utils import HttpProvider, Parsed, RetryPolicy, StreamStats
 from fusion.providers.limits import ProviderLimiter
 
-_CLAUDE_VERSION = re.compile(
-    r"^claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)"
-)
 _CACHE = {"type": "ephemeral"}
-
-
-def supports_sampling_params(model_id: str) -> bool:
-    """Fallback for models missing from the catalog: Claude 4.7+ rejects temperature/top_p/top_k.
-
-    Catalog entries carry this as ``supports_sampling_params`` and take precedence.
-    """
-    match = _CLAUDE_VERSION.match(model_id)
-    if match is None:
-        return True
-    major = int(match.group(1))
-    minor = int(match.group(2) or 0)
-    return (major, minor) < (4, 7)
+# Since 2026-10-21 temperature/top_p/top_k are removed: sending one is a 400 on every model, so
+# the adapter never sends them, whatever the catalog says.
+API_VERSION = "2026-10-21"
 
 
 def _image_block(image: ImagePart) -> dict[str, Any]:
@@ -101,11 +87,6 @@ class AnthropicProvider(HttpProvider):
 
     # -- request mapping -------------------------------------------------------------------
 
-    def _supports_sampling(self, request: ModelRequest, entry: ModelEntry | None) -> bool:
-        if entry is not None:
-            return entry.supports_sampling_params
-        return supports_sampling_params(request.model_id)
-
     def build_payload(self, request: ModelRequest) -> dict[str, Any]:
         entry = self.entry_for(request.model_id)
         self.check_images(request, entry)
@@ -147,8 +128,6 @@ class AnthropicProvider(HttpProvider):
                 "type": "enabled",
                 "budget_tokens": request.thinking_budget_tokens,
             }
-        elif request.temperature is not None and self._supports_sampling(request, entry):
-            payload["temperature"] = request.temperature
 
         output_config: dict[str, Any] = {}
         effort = self.effective_effort(request, entry)
@@ -167,7 +146,7 @@ class AnthropicProvider(HttpProvider):
     def _headers(self) -> dict[str, str]:
         return {
             "x-api-key": self._api_key,
-            "anthropic-version": "2023-06-01",
+            "anthropic-version": API_VERSION,
             "content-type": "application/json",
         }
 

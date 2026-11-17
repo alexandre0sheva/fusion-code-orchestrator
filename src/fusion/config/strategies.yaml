@@ -18,38 +18,91 @@
 # max_cost_usd  hard cap: a run forecast over it is shifted down (no refinement/judge, smaller
 #              panel, cheapest model alone) and refused if even that is over; optional stages
 #              that would pass it are skipped. max_latency_s skips stages that would not fit.
+# Model tiers (nano, low, medium, high, premium) are computed from catalog prices; see
+# `fusion models list`.
 # judge: off   deterministic checks only, no judge calls (default)
 #        light the LLM judge scores each answer
 #        full  light, plus a check of the judge's own output
 
 strategies:
-  solo-frontier:
+  # One solo strategy per catalog model: solo-<model>.
+  solo-opus:
     kind: solo
-    description: Claude Opus 5.5 alone; the quality baseline.
+    description: Claude Opus 5.5 alone; the quality baseline (high tier).
     members:
       - model: claude-opus
 
   solo-sol:
     kind: solo
-    description: GPT-6.1 Sol alone; the second frontier baseline.
+    description: GPT-6.2 Sol alone; the second frontier-class baseline (medium tier).
     members:
       - model: gpt-sol
 
-  solo-cheap:
+  solo-haiku:
     kind: solo
-    description: Claude Haiku 4.5 alone; the cheap single-model baseline.
+    description: Claude Haiku 5.5 alone; the cheap single-model baseline (nano tier).
     members:
       - model: claude-haiku
 
   solo-luna:
     kind: solo
-    description: GPT-6 Luna alone; a cheap single model from a second vendor.
+    description: GPT-6 Luna alone; a nano-tier single model from a second vendor.
     members:
       - model: gpt-luna
 
-  panel-cheap:
+  solo-sonnet:
+    kind: solo
+    description: Claude Sonnet 5.5 alone (medium tier).
+    members:
+      - model: claude-sonnet
+
+  solo-fable:
+    kind: solo
+    description: Claude Fable 5.2 alone (premium tier); benchmark baseline.
+    members:
+      - model: claude-fable
+
+  solo-terra:
+    kind: solo
+    description: GPT-6.1 Terra alone (low tier).
+    members:
+      - model: gpt-terra
+
+  solo-astra:
+    kind: solo
+    description: GPT-6.2 Astra alone (premium tier); benchmark baseline.
+    members:
+      - model: gpt-astra
+
+  solo-flash:
+    kind: solo
+    description: Gemini 3.8 Flash alone (low tier until 2026-12-31, then medium).
+    members:
+      - model: gemini-flash
+
+  solo-hydrogen:
+    kind: solo
+    description: Gemini 4 Hydrogen alone (medium tier).
+    members:
+      - model: gemini-hydrogen
+
+  solo-carbon:
+    kind: solo
+    description: Gemini 4 Carbon alone; the Google frontier benchmark baseline.
+    members:
+      - model: gemini-carbon
+
+  solo-argon:
+    kind: solo
+    description: Gemini 4 Argon alone (Google's efficient Gemini 4 reasoning model).
+    members:
+      - model: gemini-argon
+
+  panel-nano:
     kind: panel
-    description: Three cheap models from three vendors, merged by a cheap synthesizer.
+    description: >-
+      Three nano/low-tier models from three vendors (Haiku 5.5, GPT-6 Luna, Gemini 3.8 Flash),
+      merged by Haiku 5.5.
     members:
       - model: claude-haiku
       - model: gpt-luna
@@ -60,18 +113,29 @@ strategies:
   panel-duo:
     kind: panel
     description: >-
-      Claude Haiku 4.5 and GPT-6 Luna, merged by Haiku. The default: in the v0.2.0 study it scored
-      as well as the three-model panel at about 30% lower cost per solved task (within noise; see
-      docs/BENCHMARK_RESULTS.md). Two models means no spare: if one fails there is no quorum.
+      Claude Haiku 5.5 and GPT-6 Luna, merged by Haiku. The default (`budget: medium`). Two
+      models means no spare: if one fails there is no quorum.
     members:
       - model: claude-haiku
       - model: gpt-luna
     aggregator: llm
     aggregator_model: claude-haiku
 
+  panel-mid:
+    kind: panel
+    description: >-
+      Three low/medium-tier models (GPT-6.1 Terra, Gemini 4 Hydrogen, Claude Sonnet 5.5), merged
+      by Sonnet 5.5.
+    members:
+      - model: gpt-terra
+      - model: gemini-hydrogen
+      - model: claude-sonnet
+    aggregator: llm
+    aggregator_model: claude-sonnet
+
   panel-cheap-strong-synth:
     kind: panel
-    description: The cheap panel, merged by Claude Sonnet 5.5 for a stronger final answer.
+    description: The nano panel, merged by Claude Sonnet 5.5 for a stronger final answer.
     members:
       - model: claude-haiku
       - model: gpt-luna
@@ -81,7 +145,7 @@ strategies:
 
   panel-refine:
     kind: panel
-    description: The cheap panel plus one peer-refinement round before synthesis.
+    description: The nano panel plus one peer-refinement round before synthesis.
     members:
       - model: claude-haiku
       - model: gpt-luna
@@ -92,7 +156,7 @@ strategies:
 
   panel-digest:
     kind: panel
-    description: The cheap panel with no synthesis call; Claude Code reads the answers and aggregates.
+    description: The nano panel with no synthesis call; Claude Code reads the answers and aggregates.
     members:
       - model: claude-haiku
       - model: gpt-luna
@@ -101,7 +165,7 @@ strategies:
 
   panel-vote:
     kind: panel
-    description: The cheap panel with no synthesis call; only the points a majority of models backed are returned.
+    description: The nano panel with no synthesis call; only the points a majority of models backed are returned.
     members:
       - model: claude-haiku
       - model: gpt-luna
@@ -110,7 +174,7 @@ strategies:
 
   best-of-n-verified:
     kind: panel
-    description: Benchmark only. The cheap panel each write a patch and the task's visible tests pick the best one; no synthesis call. Refused outside `fusion bench`, because it runs code.
+    description: Benchmark only. The nano panel each write a patch and the task's visible tests pick the best one; no synthesis call. Refused outside `fusion bench`, because it runs code.
     members:
       - model: claude-haiku
       - model: gpt-luna
@@ -142,7 +206,14 @@ strategies:
 
 # The legacy `budget` argument of the tools resolves to a strategy through this table.
 budget_strategies:
-  low: solo-cheap
+  low: solo-haiku
   medium: panel-duo
   high: panel-refine
   local_only: panel-local
+
+# Previous strategy names, kept working for one release (0.3.x): a request or a config override
+# that uses the old name gets the new strategy. Remove in 0.4.0.
+strategy_aliases:
+  panel-cheap: panel-nano
+  solo-cheap: solo-haiku
+  solo-frontier: solo-opus

@@ -87,7 +87,7 @@ def test_the_stored_run_can_be_read_back_from_disk_and_sqlite(
 
 
 def test_a_simulated_run_repeats_exactly(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-frontier,panel-cheap,panel-cascade")
+    cfg = config(dataset, arms="solo-opus,panel-nano,panel-cascade")
     first = _run(cfg, sim_env(cfg, tmp_path / "a"), "r1")
     second = _run(cfg, sim_env(cfg, tmp_path / "b"), "r2")
     assert _stable(first) == _stable(second)  # answers, costs, tokens and timings, bit for bit
@@ -95,7 +95,7 @@ def test_a_simulated_run_repeats_exactly(tmp_path: Path, dataset: Path) -> None:
 
 
 def test_repeats_of_a_job_differ_but_each_is_reproducible(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap", repeats=3)
+    cfg = config(dataset, arms="solo-haiku", repeats=3)
     run = _run(cfg, sim_env(cfg, tmp_path))
     seeds = {i.repeat: i.seed for i in run.items}
     assert seeds == {1: 0, 2: 1, 3: 2}
@@ -112,7 +112,7 @@ def test_resume_after_a_kill_skips_finished_jobs_and_matches_an_unbroken_run(
     tmp_path: Path, dataset: Path
 ) -> None:
     # One job at a time, so a job's timings do not depend on which others were running with it.
-    cfg = config(dataset, arms="solo-cheap,panel-cheap", concurrency=1)
+    cfg = config(dataset, arms="solo-haiku,panel-nano", concurrency=1)
     reference = _run(cfg, sim_env(cfg, tmp_path / "ref"), "ref")
 
     env = sim_env(cfg, tmp_path / "live")
@@ -149,7 +149,7 @@ def test_resume_after_a_kill_skips_finished_jobs_and_matches_an_unbroken_run(
 
 
 def test_resuming_a_complete_run_does_nothing(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap")
+    cfg = config(dataset, arms="solo-haiku")
     _run(cfg, sim_env(cfg, tmp_path))
     fresh = sim_env(cfg, tmp_path)
     again = _run(cfg, fresh)
@@ -170,7 +170,7 @@ def test_jobs_that_errored_are_tried_again_on_resume(
             return await super().score(task, answer, env)
 
     monkeypatch.setitem(SCORERS, "code_review", Flaky())
-    cfg = config(dataset, arms="solo-cheap", repeats=1, concurrency=1)
+    cfg = config(dataset, arms="solo-haiku", repeats=1, concurrency=1)
     env = sim_env(cfg, tmp_path)
     first = _run(cfg, env)
     assert first.failed_jobs == 3 and first.done_jobs == first.total_jobs - 3 == 1
@@ -186,7 +186,7 @@ def test_jobs_that_errored_are_tried_again_on_resume(
 
 
 def test_a_run_with_no_quorum_is_halted_and_finished(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="panel-cheap", repeats=1, limit=1)
+    cfg = config(dataset, arms="panel-nano", repeats=1, limit=1)
     env = sim_env(cfg, tmp_path)
     for sim in env.sim_providers:
         for model in sim.models.values():
@@ -203,7 +203,7 @@ def test_a_run_with_no_quorum_is_halted_and_finished(tmp_path: Path, dataset: Pa
 def test_the_run_cap_stops_cleanly_and_resume_with_more_money_finishes(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="solo-frontier,panel-cheap", repeats=2, concurrency=1)
+    cfg = config(dataset, arms="solo-opus,panel-nano", repeats=2, concurrency=1)
     env = sim_env(cfg, tmp_path)
     full = _run(cfg, sim_env(cfg, tmp_path / "full"), "full")
     # Room for about three jobs: each is reserved at its worst case before it starts.
@@ -224,7 +224,7 @@ def test_the_run_cap_stops_cleanly_and_resume_with_more_money_finishes(
 def test_concurrent_jobs_cannot_overshoot_the_cap_by_more_than_those_in_flight(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="panel-cheap", repeats=3, concurrency=4)
+    cfg = config(dataset, arms="panel-nano", repeats=3, concurrency=4)
     full = _run(cfg, sim_env(cfg, tmp_path / "full"), "full")
     env = sim_env(cfg, tmp_path / "x")
     cap = full.spent_usd / 2
@@ -237,7 +237,7 @@ def test_concurrent_jobs_cannot_overshoot_the_cap_by_more_than_those_in_flight(
 
 def test_the_live_spend_cap_stops_every_run_and_records_what_was_spent(tmp_path: Path) -> None:
     big = write_dataset(tmp_path / "big.jsonl", count=12)
-    cfg = config(big, arms="panel-cheap", repeats=1, concurrency=1, mock=False)
+    cfg = config(big, arms="panel-nano", repeats=1, concurrency=1, mock=False)
     total = _run(cfg, sim_env(cfg, tmp_path / "ref"), "ref").spent_usd
     ledger = SpendLedger(tmp_path / "live" / "spend.json", cap_usd=total / 2)
     env = sim_env(cfg, tmp_path / "live", spend=ledger)
@@ -254,7 +254,7 @@ def test_the_live_spend_cap_stops_every_run_and_records_what_was_spent(tmp_path:
 
 
 def test_an_exhausted_spend_ledger_starts_no_job(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap", mock=False)
+    cfg = config(dataset, arms="solo-haiku", mock=False)
     ledger = SpendLedger(tmp_path / "spend.json", cap_usd=1.0)
     ledger.append(1.0, task="x", purpose="earlier")
     env = sim_env(cfg, tmp_path, spend=ledger)
@@ -264,7 +264,7 @@ def test_an_exhausted_spend_ledger_starts_no_job(tmp_path: Path, dataset: Path) 
 
 
 def test_a_ledger_already_over_the_cap_refuses_to_start(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap", mock=False)
+    cfg = config(dataset, arms="solo-haiku", mock=False)
     ledger = SpendLedger(tmp_path / "spend.json", cap_usd=1.0)
     ledger.append(1.5, task="x", purpose="earlier")
     env = sim_env(cfg, tmp_path, spend=ledger)
@@ -274,7 +274,7 @@ def test_a_ledger_already_over_the_cap_refuses_to_start(tmp_path: Path, dataset:
 
 
 def test_simulated_runs_never_touch_the_spend_ledger(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap", mock=True)
+    cfg = config(dataset, arms="solo-haiku", mock=True)
     ledger = SpendLedger(tmp_path / "spend.json", cap_usd=0.0001)
     _run(cfg, sim_env(cfg, tmp_path, spend=ledger))
     assert not (tmp_path / "spend.json").exists()
@@ -288,7 +288,7 @@ def test_no_more_jobs_run_at_once_than_the_concurrency_setting(
 ) -> None:
     peaks = {}
     for width in (1, 3):
-        cfg = config(dataset, arms="solo-cheap", repeats=3, concurrency=width)
+        cfg = config(dataset, arms="solo-haiku", repeats=3, concurrency=width)
         env = sim_env(cfg, tmp_path / str(width))
         _run(cfg, env)
         peaks[width] = max(s.max_in_flight for s in env.sim_providers)
@@ -296,7 +296,7 @@ def test_no_more_jobs_run_at_once_than_the_concurrency_setting(
 
 
 def test_parallel_jobs_overlap_on_the_clock(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap", repeats=1, concurrency=1)
+    cfg = config(dataset, arms="solo-haiku", repeats=1, concurrency=1)
     serial = _run(cfg, sim_env(cfg, tmp_path / "a"), "a")
     wide = cfg.model_copy(update={"concurrency": 4})
     parallel = _run(wide, sim_env(wide, tmp_path / "b"), "b")
@@ -313,7 +313,7 @@ def test_parallel_jobs_overlap_on_the_clock(tmp_path: Path, dataset: Path) -> No
 def test_a_rerun_replays_from_the_cache_at_zero_cost_and_says_so(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="panel-cheap", repeats=2, mock=False)
+    cfg = config(dataset, arms="panel-nano", repeats=2, mock=False)
     cache = ResponseDiskCache(tmp_path / "cache")
 
     def env_for(name: str) -> BenchEnv:
@@ -359,7 +359,7 @@ def _spied(env: BenchEnv) -> list[Spy]:
 
 
 def test_benchmark_calls_stream_and_use_the_repeats_seed(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="panel-cheap", repeats=2, limit=1)
+    cfg = config(dataset, arms="panel-nano", repeats=2, limit=1)
     env = sim_env(cfg, tmp_path)
     spies = _spied(env)
     _run(cfg, env)
@@ -383,7 +383,7 @@ def test_secrets_reach_the_models_untouched_unless_redaction_is_asked_for(tmp_pa
     path.write_text("\n".join(json.dumps(r) for r in rows))
     seen: dict[bool, bool] = {}
     for redact in (False, True):
-        cfg = config(path, arms="solo-cheap", repeats=1, redact=redact)
+        cfg = config(path, arms="solo-haiku", repeats=1, redact=redact)
         env = sim_env(cfg, tmp_path / str(redact))
         spies = _spied(env)
         _run(cfg, env)
@@ -394,7 +394,7 @@ def test_secrets_reach_the_models_untouched_unless_redaction_is_asked_for(tmp_pa
 def test_a_failed_run_becomes_an_error_item_that_still_counts_its_spend(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="panel-cheap", repeats=1, limit=1)
+    cfg = config(dataset, arms="panel-nano", repeats=1, limit=1)
     env = sim_env(cfg, tmp_path)
     for sim in env.sim_providers:
         for model in sim.models.values():
@@ -429,7 +429,7 @@ def test_a_halted_run_is_scored_and_marked_not_retried(tmp_path: Path) -> None:
     ]
     path = tmp_path / "h.jsonl"
     path.write_text(json.dumps(rows[0]) + "\n")
-    cfg = config(path, arms="solo-cheap", repeats=1)
+    cfg = config(path, arms="solo-haiku", repeats=1)
     run = _run(cfg, sim_env(cfg, tmp_path / "e"))
     [item] = run.items
     assert item.status == "halted" and item.metrics.calls == 0
@@ -451,6 +451,6 @@ def test_unknown_arms_fail_before_anything_runs(tmp_path: Path, dataset: Path) -
 
 
 async def test_providers_can_be_closed_after_a_run(tmp_path: Path, dataset: Path) -> None:
-    cfg = config(dataset, arms="solo-cheap", repeats=1, limit=1)
+    cfg = config(dataset, arms="solo-haiku", repeats=1, limit=1)
     env = sim_env(cfg, tmp_path)
     await close_providers(env.providers)

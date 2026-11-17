@@ -1,14 +1,30 @@
 # Frontier baselines that Fusion's cost is compared against. `model` is a catalog alias; the
 # provider, model ID and price come from catalog.yaml. The first enabled entry is the default
-# baseline for cost comparison and shadow A/B; the others are additional arms for `fusion bench`.
+# baseline for cost comparison and shadow A/B; the others are additional arms for `fusion bench`
+# (Fable 5.2, GPT-6.2 Astra and Gemini 4 Carbon are benchmark-only: too dear for everyday use).
 baselines:
   - name: "Opus 5.5"
     model: claude-opus
-    description: "Single frontier model baseline for comparison"
+    description: "Single frontier model baseline for comparison (the default)"
     enabled: true
     estimate_strategy: "same_input_and_output_tokens"
-  - name: "GPT-6.1 Sol"
+  - name: "GPT-6.2 Sol"
     model: gpt-sol
     description: "Second frontier-class baseline from a different provider"
+    enabled: true
+    estimate_strategy: "same_input_and_output_tokens"
+  - name: "Fable 5.2"
+    model: claude-fable
+    description: "Anthropic's most capable model; benchmark only"
+    enabled: true
+    estimate_strategy: "same_input_and_output_tokens"
+  - name: "GPT-6.2 Astra"
+    model: gpt-astra
+    description: "OpenAI's flagship for reasoning and coding; benchmark only"
+    enabled: true
+    estimate_strategy: "same_input_and_output_tokens"
+  - name: "Gemini 4 Carbon"
+    model: gemini-carbon
+    description: "Google's strongest coding and reasoning model; benchmark only"
     enabled: true
     estimate_strategy: "same_input_and_output_tokens"

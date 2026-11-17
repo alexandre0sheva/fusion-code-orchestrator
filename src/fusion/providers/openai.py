@@ -63,9 +63,11 @@ class OpenAICompatibleProvider(HttpProvider):
             "messages": messages,
             self._token_limit_key(entry): request.max_tokens,
         }
-        if request.temperature is not None and (entry is None or entry.supports_sampling_params):
+        # Only a catalog entry that says so gets sampling parameters; unknown models get none.
+        sampling = entry is not None and entry.supports_sampling_params
+        if sampling and request.temperature is not None:
             payload["temperature"] = request.temperature
-        if request.seed is not None and (entry is None or entry.supports_sampling_params):
+        if sampling and request.seed is not None:
             payload["seed"] = request.seed
         effort = self.effective_effort(request, entry)
         if effort is not None:

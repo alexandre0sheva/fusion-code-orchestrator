@@ -171,6 +171,10 @@ and the two local ones share `HttpProvider` (`providers/http_utils.py`), which o
 
 Per-model behaviour comes from the catalog entry (`supports_sampling_params`,
 `supports_json_schema`, `supports_reasoning_effort`, `supports_vision`), not from model-name regexes.
+`supports_sampling_params` defaults to false, so `temperature` and `seed` reach a model only when
+its entry says so (none of the packaged ones); a model missing from the catalog gets none. The
+Anthropic adapter sends `anthropic-version: 2026-10-21`, which removed `temperature`, `top_p` and
+`top_k`, and never sends them.
 `ModelRequest` carries the optional features; an adapter maps each to its provider's native form:
 
 | `ModelRequest` field | Anthropic | OpenAI / LM Studio | Gemini |

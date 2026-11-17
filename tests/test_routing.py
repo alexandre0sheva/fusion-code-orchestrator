@@ -40,13 +40,17 @@ def test_normalize_legacy_aliases() -> None:
     assert normalize_task_type("evaluation") == TaskType.ANSWER_EVAL
 
 
+def config_tier(alias: str) -> str:
+    return load_model_registry().models[alias].price_tier()
+
+
 def test_model_registry_loads() -> None:
     registry = ModelRegistry()
     assert "mock-fast" in registry.models
     entry = registry.get("mock-fast")
     assert entry.provider == "mock"
     assert entry.enabled is True
-    assert entry.cost_tier == "low"
+    assert entry.price_tier() == "nano"  # free models are the cheapest tier
 
 
 def test_registry_yaml_fields() -> None:
@@ -108,7 +112,7 @@ def test_decision_reports_the_resolved_strategy_and_its_models() -> None:
     assert decision.strategy == "panel-cheap-strong-synth"
     assert decision.selected_panel == ["claude-haiku", "gpt-luna", "gemini-flash"]
     assert decision.synthesizer_model == "claude-sonnet"
-    solo = routing.route(TaskType.CODE_REVIEW, strategy="solo-frontier")
+    solo = routing.route(TaskType.CODE_REVIEW, strategy="solo-opus")
     assert solo.selected_panel == ["claude-opus"]
     assert solo.synthesizer_model == ""  # a solo run calls no aggregator
 
@@ -119,7 +123,7 @@ def test_budget_levels_map_to_strategies() -> None:
         budget: routing.route(TaskType.DEBUGGING, budget=budget).strategy for budget in BudgetLevel
     }
     assert names == {
-        BudgetLevel.LOW: "solo-cheap",
+        BudgetLevel.LOW: "solo-haiku",
         BudgetLevel.MEDIUM: "panel-duo",
         BudgetLevel.HIGH: "panel-refine",
         BudgetLevel.LOCAL_ONLY: "panel-local",
@@ -160,24 +164,27 @@ def test_production_routing_uses_cloud_models() -> None:
 def test_judge_prefers_json_capable_model() -> None:
     registry = ModelRegistry()
     router = Router(registry=registry)
-    strategy = load_strategy_book().get("panel-cheap")
+    strategy = load_strategy_book().get("panel-nano")
     decision = router.route(explicit_type="answer_eval", strategy=strategy)
     assert registry.get(decision.judge_model).supports_json is True
 
 
 def test_routing_decision_structure() -> None:
     router = Router()
-    strategy = load_strategy_book().get("panel-cheap")
+    strategy = load_strategy_book().get("panel-nano")
     decision = router.route(
         explicit_type="debugging", content="stack trace error", strategy=strategy
     )
     assert decision.task_type == TaskType.DEBUGGING
     assert decision.complexity in {"low", "medium", "high"}
-    assert decision.estimated_cost_tier in {"low", "medium", "high"}
+    # Gemini 3.8 Flash is the dearest member (low tier, medium from 2027-01-01).
+    assert decision.estimated_cost_tier == config_tier("gemini-flash")
     assert isinstance(decision.reasons, list)
 
 
 def test_frontier_strategy_reports_a_high_cost_tier() -> None:
     router = Router()
-    strategy = load_strategy_book().get("solo-frontier")
+    strategy = load_strategy_book().get("solo-opus")
     assert router.route(explicit_type="debugging", strategy=strategy).estimated_cost_tier == "high"
+    fable = load_strategy_book().get("solo-fable")
+    assert router.route(explicit_type="debugging", strategy=fable).estimated_cost_tier == "premium"

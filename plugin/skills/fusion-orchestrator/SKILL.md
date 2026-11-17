@@ -29,7 +29,7 @@ nothing. You stay the executor.
 
 - Send focused input: the diff, or the error with its stack trace and the code around it, plus a
   few lines of `context`. Short excerpts in `file_snippets`, each prefixed with its path.
-- A call takes tens of seconds and costs cents. `strategy: "solo-cheap"` is the quickest and
+- A call takes tens of seconds and costs cents. `strategy: "solo-haiku"` is the quickest and
   cheapest; `max_cost_usd` caps the spend. The response states the cost.
 - The reply is compact: the answer, the top claims, confidence and one cost line. Claims backed by
   several models are the most reliable; treat single-model claims as leads and check them against

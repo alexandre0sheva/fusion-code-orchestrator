@@ -39,22 +39,22 @@ def test_the_table_in_the_doc_matches_the_catalog_and_packaged_strategies() -> N
 def test_rows_cover_paid_strategies_and_split_a_cascade_into_its_two_outcomes() -> None:
     rows = {r.label: r for r in cost_rows(load_catalog(), load_strategy_book(), on=ON)}
     assert "panel-local" not in rows  # free models are not a cost comparison
-    assert {"solo-frontier", "panel-cheap", "panel-digest", "panel-vote"} <= set(rows)
+    assert {"solo-opus", "panel-nano", "panel-digest", "panel-vote"} <= set(rows)
     early = rows["panel-cascade (first wave agrees)"]
     escalated = rows["panel-cascade (escalates)"]
     assert (early.calls, escalated.calls) == (2, 4)
-    assert early.usd < rows["panel-cheap"].usd < escalated.usd
+    assert early.usd < rows["panel-nano"].usd < escalated.usd
 
 
 def test_the_arithmetic_for_one_row_is_checkable_by_hand() -> None:
-    # solo-frontier: one call, 5,000 tokens in and 1,500 out on Opus 5.5 ($4 / $20 per 1M).
+    # solo-opus: one call, 5,000 tokens in and 1,500 out on Opus 5.5 ($4 / $20 per 1M).
     rows = {r.label: r for r in cost_rows(load_catalog(), load_strategy_book(), on=ON)}
-    assert rows["solo-frontier"].usd == pytest.approx(5_000 * 4 / 1e6 + 1_500 * 20 / 1e6)
+    assert rows["solo-opus"].usd == pytest.approx(5_000 * 4 / 1e6 + 1_500 * 20 / 1e6)
 
 
 def test_a_synthesis_free_panel_is_cheaper_than_one_that_synthesizes() -> None:
     rows = {r.label: r for r in cost_rows(load_catalog(), load_strategy_book(), on=ON)}
-    assert rows["panel-digest"].usd < rows["panel-cheap"].usd < rows["panel-cheap-strong-synth"].usd
+    assert rows["panel-digest"].usd < rows["panel-nano"].usd < rows["panel-cheap-strong-synth"].usd
 
 
 def test_the_table_follows_the_date_when_a_price_changes() -> None:
@@ -63,7 +63,7 @@ def test_the_table_follows_the_date_when_a_price_changes() -> None:
     before = {r.label: r.usd for r in cost_rows(catalog, book, on=date(2026, 12, 31))}
     after = {r.label: r.usd for r in cost_rows(catalog, book, on=date(2027, 1, 1))}
     assert after["panel-digest"] > before["panel-digest"]  # Gemini's introductory price ends
-    assert after["solo-frontier"] == before["solo-frontier"]
+    assert after["solo-opus"] == before["solo-opus"]
 
 
 def test_prices_edited_in_the_catalog_show_up_in_the_table() -> None:
@@ -76,9 +76,9 @@ def test_prices_edited_in_the_catalog_show_up_in_the_table() -> None:
     book = load_strategy_book()
     base = {r.label: r.usd for r in cost_rows(catalog, book, on=ON)}
     new = {r.label: r.usd for r in cost_rows(edited, book, on=ON)}
-    assert new["solo-frontier"] == pytest.approx(2 * base["solo-frontier"])
+    assert new["solo-opus"] == pytest.approx(2 * base["solo-opus"])
     table = render_cost_table(edited, book, on=ON)
-    assert "| `solo-frontier` | 1 |" in table and "1.00x" in table
+    assert "| `solo-opus` | 1 |" in table and "1.00x" in table
 
 
 def test_update_document_replaces_only_the_block_and_stamps_the_date() -> None:

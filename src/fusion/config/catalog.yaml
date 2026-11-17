@@ -2,14 +2,32 @@
 #
 # Prices are USD per 1M tokens and carry provenance (verified_on + source_url). A model can have
 # several price schedules with effective_from/effective_until for scheduled provider changes.
+# A row with above_prompt_tokens is a long-context price: it applies to a request whose prompt
+# (all input tokens, cached ones included) is larger than that. Each call is priced on its own.
 # Re-verify with `uv run fusion models check --live` and the source_url of each price.
-# Verified against official provider docs on 2026-10-05.
+# Verified against official provider docs and list-models endpoints on 2026-11-17.
+#
+# Only the newest model of each family is enabled (owner rule). Older models stay as
+# `enabled: false` legacy entries; no Flash-Lite model is used.
 #
 # provider_limits are client-side caps shared by every call to a provider (max in-flight requests
 # and requests per minute); omit a key for "unlimited". Set them to your account's real quota.
 # default_reasoning_effort is what Fusion sends when a request does not choose one. Panel models
 # default to the cheapest effort that works; baselines and the synthesizer keep provider defaults.
 # max_tokens must leave room for thinking tokens, which count against the output cap.
+
+# Price tiers are computed, never written by hand: blended = (3 x input + output) / 4 USD per 1M
+# tokens (a 3:1 input:output mix, typical of review and debug calls); the first threshold the
+# blended price is below names the tier, otherwise top_tier. Example: $2 / $10 -> $4.00 -> medium.
+tiering:
+  input_weight: 3
+  output_weight: 1
+  thresholds:
+    - {tier: nano, below: 0.50}
+    - {tier: low, below: 2.50}
+    - {tier: medium, below: 6.00}
+    - {tier: high, below: 12.00}
+  top_tier: premium
 
 provider_limits:
   anthropic: {max_concurrent: 8, rpm: 1000}
@@ -27,7 +45,6 @@ models:
     notes: Deterministic mock panel model for tests
     roles: [panel]
     strengths: [code_review, debugging, implementation_plan]
-    cost_tier: low
     latency_tier: low
     context_tier: medium
     quality_tier: medium
@@ -41,7 +58,6 @@ models:
     roles: [panel]
     persona: security_reviewer
     strengths: [code_review, security]
-    cost_tier: low
     latency_tier: low
     context_tier: medium
     quality_tier: medium
@@ -54,7 +70,6 @@ models:
     notes: JSON judge mock for eval steps
     roles: [judge, synthesizer]
     strengths: [judge, answer_eval]
-    cost_tier: low
     latency_tier: low
     context_tier: small
     quality_tier: medium
@@ -68,25 +83,166 @@ models:
     notes: Low-quality mock for disagreement testing
     roles: [panel]
     persona: weak_model
-    cost_tier: low
     latency_tier: low
     context_tier: small
     quality_tier: weak
     max_tokens: 1024
 
   # ---------------------------------------------------------------------------
-  # Anthropic
+  # Anthropic (API version 2026-10-21: temperature/top_p/top_k are rejected on every model)
   # ---------------------------------------------------------------------------
-  claude-haiku: &claude-haiku
+  claude-haiku:
+    provider: anthropic
+    model_id: claude-haiku-5-5
+    display_name: Claude Haiku 5.5
+    notes: >-
+      Fastest Claude; nano-tier panel model and cheap synthesizer. Adaptive thinking is on by
+      default (provider default effort medium; Fusion's panel default is low). Priced by prompt
+      length: a request over 100,000 prompt tokens pays the higher row for the whole request.
+    roles: [panel, synthesizer]
+    strengths: [code_review, debugging, implementation_plan]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1000000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    retirement_not_before: 2027-10-07
+    prices:
+      - input_per_1m: 0.10
+        output_per_1m: 0.50
+        cached_input_per_1m: 0.01
+        cache_write_per_1m: 0.125
+        verified_on: 2026-11-17
+        source_url: https://platform.claude.com/docs/en/about-claude/pricing
+      - input_per_1m: 0.50
+        output_per_1m: 2.50
+        cached_input_per_1m: 0.05
+        cache_write_per_1m: 0.625
+        above_prompt_tokens: 100000
+        verified_on: 2026-11-17
+        source_url: https://platform.claude.com/docs/en/about-claude/pricing
+
+  claude-sonnet:
+    provider: anthropic
+    model_id: claude-sonnet-5-5
+    display_name: Claude Sonnet 5.5
+    notes: Strong synthesizer and mid-tier panel model. Adaptive thinking, provider default effort high.
+    roles: [synthesizer, panel]
+    strengths: [code_review, debugging, architecture_decision, implementation_plan]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1000000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: high
+    retirement_not_before: 2027-09-28
+    prices:
+      - input_per_1m: 2.0
+        output_per_1m: 10.0
+        cached_input_per_1m: 0.10
+        cache_write_per_1m: 2.5
+        verified_on: 2026-11-17
+        source_url: https://platform.claude.com/docs/en/about-claude/pricing
+
+  claude-opus:
+    provider: anthropic
+    model_id: claude-opus-5-5
+    display_name: Claude Opus 5.5
+    notes: Frontier baseline (the default). Adaptive thinking is always on; provider default effort medium.
+    roles: [baseline]
+    strengths: [architecture_decision, implementation_plan]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: frontier
+    max_tokens: 16384
+    context_window: 1000000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: medium
+    retirement_not_before: 2027-09-22
+    prices:
+      - input_per_1m: 4.0
+        output_per_1m: 20.0
+        cached_input_per_1m: 0.20
+        cache_write_per_1m: 5.0
+        verified_on: 2026-11-17
+        source_url: https://platform.claude.com/docs/en/about-claude/pricing
+
+  claude-fable:
+    provider: anthropic
+    model_id: claude-fable-5-2
+    display_name: Claude Fable 5.2
+    notes: >-
+      Anthropic's most capable model; benchmark-only baseline. Adaptive thinking is always on;
+      provider default effort high.
+    roles: [baseline]
+    strengths: [architecture_decision, implementation_plan, debugging]
+    latency_tier: high
+    context_tier: long
+    quality_tier: frontier
+    max_tokens: 16384
+    context_window: 1000000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: high
+    retirement_not_before: 2027-11-09
+    prices:
+      - input_per_1m: 8.0
+        output_per_1m: 40.0
+        cached_input_per_1m: 0.20
+        cache_write_per_1m: 10.0
+        verified_on: 2026-11-17
+        source_url: https://platform.claude.com/docs/en/about-claude/pricing
+
+  claude-opus-disabled:
+    provider: anthropic
+    model_id: claude-opus-5-5
+    enabled: false
+    display_name: Claude Opus (disabled example)
+    notes: Example disabled model; must never be selected
+    strengths: [architecture_decision]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: frontier
+    max_tokens: 8192
+    supports_json: true
+    prices:
+      - input_per_1m: 4.0
+        output_per_1m: 20.0
+        cached_input_per_1m: 0.20
+        verified_on: 2026-11-17
+        source_url: https://platform.claude.com/docs/en/about-claude/pricing
+
+  claude-haiku-4-5:
     provider: anthropic
     model_id: claude-haiku-4-5-20251001
-    display_name: Claude Haiku 4.5
+    enabled: false
+    display_name: Claude Haiku 4.5 (legacy)
     notes: >-
-      Fast low-cost panel model. Pinned snapshot. Anthropic lists retirement "not sooner than
-      2026-10-15" and promises at least 60 days notice; no deprecation announced on 2026-10-05.
-    roles: [panel]
-    strengths: [code_review, debugging, implementation_plan]
-    cost_tier: low
+      Legacy: replaced by Claude Haiku 5.5. Kept so old runs keep a price. Retirement not sooner
+      than 2026-10-15 (still active on 2026-11-17).
+    roles: []
     latency_tier: low
     context_tier: long
     quality_tier: medium
@@ -102,114 +258,22 @@ models:
         output_per_1m: 5.0
         cached_input_per_1m: 0.10
         cache_write_per_1m: 1.25
-        verified_on: 2026-10-05
-        source_url: https://platform.claude.com/docs/en/about-claude/pricing
-
-  # Further samples of the same model: the self-mixture-of-agents ablation (roadmap Task 19) asks
-  # one model several times with different temperatures, and a strategy lists each alias once.
-  claude-haiku-s2: &claude-haiku-s2
-    <<: *claude-haiku
-    display_name: Claude Haiku 4.5 (second sample)
-    notes: Same model as claude-haiku under another alias, for self-mixture strategies only.
-    roles: []
-  claude-haiku-s3:
-    <<: *claude-haiku-s2
-    display_name: Claude Haiku 4.5 (third sample)
-
-  claude-sonnet:
-    provider: anthropic
-    model_id: claude-sonnet-5-5
-    display_name: Claude Sonnet 5.5
-    notes: Strong synthesizer. Rejects temperature/top_p/top_k (Claude 4.7+ behavior).
-    roles: [synthesizer, panel]
-    strengths: [code_review, debugging, architecture_decision, implementation_plan]
-    cost_tier: medium
-    latency_tier: medium
-    context_tier: long
-    quality_tier: strong
-    max_tokens: 16384
-    context_window: 1000000
-    max_output: 128000
-    supports_json: true
-    supports_json_schema: true
-    supports_tools: true
-    supports_vision: true
-    supports_reasoning_effort: true
-    default_reasoning_effort: high
-    supports_sampling_params: false
-    prices:
-      - input_per_1m: 2.0
-        output_per_1m: 10.0
-        cached_input_per_1m: 0.20
-        cache_write_per_1m: 2.5
-        verified_on: 2026-10-05
-        source_url: https://platform.claude.com/docs/en/about-claude/pricing
-
-  claude-opus:
-    provider: anthropic
-    model_id: claude-opus-5-5
-    display_name: Claude Opus 5.5
-    notes: Frontier baseline. Adaptive thinking is always on; rejects temperature/top_p/top_k.
-    roles: [baseline]
-    strengths: [architecture_decision, implementation_plan]
-    cost_tier: high
-    latency_tier: medium
-    context_tier: long
-    quality_tier: frontier
-    max_tokens: 16384
-    context_window: 1000000
-    max_output: 128000
-    supports_json: true
-    supports_json_schema: true
-    supports_tools: true
-    supports_vision: true
-    supports_reasoning_effort: true
-    default_reasoning_effort: medium
-    supports_sampling_params: false
-    prices:
-      - input_per_1m: 4.0
-        output_per_1m: 20.0
-        cached_input_per_1m: 0.20
-        cache_write_per_1m: 5.0
-        verified_on: 2026-10-05
-        source_url: https://platform.claude.com/docs/en/about-claude/pricing
-
-  claude-opus-disabled:
-    provider: anthropic
-    model_id: claude-opus-5-5
-    enabled: false
-    display_name: Claude Opus (disabled example)
-    notes: Example disabled model; must never be selected
-    strengths: [architecture_decision]
-    cost_tier: high
-    latency_tier: medium
-    context_tier: long
-    quality_tier: frontier
-    max_tokens: 8192
-    supports_json: true
-    supports_sampling_params: false
-    prices:
-      - input_per_1m: 4.0
-        output_per_1m: 20.0
-        cached_input_per_1m: 0.20
-        verified_on: 2026-10-05
+        verified_on: 2026-11-17
         source_url: https://platform.claude.com/docs/en/about-claude/pricing
 
   # ---------------------------------------------------------------------------
-  # OpenAI
+  # OpenAI (long-context rows: a request over 272K input tokens pays them in full)
   # ---------------------------------------------------------------------------
-  gpt-luna: &gpt-luna
+  gpt-luna:
     provider: openai
     model_id: gpt-6-luna
     display_name: GPT-6 Luna
     notes: >-
       Most efficient OpenAI model. Reasoning effort none..max (provider default medium, Fusion
-      panel default low); in Chat
-      Completions, function calling works only with reasoning_effort none. Sampling params are
-      not sent (conservative).
+      panel default low); in Chat Completions, function calling works only with reasoning_effort
+      none.
     roles: [panel, judge]
     strengths: [code_review, debugging, architecture_decision]
-    cost_tier: low
     latency_tier: low
     context_tier: long
     quality_tier: medium
@@ -222,22 +286,18 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
-    supports_sampling_params: false
-    prices:
+    prices: &luna-prices
       - input_per_1m: 0.10
         output_per_1m: 0.50
         cached_input_per_1m: 0.01
-        verified_on: 2026-10-05
-        source_url: https://developers.openai.com/api/docs/models/gpt-6-luna
-
-  gpt-luna-s2: &gpt-luna-s2
-    <<: *gpt-luna
-    display_name: GPT-6 Luna (second sample)
-    notes: Same model as gpt-luna under another alias, for self-mixture strategies only.
-    roles: []
-  gpt-luna-s3:
-    <<: *gpt-luna-s2
-    display_name: GPT-6 Luna (third sample)
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
+      - input_per_1m: 0.20
+        output_per_1m: 0.75
+        cached_input_per_1m: 0.02
+        above_prompt_tokens: 272000
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
 
   gpt-luna-security:
     provider: openai
@@ -247,7 +307,6 @@ models:
     roles: [panel]
     persona: security_reviewer
     strengths: [code_review, security]
-    cost_tier: low
     latency_tier: low
     context_tier: long
     quality_tier: medium
@@ -260,24 +319,51 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
-    supports_sampling_params: false
+    prices: *luna-prices
+
+  gpt-terra:
+    provider: openai
+    model_id: gpt-6.1-terra
+    display_name: GPT-6.1 Terra
+    notes: >-
+      Fast, efficient low-tier model; mid-tier panel member. Reasoning effort none..max (Fusion
+      panel default low).
+    roles: [panel]
+    strengths: [code_review, debugging, implementation_plan]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1050000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
     prices:
-      - input_per_1m: 0.10
-        output_per_1m: 0.50
-        cached_input_per_1m: 0.01
-        verified_on: 2026-10-05
-        source_url: https://developers.openai.com/api/docs/models/gpt-6-luna
+      - input_per_1m: 1.0
+        output_per_1m: 5.0
+        cached_input_per_1m: 0.05
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
+      - input_per_1m: 2.0
+        output_per_1m: 7.5
+        cached_input_per_1m: 0.10
+        above_prompt_tokens: 272000
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
 
   gpt-sol:
     provider: openai
-    model_id: gpt-6.1-sol
-    display_name: GPT-6.1 Sol
+    model_id: gpt-6.2-sol
+    display_name: GPT-6.2 Sol
     notes: >-
-      Near-Astra performance at a lower price; second frontier-class baseline. Reasoning effort
-      low..max (default medium); tool calling requires the Responses API.
+      Balances intelligence and cost; second frontier-class baseline. Reasoning effort low..max
+      (none is rejected).
     roles: [baseline, panel]
     strengths: [code_review, debugging, architecture_decision, implementation_plan]
-    cost_tier: medium
     latency_tier: medium
     context_tier: long
     quality_tier: strong
@@ -290,27 +376,96 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: medium
-    supports_sampling_params: false
     prices:
       - input_per_1m: 2.0
         output_per_1m: 10.0
         cached_input_per_1m: 0.10
-        verified_on: 2026-10-05
-        source_url: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+        cache_write_per_1m: 2.5
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/models/gpt-6.2-sol
+      - input_per_1m: 4.0
+        output_per_1m: 15.0
+        cached_input_per_1m: 0.20
+        cache_write_per_1m: 5.0
+        above_prompt_tokens: 272000
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/models/gpt-6.2-sol
+
+  gpt-astra:
+    provider: openai
+    model_id: gpt-6.2-astra
+    display_name: GPT-6.2 Astra
+    notes: >-
+      OpenAI's flagship for complex reasoning and coding; benchmark-only baseline. Reasoning
+      effort low..max; Fusion sends none and keeps the provider default.
+    roles: [baseline]
+    strengths: [architecture_decision, implementation_plan, debugging]
+    latency_tier: high
+    context_tier: long
+    quality_tier: frontier
+    max_tokens: 16384
+    context_window: 1050000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    prices:
+      - input_per_1m: 8.0
+        output_per_1m: 40.0
+        cached_input_per_1m: 0.40
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
+      - input_per_1m: 16.0
+        output_per_1m: 60.0
+        cached_input_per_1m: 0.80
+        above_prompt_tokens: 272000
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
+
+  gpt-sol-6-1:
+    provider: openai
+    model_id: gpt-6.1-sol
+    enabled: false
+    display_name: GPT-6.1 Sol (legacy)
+    notes: Legacy, replaced by GPT-6.2 Sol at the same price. Kept so old runs keep a price.
+    roles: []
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1050000
+    max_output: 128000
+    supports_json: true
+    supports_json_schema: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: medium
+    prices:
+      - input_per_1m: 2.0
+        output_per_1m: 10.0
+        cached_input_per_1m: 0.10
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
+      - input_per_1m: 4.0
+        output_per_1m: 15.0
+        cached_input_per_1m: 0.20
+        above_prompt_tokens: 272000
+        verified_on: 2026-11-17
+        source_url: https://developers.openai.com/api/docs/pricing
 
   # ---------------------------------------------------------------------------
-  # Google
+  # Google (output prices include thinking tokens; no long-context rows on these models)
   # ---------------------------------------------------------------------------
   gemini-flash:
     provider: google
     model_id: gemini-3.8-flash
     display_name: Gemini 3.8 Flash
     notes: >-
-      Newest stable Flash model. Introductory price applies through 2026-12-31 and doubles on
-      2027-01-01. Output price includes thinking tokens.
+      Newest and most capable Flash model (not Flash-Lite, which is not used). Introductory price
+      applies through 2026-12-31 and doubles on 2027-01-01 (tier low -> medium).
     roles: [panel, judge]
     strengths: [code_review, debugging, answer_eval]
-    cost_tier: low
     latency_tier: low
     context_tier: long
     quality_tier: medium
@@ -328,14 +483,93 @@ models:
         output_per_1m: 3.75
         cached_input_per_1m: 0.075
         effective_until: 2026-12-31
-        verified_on: 2026-10-05
-        source_url: https://ai.google.dev/gemini-api/docs/pricing
+        verified_on: 2026-11-17
+        source_url: https://aistudio.google.com/docs/pricing
       - input_per_1m: 1.50
         output_per_1m: 7.50
         cached_input_per_1m: 0.15
         effective_from: 2027-01-01
-        verified_on: 2026-10-05
-        source_url: https://ai.google.dev/gemini-api/docs/pricing
+        verified_on: 2026-11-17
+        source_url: https://aistudio.google.com/docs/pricing
+
+  gemini-hydrogen:
+    provider: google
+    model_id: gemini-4-hydrogen
+    display_name: Gemini 4 Hydrogen
+    notes: Fast, efficient Gemini 4 model for everyday coding and agentic work; mid-tier panel member.
+    roles: [panel]
+    strengths: [code_review, debugging, implementation_plan]
+    latency_tier: low
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1048576
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 1.50
+        output_per_1m: 7.50
+        cached_input_per_1m: 0.075
+        verified_on: 2026-11-17
+        source_url: https://aistudio.google.com/docs/pricing
+
+  gemini-carbon:
+    provider: google
+    model_id: gemini-4-carbon
+    display_name: Gemini 4 Carbon
+    notes: >-
+      Google's most capable reasoning model, for complex software engineering; the Google
+      frontier baseline (benchmark only). Price doubles on 2026-12-01 (tier medium -> high).
+    roles: [baseline]
+    strengths: [architecture_decision, implementation_plan, debugging]
+    latency_tier: high
+    context_tier: long
+    quality_tier: frontier
+    max_tokens: 16384
+    context_window: 1048576
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    prices: &gemini4-frontier-prices
+      - input_per_1m: 2.0
+        output_per_1m: 10.0
+        cached_input_per_1m: 0.10
+        effective_until: 2026-11-30
+        verified_on: 2026-11-17
+        source_url: https://aistudio.google.com/docs/pricing
+      - input_per_1m: 4.0
+        output_per_1m: 20.0
+        cached_input_per_1m: 0.20
+        effective_from: 2026-12-01
+        verified_on: 2026-11-17
+        source_url: https://aistudio.google.com/docs/pricing
+
+  gemini-argon:
+    provider: google
+    model_id: gemini-4-argon
+    display_name: Gemini 4 Argon
+    notes: >-
+      Efficient Gemini 4 reasoning model: faster and fewer tokens per turn than Carbon, at the
+      same price. No default role; available to strategies. Price doubles on 2026-12-01.
+    roles: []
+    strengths: [architecture_decision, implementation_plan, debugging]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1048576
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    prices: *gemini4-frontier-prices
 
   # ---------------------------------------------------------------------------
   # Local models (optional, disabled by default; free)
@@ -348,12 +582,12 @@ models:
     notes: Enable with OLLAMA_ENABLED=true and set enabled=true when using local_only budget
     roles: [panel]
     strengths: [code_review, debugging]
-    cost_tier: low
     latency_tier: high
     context_tier: medium
     quality_tier: medium
     max_tokens: 4096
     supports_json: true
+    supports_sampling_params: true   # local servers accept temperature and seed
 
   lmstudio-local:
     provider: lmstudio
@@ -363,9 +597,9 @@ models:
     notes: Enable with LMSTUDIO_ENABLED=true and set enabled=true when using local_only budget
     roles: [panel]
     strengths: [code_review, debugging]
-    cost_tier: low
     latency_tier: high
     context_tier: medium
     quality_tier: medium
     max_tokens: 4096
     supports_json: true
+    supports_sampling_params: true   # local servers accept temperature and seed

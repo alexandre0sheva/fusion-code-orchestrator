@@ -10,9 +10,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `OPENROUTER_API_KEY=` in `.env.example` (the provider that reads it arrives later in 0.3.0).
+- Latest models in the catalog, prices verified 2026-11-17: Claude Haiku 5.5 and Fable 5.2, GPT-6.1 Terra, GPT-6.2 Sol and GPT-6.2 Astra, Gemini 4 Hydrogen, Carbon and Argon; strategies `panel-nano` (Haiku 5.5 + Luna + Gemini 3.8 Flash), `panel-mid` (Terra + Hydrogen + Sonnet 5.5) and a `solo-<model>` strategy per model; Fable 5.2, GPT-6.2 Astra and Gemini 4 Carbon as benchmark-only baselines.
+- Price tiers computed from price (`nano`, `low`, `medium`, `high`, `premium` by blended price `(3 × input + output) / 4`, rule in `catalog.yaml` `tiering:`); `fusion models list` shows blended price, tier and coming tier changes, and takes `--on DATE`.
+- Long-context prices (`above_prompt_tokens` rows: Haiku 5.5 above 100K prompt tokens, GPT-6.x above 272K); the ledger and the `max_cost_usd` guard price each call by its own prompt size.
+- `fusion models check` and `fusion doctor` warn when an enabled model is not the newest of its family and when a price changes within 30 days; `--live` also flags a newer model listed by the provider and a price page that redirects.
 
 ### Changed
 
+- Default models moved to the latest generation: the panel's Haiku is Claude Haiku 5.5 (was Haiku 4.5; panel effort `low`) and the second baseline is GPT-6.2 Sol (was GPT-6.1 Sol). Older IDs stay only as disabled legacy entries.
+- Strategies renamed: `panel-cheap` → `panel-nano`, `solo-cheap` → `solo-haiku`, `solo-frontier` → `solo-opus`. The old names (and config overrides written under them) keep working through `strategy_aliases` until 0.4.0.
+- The Anthropic adapter sends API version `2026-10-21` and never sends `temperature`, `top_p` or `top_k`; `supports_sampling_params` now defaults to false, so OpenAI, Google and unknown models get no sampling parameters unless their catalog entry allows them.
+- Claude Sonnet 5.5's cached-input price corrected to $0.10 (was $0.20); Google prices now cite `aistudio.google.com/docs/pricing`.
 - The live-spend ledger is scoped by budget: 0.3.0 has its own $15 (`v0.3.0`) and 0.2.0's $15.66 no longer counts against it (entries without a `budget` field count as `v0.2.0`; new entries record theirs). `fusion bench spend` shows each budget's total and remaining, and the packaged suites stop at $14.50 instead of $18.
 
 - Dependencies updated to current releases (FastMCP 4.2, Typer 0.29, Pydantic 2.14, Starlette 1.10, Ruff 0.17, pytest 9.2, pytest-asyncio 1.5, Playwright 1.65 and the rest of `uv.lock`), with the minimum versions in `pyproject.toml` raised to the tested ones; `pytest-xdist` is a new dev dependency.
@@ -21,6 +29,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- The hand-written `cost_tier` catalog field (tiers are computed), the temperature-sample aliases `claude-haiku-s2/-s3` and `gpt-luna-s2/-s3`, and the ablation suite's self-mixture arms (`self-haiku`, `self-luna`).
 - `fusion review`, `fusion list-runs`, `fusion run-mock` and `fusion compare-cost`, deprecated in 0.2.0. Use `fusion review-diff -f DIFF`, `fusion runs list`, any run command with `--mock` (for example `fusion ask "..." --mock`) and `fusion runs compare-baseline RUN_ID`.
 
 ### Security

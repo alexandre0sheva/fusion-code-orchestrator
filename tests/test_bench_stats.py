@@ -382,8 +382,8 @@ def test_a_blocked_study_has_no_headline_verdict() -> None:
 
 
 def test_the_default_baseline_is_the_frontier_solo_arm_when_there_is_one() -> None:
-    items = [item(a, f"t{n}", 0.7) for a in ("panel", "solo-frontier", "x") for n in range(3)]
-    assert study_stats(items, rules=FAST).baseline == "solo-frontier"
+    items = [item(a, f"t{n}", 0.7) for a in ("panel", "solo-opus", "x") for n in range(3)]
+    assert study_stats(items, rules=FAST).baseline == "solo-opus"
     items = [item(a, f"t{n}", 0.7) for a in ("panel", "x") for n in range(3)]
     assert study_stats(items, rules=FAST).baseline == "panel"
 

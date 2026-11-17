@@ -175,15 +175,29 @@ def test_a_valid_panel_strategy_keeps_every_field() -> None:
     assert strategy.aggregator == "llm" and strategy.max_latency_s == 30
 
 
+SOLO_PER_ALIAS = {
+    "solo-haiku": "claude-haiku",
+    "solo-sonnet": "claude-sonnet",
+    "solo-opus": "claude-opus",
+    "solo-fable": "claude-fable",
+    "solo-luna": "gpt-luna",
+    "solo-terra": "gpt-terra",
+    "solo-sol": "gpt-sol",
+    "solo-astra": "gpt-astra",
+    "solo-flash": "gemini-flash",
+    "solo-hydrogen": "gemini-hydrogen",
+    "solo-carbon": "gemini-carbon",
+    "solo-argon": "gemini-argon",
+}
+
+
 def test_packaged_strategies_are_the_documented_set() -> None:
     book = load_strategy_book()
     assert set(book.names()) == {
-        "solo-frontier",
-        "solo-sol",
-        "solo-cheap",
-        "solo-luna",
+        *SOLO_PER_ALIAS,
+        "panel-nano",
         "panel-duo",
-        "panel-cheap",
+        "panel-mid",
         "panel-cheap-strong-synth",
         "panel-refine",
         "panel-digest",
@@ -192,9 +206,9 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-local",
         "best-of-n-verified",
     }
+    for name, alias in SOLO_PER_ALIAS.items():
+        assert [m.model for m in book.get(name).members] == [alias], name
     assert book.get("best-of-n-verified").aggregator == "verified"
-    assert book.get("solo-frontier").members[0].model == "claude-opus"
-    assert book.get("panel-cheap").aggregator_model == "claude-haiku"
     assert book.get("panel-cheap-strong-synth").aggregator_model == "claude-sonnet"
     assert book.get("panel-refine").rounds == 2
     assert book.get("panel-digest").aggregator == "digest"
@@ -205,14 +219,50 @@ def test_packaged_strategies_are_the_documented_set() -> None:
     assert all(s.judge == "off" for s in book.strategies.values())
 
 
+def test_the_panels_run_on_the_latest_models() -> None:
+    book = load_strategy_book()
+
+    def members(name: str) -> list[str]:
+        return [m.model for m in book.get(name).members]
+
+    assert members("panel-nano") == ["claude-haiku", "gpt-luna", "gemini-flash"]
+    assert book.get("panel-nano").aggregator_model == "claude-haiku"
+    assert members("panel-duo") == ["claude-haiku", "gpt-luna"]
+    assert book.get("panel-duo").aggregator_model == "claude-haiku"
+    assert members("panel-mid") == ["gpt-terra", "gemini-hydrogen", "claude-sonnet"]
+    catalog = load_catalog()
+    assert catalog.models["claude-haiku"].model_id == "claude-haiku-5-5"
+    assert catalog.models["gemini-hydrogen"].model_id == "gemini-4-hydrogen"
+
+
+def test_old_strategy_names_still_work_as_aliases() -> None:
+    book = load_strategy_book()
+    assert book.get("panel-cheap") is book.get("panel-nano")
+    assert book.get("solo-frontier") is book.get("solo-opus")
+    assert book.get("solo-cheap") is book.get("solo-haiku")
+    assert "panel-cheap" not in book.names()  # listed once, under the new name
+
+
+def test_no_default_strategy_uses_a_legacy_disabled_or_flash_lite_model() -> None:
+    catalog = load_catalog()
+    book = load_strategy_book()
+    defaults = {n: s for n, s in book.strategies.items() if n != "panel-local"}
+    for name, strategy in defaults.items():
+        for alias in strategy.models:
+            entry = catalog.models[alias]
+            assert entry.enabled, f"{name} uses disabled {alias}"
+            assert "lite" not in entry.model_id, f"{name} uses {entry.model_id}"
+            assert entry.model_id != "claude-haiku-4-5-20251001", name
+
+
 def test_every_packaged_strategy_references_catalog_models() -> None:
     catalog = load_catalog()
     assert load_strategy_book().referenced_models() <= set(catalog.models)
 
 
 def test_unknown_strategy_suggests_the_closest_name() -> None:
-    with pytest.raises(ConfigError, match="did you mean 'panel-cheap'"):
-        load_strategy_book().get("panel-cheep")
+    with pytest.raises(ConfigError, match="did you mean 'panel-nano'"):
+        load_strategy_book().get("panel-nanoo")
 
 
 def test_budget_map_must_name_defined_strategies(tmp_path: Path) -> None:
@@ -248,8 +298,10 @@ def test_user_config_can_override_one_field_or_add_a_strategy(fusion_home: Path)
         )
     )
     book = load_strategy_book()
-    assert book.get("panel-cheap").aggregator_model == "claude-sonnet"
-    assert len(book.get("panel-cheap").members) == 3  # untouched fields keep their defaults
+    # An override written under the old name reaches the renamed strategy.
+    assert book.get("panel-nano").aggregator_model == "claude-sonnet"
+    assert len(book.get("panel-nano").members) == 3  # untouched fields keep their defaults
+    assert book.get("panel-cheap") is book.get("panel-nano")
     assert book.get("mine").name == "mine"
     assert book.for_budget(BudgetLevel.LOW).name == "mine"
     assert book.for_budget(BudgetLevel.MEDIUM).name == "panel-duo"
@@ -258,12 +310,12 @@ def test_user_config_can_override_one_field_or_add_a_strategy(fusion_home: Path)
 def test_invalid_user_strategy_reports_key_value_and_layer(
     fusion_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("FUSION__STRATEGIES__PANEL-CHEAP__ROUNDS", "9")
+    monkeypatch.setenv("FUSION__STRATEGIES__PANEL-NANO__ROUNDS", "9")
     with pytest.raises(ConfigError) as exc:
         load_strategy_book()
     text = str(exc.value)
-    assert "strategies.panel-cheap.rounds = 9" in text
-    assert "environment variable FUSION__STRATEGIES__PANEL-CHEAP__ROUNDS" in text
+    assert "strategies.panel-nano.rounds = 9" in text
+    assert "environment variable FUSION__STRATEGIES__PANEL-NANO__ROUNDS" in text
 
 
 def test_removed_policy_and_refinement_keys_point_at_strategies(
@@ -284,13 +336,14 @@ def test_removed_policy_and_refinement_keys_point_at_strategies(
 def test_mock_strategy_book_keeps_shapes_on_mock_models() -> None:
     registry = ModelRegistry.for_mode(use_mock=True)
     mocked = mock_strategy_book(load_strategy_book(), registry)
-    assert [m.model for m in mocked.get("panel-cheap").members] == [
+    assert [m.model for m in mocked.get("panel-nano").members] == [
         "mock-fast",
         "mock-security",
         "mock-weak",
     ]
-    assert [m.model for m in mocked.get("solo-frontier").members] == ["mock-fast"]
-    assert mocked.get("panel-cheap").aggregator_model == "mock-judge"
+    assert [m.model for m in mocked.get("solo-opus").members] == ["mock-fast"]
+    assert mocked.get("panel-cheap") is mocked.get("panel-nano")  # aliases survive
+    assert mocked.get("panel-nano").aggregator_model == "mock-judge"
     assert mocked.get("panel-digest").aggregator_model is None
     assert mocked.get("panel-refine").rounds == 2
 
@@ -300,11 +353,11 @@ def test_mock_strategy_book_keeps_shapes_on_mock_models() -> None:
 
 async def test_solo_is_one_provider_call_and_one_ledger_record(tmp_path: Path) -> None:
     spy = SpyProvider()
-    result = await _pipeline(tmp_path, spy).run(_ctx(strategy="solo-frontier"))
+    result = await _pipeline(tmp_path, spy).run(_ctx(strategy="solo-opus"))
     assert len(spy.requests) == 1
     assert _stages(result) == ["panel"]
     assert len(result.ledger.records) == 1
-    assert result.routing.strategy == "solo-frontier"
+    assert result.routing.strategy == "solo-opus"
     answer, valid = parse_panel_answer(result.panel_results[0].content)
     assert valid and result.final_answer == render_panel_answer(answer)  # the answer as is
     assert result.usage.successful_model_calls == 1
@@ -321,7 +374,7 @@ async def test_budget_levels_resolve_to_strategies_and_an_explicit_strategy_wins
     high = await pipe.run(_ctx(budget=BudgetLevel.HIGH))
     explicit = await pipe.run(_ctx(budget=BudgetLevel.HIGH, strategy="solo-luna"))
     assert [r.routing.strategy for r in (low, medium, high, explicit)] == [
-        "solo-cheap",
+        "solo-haiku",
         "panel-duo",
         "panel-refine",
         "solo-luna",
@@ -357,7 +410,7 @@ async def test_digest_makes_no_synthesis_call_and_returns_every_answer(tmp_path:
 
 
 async def test_llm_aggregator_makes_one_synthesis_call(tmp_path: Path) -> None:
-    result = await _pipeline(tmp_path).run(_ctx(strategy="panel-cheap"))
+    result = await _pipeline(tmp_path).run(_ctx(strategy="panel-nano"))
     assert _stages(result).count("synthesis") == 1
     assert result.routing.synthesizer_model == "mock-judge"
 
@@ -421,9 +474,9 @@ async def test_strategy_caps_warn_when_exceeded(
 ) -> None:
     monkeypatch.setenv("FUSION__STRATEGIES__SOLO-CHEAP__MAX_LATENCY_S", "0.000001")
     result = await _pipeline(tmp_path, MockProvider(latency_ms=20.0)).run(
-        _ctx(strategy="solo-cheap")
+        _ctx(strategy="solo-haiku")
     )
-    assert any("Strategy 'solo-cheap' took" in w and "cap" in w for w in result.warnings)
+    assert any("Strategy 'solo-haiku' took" in w and "cap" in w for w in result.warnings)
 
 
 # --------------------------------------------------------------------------------------- stages
@@ -434,8 +487,8 @@ async def test_route_stage_applies_the_strategy_to_the_state(tmp_path: Path) -> 
         Settings(use_mock=True, db_path=str(tmp_path / "r.db")),
         {"mock": MockProvider(latency_ms=0.0)},
     )
-    state = RunState.start(_ctx(strategy="solo-frontier"), deps)
-    assert state.strategy is not None and state.strategy.name == "solo-frontier"
+    state = RunState.start(_ctx(strategy="solo-opus"), deps)
+    assert state.strategy is not None and state.strategy.name == "solo-opus"
     state = await RedactStage(deps).run(state)
     state = await RouteStage(deps).run(state)
     assert state.panel_models == ["mock-fast"]
@@ -462,10 +515,10 @@ def test_mode_settings_differ_where_the_roadmap_says() -> None:
 async def test_benchmark_mode_fixes_temperature_and_seed(tmp_path: Path) -> None:
     spy = SpyProvider()
     pipe = _pipeline(tmp_path, spy)
-    await pipe.run(_ctx(strategy="panel-cheap"), mode=Mode.BENCHMARK)
+    await pipe.run(_ctx(strategy="panel-nano"), mode=Mode.BENCHMARK)
     assert spy.requests and all(r.temperature == 0.0 and r.seed == 0 for r in spy.requests)
     spy.requests.clear()
-    await pipe.run(_ctx(strategy="panel-cheap"))
+    await pipe.run(_ctx(strategy="panel-nano"))
     assert all(r.temperature is None and r.seed is None for r in spy.requests)
 
 
@@ -476,7 +529,7 @@ async def test_a_member_temperature_beats_the_benchmark_default(
         "FUSION__STRATEGIES__SOLO-CHEAP__MEMBERS", "[{model: claude-haiku, temperature: 0.7}]"
     )
     spy = SpyProvider()
-    await _pipeline(tmp_path, spy).run(_ctx(strategy="solo-cheap"), mode=Mode.BENCHMARK)
+    await _pipeline(tmp_path, spy).run(_ctx(strategy="solo-haiku"), mode=Mode.BENCHMARK)
     assert [r.temperature for r in spy.requests] == [0.7]
 
 
@@ -555,10 +608,10 @@ async def test_fusion_ask_accepts_a_strategy_and_reports_it(tmp_path: Path) -> N
         schema = tools["fusion_ask"].input_schema
         assert "strategy" in str(schema)
         result = await client.call_tool(
-            "fusion_ask", {"input": {"prompt": PROMPT, "strategy": "solo-cheap", "detail": "full"}}
+            "fusion_ask", {"input": {"prompt": PROMPT, "strategy": "solo-haiku", "detail": "full"}}
         )
     data = result.structured_content
-    assert data["strategy"] == data["routing"]["strategy"] == "solo-cheap"
+    assert data["strategy"] == data["routing"]["strategy"] == "solo-haiku"
     assert data["usage"]["successful_model_calls"] == data["models_called"] == 1
 
 
@@ -570,20 +623,20 @@ async def test_fusion_ask_unknown_strategy_is_an_error_the_caller_sees(tmp_path:
 
 
 def test_pipeline_input_models_carry_the_strategy() -> None:
-    assert FusionAskInput(prompt="x", strategy="solo-cheap").strategy == "solo-cheap"
+    assert FusionAskInput(prompt="x", strategy="solo-haiku").strategy == "solo-haiku"
     assert FusionAskInput(prompt="x").strategy is None
 
 
 def test_cli_strategies_list_shows_every_strategy_and_budget_alias() -> None:
     result = CliRunner().invoke(app, ["strategies", "list"])
     assert result.exit_code == 0
-    for name in ("solo-frontier", "panel-cheap", "panel-digest", "panel-refine"):
+    for name in ("solo-opus", "panel-nano", "panel-digest", "panel-refine"):
         assert name in result.output
     as_json = CliRunner().invoke(app, ["strategies", "list", "--json"])
     rows = yaml.safe_load(as_json.output)
     by_name = {row["name"]: row for row in rows}
     assert by_name["panel-duo"]["budgets"] == ["medium"]
-    assert by_name["solo-cheap"]["members"][0]["model"] == "claude-haiku"
+    assert by_name["solo-haiku"]["members"][0]["model"] == "claude-haiku"
 
 
 def test_cli_mock_run_takes_a_strategy(tmp_path: Path) -> None:
@@ -594,13 +647,13 @@ def test_cli_mock_run_takes_a_strategy(tmp_path: Path) -> None:
             "How should I retry a failed HTTP call?",
             "--mock",
             "--strategy",
-            "solo-cheap",
+            "solo-haiku",
             "--db-path",
             str(tmp_path / "c.db"),
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "solo-cheap" in result.output
+    assert "solo-haiku" in result.output
 
 
 def test_cli_unknown_strategy_is_a_message_not_a_traceback(tmp_path: Path) -> None:
@@ -617,7 +670,7 @@ def test_cli_unknown_strategy_is_a_message_not_a_traceback(tmp_path: Path) -> No
         ],
     )
     assert result.exit_code == 1
-    assert "did you mean 'panel-cheap'" in result.output
+    assert "did you mean 'panel-nano'" in result.output
 
 
 def test_config_validate_flags_a_strategy_with_an_unknown_model(

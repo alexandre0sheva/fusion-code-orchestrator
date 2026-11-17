@@ -19,9 +19,9 @@ __all__ = ["DEFAULT_ARMS", "arm_book", "parse_arms", "resolve_arm"]
 # The six arms of the roadmap's study: frontier solo, cheap solo, cheap panel, the panel with
 # refinement, the cascade, and the panel with a strong synthesizer.
 DEFAULT_ARMS = (
-    "solo-frontier",
-    "solo-cheap",
-    "panel-cheap",
+    "solo-opus",
+    "solo-haiku",
+    "panel-nano",
     "panel-refine",
     "panel-cascade",
     "panel-cheap-strong-synth",
@@ -73,4 +73,4 @@ def arm_book(book: StrategyBook, arms: list[Arm]) -> StrategyBook:
     strategies = dict(book.strategies)
     for arm in arms:
         strategies[arm.name] = resolve_arm(arm, book)
-    return StrategyBook(strategies, book.budget_map)
+    return StrategyBook(strategies, book.budget_map, book.aliases)

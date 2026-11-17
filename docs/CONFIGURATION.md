@@ -33,9 +33,9 @@ Validation errors name the key, the offending value, the layer that set it and t
 | File | Purpose |
 |------|---------|
 | `.env` | Provider keys and runtime toggles. Loaded automatically by the CLI and the MCP server. |
-| `src/fusion/config/catalog.yaml` | Model catalog: aliases, provider model IDs, capabilities, tiers, enable flags and verified prices. |
+| `src/fusion/config/catalog.yaml` | Model catalog: aliases, provider model IDs, capabilities, enable flags, verified prices (with long-context rows) and the `tiering:` rule that turns prices into tiers. |
 | `src/fusion/config/routing_policies.yaml` | Per-task judge model and context threshold; fan-out and refinement settings. |
-| `src/fusion/config/strategies.yaml` | Strategies (which models answer, rounds, aggregation, judging) and the budget-to-strategy table. |
+| `src/fusion/config/strategies.yaml` | Strategies (which models answer, rounds, aggregation, judging), the budget-to-strategy table and `strategy_aliases` (old strategy names). |
 | `src/fusion/config/baseline.yaml` | Frontier baseline(s), as catalog aliases, that Fusion's cost is compared against. |
 
 ## Run database
@@ -240,10 +240,13 @@ A **strategy** says who answers a task and how the answers are combined. Every t
 optional `strategy` (a name from `strategies.yaml`); `fusion strategies list` prints them. Without
 one, the legacy `budget` argument picks the strategy through `budget_strategies`, and the response's
 `routing.strategy` reports which one ran. Switching strategy is a config or argument change, never a
-code change. A strategy lists each model alias once; to ask one model several times (a
-*self-mixture*) use the catalog's sample aliases `claude-haiku-s2`, `claude-haiku-s3`, `gpt-luna-s2`
-and `gpt-luna-s3`, the same models at the same prices that no default panel picks, with a different
-`temperature` (or `reasoning_effort`, for models that ignore sampling parameters) per member.
+code change. A strategy lists each model alias once. (The 0.2.0 temperature-sample aliases
+`claude-haiku-s2` and friends are gone: Claude's API no longer accepts sampling parameters.)
+
+Strategies renamed in 0.3.0 keep their old names as aliases for one release (`strategy_aliases`
+in `strategies.yaml`): `panel-cheap` runs `panel-nano`, `solo-cheap` runs `solo-haiku` and
+`solo-frontier` runs `solo-opus`. A config override written under an old name (for example
+`strategies.panel-cheap.rounds: 2`) is applied to the new strategy; the run reports the new name.
 
 ```yaml
 strategies:
@@ -253,7 +256,7 @@ strategies:
       - model: claude-haiku
       - model: gpt-luna
         role: security_reviewer  # "auto" (default) = the catalog persona, else the task prompt
-        temperature: 0.2         # optional per member
+        temperature: 0.2         # optional; sent only if the catalog sets supports_sampling_params
         reasoning_effort: low    # optional per member
     rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
     aggregator: llm              # llm | digest | vote | best_of | verified (benchmark only)
@@ -280,19 +283,21 @@ budget_strategies:
 
 | Strategy | Runs | Calls per task |
 |----------|------|----------------|
-| `solo-frontier` | Claude Opus 5.5 | 1 |
-| `solo-sol` | GPT-6.1 Sol | 1 |
-| `solo-cheap` | Claude Haiku 4.5 | 1 |
-| `solo-luna` | GPT-6 Luna | 1 |
-| `panel-duo` (default) | Haiku 4.5 + GPT-6 Luna, merged by Haiku 4.5; chosen by the [v0.2.0 study](BENCHMARK_RESULTS.md), with no spare model if one fails | 2 + 1 |
-| `panel-cheap` | Haiku 4.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 4.5 | 3 + 1 |
-| `panel-cheap-strong-synth` | the same panel, merged by Claude Sonnet 5.5 | 3 + 1 |
-| `panel-refine` | the same panel plus one refinement round, merged by Haiku 4.5 | 3 + 3 + 1 |
-| `panel-digest` | the same panel, no synthesis: the answers come back for Claude Code to merge | 3 |
-| `panel-vote` | the same panel, no synthesis: only the points a majority of models backed come back | 3 |
-| `panel-cascade` | the two cheapest of the panel first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
-| `best-of-n-verified` | **benchmark only** (refused elsewhere, it runs code): the same panel each write a patch and the task's visible tests pick one, no synthesis; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 |
+| `solo-<model>` | one model alone: `solo-haiku`, `solo-sonnet`, `solo-opus`, `solo-fable`, `solo-luna`, `solo-terra`, `solo-sol`, `solo-astra`, `solo-flash`, `solo-hydrogen`, `solo-carbon`, `solo-argon` | 1 |
+| `panel-duo` (default) | Claude Haiku 5.5 + GPT-6 Luna, merged by Haiku 5.5; no spare model if one fails | 2 + 1 |
+| `panel-nano` | Haiku 5.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 5.5 | 3 + 1 |
+| `panel-mid` | GPT-6.1 Terra + Gemini 4 Hydrogen + Claude Sonnet 5.5, merged by Sonnet 5.5 | 3 + 1 |
+| `panel-cheap-strong-synth` | the `panel-nano` models, merged by Claude Sonnet 5.5 | 3 + 1 |
+| `panel-refine` | the `panel-nano` models plus one refinement round, merged by Haiku 5.5 | 3 + 3 + 1 |
+| `panel-digest` | the `panel-nano` models, no synthesis: the answers come back for Claude Code to merge | 3 |
+| `panel-vote` | the `panel-nano` models, no synthesis: only the points a majority of models backed come back | 3 |
+| `panel-cascade` | the two cheapest of the `panel-nano` models first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
+| `best-of-n-verified` | **benchmark only** (refused elsewhere, it runs code): the `panel-nano` models each write a patch and the task's visible tests pick one, no synthesis; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 |
 | `panel-local` | Ollama and LM Studio models; falls back to the cloud panel with a warning when none are enabled | 2 + 1 |
+
+Model tiers (`nano` to `premium`) are computed from catalog prices; see
+[COSTS.md](COSTS.md#price-tiers) and `fusion models list`. `solo-opus` is the default baseline;
+`solo-fable`, `solo-astra` and `solo-carbon` are the benchmark-only frontier baselines.
 
 How the fields behave:
 
@@ -364,14 +369,14 @@ Budgets are aliases kept for compatibility:
 
 | Budget | Strategy |
 |--------|----------|
-| `low` | `solo-cheap` |
+| `low` | `solo-haiku` |
 | `medium` | `panel-duo` |
 | `high` | `panel-refine` |
 | `local_only` | `panel-local` |
 
 Override a strategy field the same way as any setting, for example
-`FUSION__STRATEGIES__PANEL-CHEAP__AGGREGATOR_MODEL=claude-sonnet` or
-`fusion --set strategies.panel-cheap.judge=light review-diff ...`. `fusion config validate` checks
+`FUSION__STRATEGIES__PANEL-NANO__AGGREGATOR_MODEL=claude-sonnet` or
+`fusion --set strategies.panel-nano.judge=light review-diff ...`. `fusion config validate` checks
 that every strategy names catalog models.
 
 The panel is intentionally cheap; a stronger aggregator (`panel-cheap-strong-synth`) is the first
@@ -396,7 +401,7 @@ mode is an argument of `Pipeline.run(ctx, mode=...)`, not a global.
 |--|--------|-------------|
 | Secret redaction | on | off, so ground-truth tasks reach the models as written; a study can turn it on |
 | Judge | the strategy's `judge` (default `off`) | the strategy's `judge` |
-| Sampling | provider defaults | temperature `0` and seed `0` (a study sets its own seed per repeat) unless a member sets its own temperature (seeds reach OpenAI, Google and Ollama; Anthropic has none) |
+| Sampling | provider defaults | temperature `0` and seed `0` (a study sets its own seed per repeat) unless a member sets its own temperature; both reach only models whose catalog entry sets `supports_sampling_params` (the local Ollama and LM Studio entries; no packaged cloud model since 0.3.0) |
 | Streaming | off | on for every model that supports it, so time to first token and decode speed are measured |
 | Prompts over a model's context window | trimmed, with a warning | sent as is |
 | Shadow A/B | per `FUSION_SHADOW_MODE` and `shadow_baseline` | never |

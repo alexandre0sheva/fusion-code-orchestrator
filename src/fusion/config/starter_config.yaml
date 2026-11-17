@@ -22,7 +22,7 @@
 
 # Strategies decide which models answer and how the answers are combined (`fusion strategies list`).
 # strategies:
-#   panel-cheap:
+#   panel-nano:
 #     aggregator_model: claude-sonnet   # change one field of a packaged strategy
 #   my-panel:                           # or define your own
 #     kind: panel
@@ -33,7 +33,7 @@
 
 # A hard cap on one strategy: forecast over it -> cheaper form, or refused before any call.
 # strategies:
-#   panel-cheap:
+#   panel-nano:
 #     max_cost_usd: 0.05
 
 # Reuse the answer to an identical request for a while (off by default; in-process memory).

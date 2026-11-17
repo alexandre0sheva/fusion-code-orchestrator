@@ -649,7 +649,7 @@ def report_cmd(
     ] = None,
     baseline: Annotated[
         str | None,
-        typer.Option(help="Arm the others are compared with (default: solo-frontier or the first)"),
+        typer.Option(help="Arm the others are compared with (default: solo-opus or the first)"),
     ] = None,
     margin: _Margin = DEFAULT_MARGIN,
     min_tasks: _MinTasks = DEFAULT_MIN_TASKS,
@@ -899,7 +899,7 @@ def calibrate_judge_cmd(
         raise typer.Exit(2)
     base_seed = seed or 0
     probe = BenchConfig(
-        dataset=Path(dataset), arms=parse_arms("solo-cheap"), max_usd=max_usd or 1.0, mock=mock
+        dataset=Path(dataset), arms=parse_arms("solo-haiku"), max_usd=max_usd or 1.0, mock=mock
     )
     tasks = load_dataset(dataset, split or "dev")
     if not artifacts:
@@ -1119,7 +1119,7 @@ def _generate(
     if not category or not model or max_usd is None:
         err.print("--generate needs --category, --model and --max-usd.")
         raise typer.Exit(2)
-    probe = BenchConfig(dataset=Path("."), arms=parse_arms("solo-cheap"), max_usd=max_usd)
+    probe = BenchConfig(dataset=Path("."), arms=parse_arms("solo-haiku"), max_usd=max_usd)
     try:
         env = build_env(probe, [])
         existing = load_dataset(out) if out.exists() else []

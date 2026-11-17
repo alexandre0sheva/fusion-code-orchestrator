@@ -21,7 +21,7 @@ from _provider_helpers import (
     make_entry,
     openai_ok,
 )
-from fusion.config.catalog import load_catalog
+from fusion.config.catalog import ModelEntry, load_catalog
 from fusion.providers.anthropic import AnthropicProvider
 from fusion.providers.base import ImagePart, Message, ModelRequest
 from fusion.providers.google import GoogleProvider
@@ -166,26 +166,42 @@ def test_provider_sources_never_put_keys_in_query_strings() -> None:
 # ------------------------------------------------------------------------------------- Anthropic
 
 
-async def test_anthropic_sampling_params_follow_the_catalog_flag_not_a_regex() -> None:
+async def test_anthropic_never_sends_sampling_params_even_if_the_catalog_allows_them() -> None:
+    """API version 2026-10-21 answers 400 to temperature/top_p/top_k on every model."""
     catalog = catalog_with(
-        make_entry("future", "anthropic", "claude-test-1-0", supports_sampling_params=False),
-        make_entry("past", "anthropic", "claude-test-0-9", supports_sampling_params=True),
+        make_entry("old", "anthropic", "claude-test-0-9", supports_sampling_params=True),
     )
     transport, seen = always(anthropic_ok())
     provider = anthropic(transport, catalog)
-    for model in ("claude-test-1-0", "claude-test-0-9"):
+    for model in ("claude-test-0-9", "claude-not-in-catalog", OPUS, HAIKU):
         await provider.safe_complete(ModelRequest(model_id=model, user_prompt="x", temperature=0.2))
-    assert "temperature" not in body(seen[0])
-    assert body(seen[1])["temperature"] == 0.2
+    for request in seen:
+        assert not {"temperature", "top_p", "top_k"} & body(request).keys()
 
 
-async def test_anthropic_catalog_models_reject_sampling_for_opus_but_not_haiku() -> None:
+async def test_anthropic_sends_the_current_api_version() -> None:
     transport, seen = always(anthropic_ok())
-    provider = anthropic(transport)
-    await provider.safe_complete(ModelRequest(model_id=OPUS, user_prompt="x", temperature=0.2))
-    await provider.safe_complete(ModelRequest(model_id=HAIKU, user_prompt="x", temperature=0.2))
-    assert "temperature" not in body(seen[0])
-    assert body(seen[1])["temperature"] == 0.2
+    await anthropic(transport).safe_complete(ModelRequest(model_id=OPUS, user_prompt="x"))
+    assert seen[0].headers["anthropic-version"] == "2026-10-21"
+
+
+def test_sampling_params_are_off_by_default_and_for_every_cloud_model() -> None:
+    assert ModelEntry.model_fields["supports_sampling_params"].default is False
+    flagged = [a for a, e in load_catalog().models.items() if e.supports_sampling_params]
+    assert flagged == ["ollama-llama", "lmstudio-local"]  # local servers only
+
+
+async def test_openai_and_google_send_no_sampling_params_for_unknown_models() -> None:
+    transport, seen = always(openai_ok())
+    await openai(transport).safe_complete(
+        ModelRequest(model_id="gpt-unknown", user_prompt="x", temperature=0.4, seed=1)
+    )
+    assert not {"temperature", "seed"} & body(seen[0]).keys()
+    transport, seen = always(google_ok())
+    await google(transport).safe_complete(
+        ModelRequest(model_id="gemini-unknown", user_prompt="x", temperature=0.4, seed=1)
+    )
+    assert not {"temperature", "seed"} & body(seen[0])["generationConfig"].keys()
 
 
 async def test_anthropic_effort_defaults_from_catalog_and_can_be_overridden() -> None:
@@ -339,7 +355,15 @@ async def test_openai_reasoning_models_use_max_completion_tokens_and_effort() ->
 
 
 async def test_openai_models_without_reasoning_keep_legacy_parameters() -> None:
-    catalog = catalog_with(make_entry("old", "openai", "gpt-old", supports_reasoning_effort=False))
+    catalog = catalog_with(
+        make_entry(
+            "old",
+            "openai",
+            "gpt-old",
+            supports_reasoning_effort=False,
+            supports_sampling_params=True,
+        )
+    )
     transport, seen = always(openai_ok())
     await openai(transport, catalog).safe_complete(
         ModelRequest(model_id="gpt-old", user_prompt="x", max_tokens=99, temperature=0.4)
@@ -495,8 +519,14 @@ async def test_lmstudio_uses_openai_compatible_schema_and_images() -> None:
 
 async def test_openai_seed_is_sent_only_where_the_catalog_allows_sampling_params() -> None:
     catalog = catalog_with(
-        make_entry("old", "openai", "gpt-old", supports_reasoning_effort=False),
-        make_entry("new", "openai", "gpt-new", supports_sampling_params=False),
+        make_entry(
+            "old",
+            "openai",
+            "gpt-old",
+            supports_reasoning_effort=False,
+            supports_sampling_params=True,
+        ),
+        make_entry("new", "openai", "gpt-new"),
     )
     transport, seen = always(openai_ok())
     provider = openai(transport, catalog)
@@ -509,8 +539,11 @@ async def test_openai_seed_is_sent_only_where_the_catalog_allows_sampling_params
 
 
 async def test_google_seed_goes_into_generation_config() -> None:
+    catalog = catalog_with(
+        make_entry("seeded", "google", "gemini-seeded", supports_sampling_params=True)
+    )
     transport, seen = always(google_ok())
-    await google(transport).safe_complete(
-        ModelRequest(model_id="gemini-3.8-flash", user_prompt="x", seed=3)
+    await google(transport, catalog).safe_complete(
+        ModelRequest(model_id="gemini-seeded", user_prompt="x", seed=3)
     )
     assert body(seen[0])["generationConfig"]["seed"] == 3

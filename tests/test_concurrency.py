@@ -103,7 +103,7 @@ async def test_a_three_model_panel_takes_as_long_as_its_slowest_model_plus_synth
     tmp_path: Path,
 ) -> None:
     delays = {"mock-fast": 0.12, "mock-security": 0.18, "mock-weak": 0.24, "synthesizer": 0.06}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     panel, synthesis = _spans(result, "panel"), _spans(result, "synthesis")
     assert _overlap(panel)  # all three start together
     # The slowest member sets the pace, not the 540 ms the three would take in a row: the wall time
@@ -208,7 +208,7 @@ async def test_early_return_cancels_stragglers_and_records_them(
     _early(monkeypatch, quorum=2, grace_ms=20)
     delays = {"mock-fast": 0.05, "mock-security": 0.06, "mock-weak": 30.0}
     started = time.perf_counter()
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     assert time.perf_counter() - started < 15.0  # did not wait for the 30 s straggler
     assert result.fanout.early_return and result.fanout.success_count == 2
     straggler = next(c for c in result.fanout.calls if c.model_name == "mock-weak")
@@ -225,7 +225,7 @@ async def test_stragglers_inside_the_grace_window_still_count(
 ) -> None:
     _early(monkeypatch, quorum=2, grace_ms=600)
     delays = {"mock-fast": 0.03, "mock-security": 0.04, "mock-weak": 0.15}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     assert result.fanout.success_count == 3 and not result.fanout.early_return
 
 
@@ -234,7 +234,7 @@ async def test_early_return_never_stops_before_the_minimum_successful_responses(
 ) -> None:
     _early(monkeypatch, quorum=1, grace_ms=0)  # asks for 1, but min_successful_responses is 2
     delays = {"mock-fast": 0.02, "mock-security": 0.12, "mock-weak": 30.0}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     assert {p.model_name for p in result.panel_results} == {"mock-fast", "mock-security"}
 
 
@@ -264,7 +264,7 @@ async def test_a_slow_member_is_hedged_to_another_panel_model(
     monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "60")
     delays = {"mock-fast": 30.0, "mock-security": 0.02}
     started = time.perf_counter()
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="solo-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="solo-haiku"))
     assert time.perf_counter() - started < 15.0  # did not wait for the 30 s member
     assert result.fanout.hedged == {"mock-fast": "mock-security"}
     assert [p.model_name for p in result.panel_results] == ["mock-security"]  # who really answered
@@ -279,7 +279,7 @@ async def test_no_hedge_when_the_member_answers_in_time(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "500")
-    result = await _pipe(tmp_path, Scripted(0.02)).run(_ctx(strategy="solo-cheap"))
+    result = await _pipe(tmp_path, Scripted(0.02)).run(_ctx(strategy="solo-haiku"))
     assert result.fanout.hedged == {}
     assert len([r for r in result.ledger.records if r.stage == "panel"]) == 1
 
@@ -289,7 +289,7 @@ async def test_a_hedge_with_nobody_left_to_ask_says_so(
 ) -> None:
     monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "40")
     delays = {"mock-fast": 0.2, "mock-security": 0.01, "mock-weak": 0.01}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     assert any("no other panel model was available" in w for w in result.warnings)
     assert result.fanout.success_count == 3  # the slow one simply finished
 
@@ -307,7 +307,7 @@ async def test_per_answer_judge_calls_run_at_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _judge(monkeypatch)
-    result = await _pipe(tmp_path, Scripted({"judge": 0.1})).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted({"judge": 0.1})).run(_ctx(strategy="panel-nano"))
     judges = _spans(result, "judge")
     assert len(judges) == 3
     assert _overlap(judges)  # one wave, not three in a row
@@ -319,7 +319,7 @@ async def test_the_judge_runs_alongside_synthesis_when_synthesis_does_not_need_i
 ) -> None:
     _judge(monkeypatch)
     delays = {"judge": 0.25, "synthesizer": 0.2}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     synthesis = _spans(result, "synthesis")[0]
     judges = _spans(result, "judge")
     assert synthesis["start_ms"] < min(_ends(judges))  # they overlap
@@ -336,7 +336,7 @@ async def test_synthesis_waits_for_the_judge_when_it_reads_its_scores(
 ) -> None:
     _judge(monkeypatch, feeds=True)
     spy = Scripted({"judge": 0.15, "synthesizer": 0.05})
-    result = await _pipe(tmp_path, spy).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, spy).run(_ctx(strategy="panel-nano"))
     synthesis = _spans(result, "synthesis")[0]
     assert synthesis["start_ms"] >= max(_ends(_spans(result, "judge"))) - 5
     prompt = next(r for r in spy.requests if r.metadata.get("role") == "synthesizer").user_prompt
@@ -371,7 +371,7 @@ async def test_a_failing_stage_cancels_its_concurrent_sibling_and_raises_unchang
 
     started = time.perf_counter()
     with pytest.raises(ProviderError, match="down"):  # not wrapped in an ExceptionGroup
-        await _pipe(tmp_path, BrokenSynth({"judge": 5.0})).run(_ctx(strategy="panel-cheap"))
+        await _pipe(tmp_path, BrokenSynth({"judge": 5.0})).run(_ctx(strategy="panel-nano"))
     assert time.perf_counter() - started < 2.0  # did not wait for the 5s judges
     await asyncio.sleep(0)
     assert [t for t in asyncio.all_tasks() if t is not asyncio.current_task()] == []
@@ -408,7 +408,7 @@ async def _run_gated(pipe: Any, ctx: PipelineContext) -> Any:
 
 async def test_the_shadow_baseline_runs_alongside_the_panel_not_after_it(tmp_path: Path) -> None:
     pipe = _pipe(tmp_path, GatedShadow({"mock-fast": 0.05, "mock-security": 0.05}))
-    result = await _run_gated(pipe, _ctx(strategy="panel-cheap", shadow_baseline=True))
+    result = await _run_gated(pipe, _ctx(strategy="panel-nano", shadow_baseline=True))
     baseline = next(r for r in result.ledger.records if r.stage == "shadow_baseline")
     panel = _spans(result, "panel")
     assert baseline.started_at_ms < min(_ends(panel))  # starts with the panel, not after it
@@ -451,7 +451,7 @@ async def test_a_run_that_halts_after_the_panel_cancels_the_shadow_call(tmp_path
 
     started = time.perf_counter()
     result = await _pipe(tmp_path, Down({"shadow_baseline": 5.0})).run(
-        _ctx(strategy="panel-cheap", shadow_baseline=True)
+        _ctx(strategy="panel-nano", shadow_baseline=True)
     )
     assert "quorum was not met" in result.final_answer
     assert time.perf_counter() - started < 2.0
@@ -471,7 +471,7 @@ async def test_a_failed_run_does_not_leave_the_shadow_call_running(tmp_path: Pat
 
     with pytest.raises(ProviderError):
         await _pipe(tmp_path, BrokenSynth({"shadow_baseline": 5.0})).run(
-            _ctx(strategy="panel-cheap", shadow_baseline=True)
+            _ctx(strategy="panel-nano", shadow_baseline=True)
         )
     await asyncio.sleep(0)
     assert [t for t in asyncio.all_tasks() if t is not asyncio.current_task()] == []
@@ -582,7 +582,7 @@ async def test_every_call_records_when_it_started_on_the_runs_own_clock() -> Non
 
 async def test_critical_path_is_the_end_of_the_last_fusion_call(tmp_path: Path) -> None:
     delays = {"mock-fast": 0.05, "mock-security": 0.1, "mock-weak": 0.1, "synthesizer": 0.05}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-cheap"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
     spans = [s for s in result.ledger.timeline() if "shadow" not in str(s["stage"])]
     metrics = result.task_metrics
     assert metrics is not None

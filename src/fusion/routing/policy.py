@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 from pydantic import BaseModel, Field
 
+from fusion.config.catalog import PriceTier
 from fusion.config.layers import ConfigError
 from fusion.config.loader import RoutingPoliciesConfig, RoutingPolicyEntry, load_routing_policies
 from fusion.routing.budget import BudgetLevel
@@ -22,7 +23,7 @@ if TYPE_CHECKING:  # orchestration imports routing, so these are imported lazily
 Complexity = Literal["low", "medium", "high"]
 Risk = Literal["low", "medium", "high"]
 
-_COST_RANK = {"low": 0, "medium": 1, "high": 2}
+_COST_RANK = {tier: rank for rank, tier in enumerate(get_args(PriceTier))}
 
 
 class RoutingDecision(BaseModel):
@@ -108,7 +109,7 @@ class Router:
         if strategy.judge != "off":
             used.append(judge_model)
         cost_tiers = [
-            self._registry.get(name).cost_tier for name in used if name in self._registry.models
+            self._registry.get(name).price_tier() for name in used if name in self._registry.models
         ]
         return RoutingDecision(
             task_type=task_type,
@@ -119,7 +120,7 @@ class Router:
             judge_model=judge_model,
             synthesizer_model=synthesizer_model,
             reasons=reasons,
-            estimated_cost_tier=max(cost_tiers, key=lambda t: _COST_RANK[t], default="low"),
+            estimated_cost_tier=max(cost_tiers, key=lambda t: _COST_RANK[t], default="nano"),
             warnings=warnings,
         )
 

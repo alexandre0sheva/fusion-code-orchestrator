@@ -54,14 +54,15 @@ def test_ablation_expands_to_the_arms_the_roadmap_lists() -> None:
     assert {"size-1", "size-2", "size-3", "size-5"} <= set(arms)  # panel size 1 / 2 / 3 / 5
     assert {"refine-on", "synth-strong"} <= set(arms)  # refinement, cheap vs strong synthesizer
     assert {"cascade-0.5", "cascade-0.7"} <= set(arms)  # the threshold sweep
-    assert {"self-haiku", "self-luna"} <= set(arms)  # homogeneous self-mixtures
+    # Self-mixtures by temperature are gone (Claude takes no sampling parameters; Task 7 lenses).
+    assert not [arm for arm in arms if arm.startswith("self-")]
     assert len(arms) == len(set(arms))
 
 
 def test_headline_has_the_six_arms_and_is_a_study_on_the_held_out_split() -> None:
     suite = load_suite("headline")
     assert suite.arms == [
-        "solo-frontier",
+        "solo-opus",
         "solo-sol",
         "solo-haiku",
         "solo-luna",
@@ -138,7 +139,7 @@ def test_a_suite_file_can_be_given_by_path_and_a_wrong_name_lists_the_real_ones(
 ) -> None:
     mine = tmp_path / "mine.yaml"
     mine.write_text(
-        "description: x\nstage: s\ndataset: toy\narms: [{name: a, strategy: solo-cheap}]\n"
+        "description: x\nstage: s\ndataset: toy\narms: [{name: a, strategy: solo-haiku}]\n"
     )
     assert load_suite(str(mine)).arms == ["a"]
     with pytest.raises(ConfigError, match="ablation, headline, latency"):
@@ -161,10 +162,10 @@ def test_the_planner_says_each_suite_fits_its_budget(fusion_home: Path, name: st
 
 def test_an_option_on_the_command_line_beats_the_suite(fusion_home: Path) -> None:
     result = runner.invoke(
-        app, ["bench", "plan", "--suite", "headline", "--repeats", "1", "--arms", "solo-cheap"]
+        app, ["bench", "plan", "--suite", "headline", "--repeats", "1", "--arms", "solo-haiku"]
     )
     assert result.exit_code == 0 and "1 repeats" in result.output.replace("repeat ", "repeats ")
-    assert "solo-frontier" not in result.output
+    assert "solo-opus" not in result.output
 
 
 # ---------------------------------------------------------------------------------- the CLI
@@ -249,7 +250,7 @@ def test_limit_thins_the_quota_evenly_and_no_quota_changes_nothing() -> None:
 
 
 def test_a_config_rejects_a_quota_it_cannot_use(tmp_path: Path) -> None:
-    base: dict[str, Any] = {"dataset": tmp_path, "arms": [{"name": "a", "strategy": "solo-cheap"}]}
+    base: dict[str, Any] = {"dataset": tmp_path, "arms": [{"name": "a", "strategy": "solo-haiku"}]}
     with pytest.raises(ValueError, match="at least 1"):
         BenchConfig(**base, max_usd=1, quota={"debugging": 0})
     with pytest.raises(ValueError, match="quota"):
@@ -258,7 +259,7 @@ def test_a_config_rejects_a_quota_it_cannot_use(tmp_path: Path) -> None:
 
 def test_a_run_uses_the_quota_tasks_and_records_them(tmp_path: Path) -> None:
     data = write_dataset(tmp_path / "data.jsonl", count=8)
-    cfg = config(data, arms="solo-cheap", repeats=1, quota={"code_review": 3})
+    cfg = config(data, arms="solo-haiku", repeats=1, quota={"code_review": 3})
     run = run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "r"), run_id="q1"))
     assert run.total_jobs == 3 and len({i.task_id for i in run.items}) == 3
 
@@ -268,7 +269,7 @@ def test_a_run_uses_the_quota_tasks_and_records_them(tmp_path: Path) -> None:
 
 def test_the_stop_line_keeps_a_reserve_below_the_ledgers_cap(tmp_path: Path) -> None:
     big = write_dataset(tmp_path / "big.jsonl", count=12)
-    cfg = config(big, arms="panel-cheap", repeats=1, concurrency=1, mock=False)
+    cfg = config(big, arms="panel-nano", repeats=1, concurrency=1, mock=False)
     total = run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "ref"), run_id="ref")).spent_usd
     ledger = SpendLedger(tmp_path / "live" / "spend.json", cap_usd=total * 10)  # plenty
     stopped_cfg = cfg.model_copy(update={"spend_stop_usd": total / 2})
@@ -280,7 +281,7 @@ def test_the_stop_line_keeps_a_reserve_below_the_ledgers_cap(tmp_path: Path) -> 
 
 def test_the_stop_line_counts_what_earlier_runs_spent(tmp_path: Path) -> None:
     data = write_dataset(tmp_path / "data.jsonl", count=4)
-    cfg = config(data, arms="solo-cheap", repeats=1, mock=False, spend_stop_usd=5.0)
+    cfg = config(data, arms="solo-haiku", repeats=1, mock=False, spend_stop_usd=5.0)
     ledger = SpendLedger(tmp_path / "spend.json", cap_usd=20.0)
     ledger.append(4.9999, task="earlier", purpose="a previous run")
     env = sim_env(cfg, tmp_path / "r", spend=ledger)
@@ -291,7 +292,7 @@ def test_the_stop_line_counts_what_earlier_runs_spent(tmp_path: Path) -> None:
 def test_the_stop_line_keeps_the_ledgers_budget(tmp_path: Path) -> None:
     """The runner re-creates the ledger with the lower cap; that must not switch budgets."""
     data = write_dataset(tmp_path / "data.jsonl", count=4)
-    cfg = config(data, arms="solo-cheap", repeats=1, mock=False, spend_stop_usd=5.0)
+    cfg = config(data, arms="solo-haiku", repeats=1, mock=False, spend_stop_usd=5.0)
     ledger = SpendLedger(tmp_path / "spend.json", budget="v0.2.0")
     ledger.append(4.9999, task="earlier", purpose="a previous run")
     run = run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "r", spend=ledger), run_id="s3"))
@@ -318,7 +319,7 @@ def _stage(base: FanoutConfig, strategy: Any) -> PanelStage:
 def test_a_strategys_fanout_controls_sit_on_top_of_the_routing_policy() -> None:
     base = FanoutConfig(max_concurrency=3, hedge_after_ms=9000)
     book = load_strategy_book()
-    plain = book.get("panel-cheap")
+    plain = book.get("panel-nano")
     early = plain.model_copy(
         update={"fanout": FanoutOverride(early_return=EarlyReturn(quorum=3, grace_ms=250))}
     )
@@ -342,20 +343,3 @@ def test_unknown_fanout_keys_in_a_strategy_are_rejected() -> None:
                 "fanout": {"max_concurrency": 2},
             }
         )
-
-
-# ------------------------------------------------------------------------ sample aliases
-
-
-@pytest.mark.parametrize("base", ["claude-haiku", "gpt-luna"])
-def test_sample_aliases_are_the_same_model_at_the_same_price_but_never_chosen_for_a_panel(
-    base: str,
-) -> None:
-    catalog = load_catalog()
-    for suffix in ("s2", "s3"):
-        clone = catalog.models[f"{base}-{suffix}"]
-        original = catalog.models[base]
-        assert (clone.provider, clone.model_id) == (original.provider, original.model_id)
-        assert clone.price_at() == original.price_at()
-        assert clone.roles == [] and clone.enabled
-        assert clone.alias != original.alias

@@ -45,7 +45,7 @@ class Tracked(Scripted):
 
 async def test_cancelling_a_run_cancels_every_provider_call_in_flight(tmp_path: Path) -> None:
     provider = Tracked(delay={"panel": 30.0})
-    task = asyncio.create_task(pipeline(tmp_path, provider).run(context(strategy="panel-cheap")))
+    task = asyncio.create_task(pipeline(tmp_path, provider).run(context(strategy="panel-nano")))
     async with asyncio.timeout(10):
         while provider.started < 3:
             await asyncio.sleep(0.01)
@@ -101,7 +101,7 @@ async def test_a_slow_synthesis_returns_the_panel_digest_with_a_warning(tmp_path
     pipe = pipeline(tmp_path, provider)
     pipe.soft_timeout_s = 0.5
     async with asyncio.timeout(20):
-        result = await pipe.run(context(strategy="panel-cheap"))
+        result = await pipe.run(context(strategy="panel-nano"))
     assert result.partial and result.halt_reason is None
     assert result.final_answer.startswith("## Panel digest")
     assert any(w.startswith("Soft time limit of 0s reached") for w in result.warnings)
@@ -125,8 +125,8 @@ async def test_a_partial_result_is_not_cached(
     provider = Tracked(delay={"synthesizer": 30.0})
     pipe = pipeline(tmp_path, provider)
     pipe.soft_timeout_s = 0.5
-    first = await pipe.run(context(strategy="panel-cheap"))
-    second = await pipe.run(context(strategy="panel-cheap"))
+    first = await pipe.run(context(strategy="panel-nano"))
+    second = await pipe.run(context(strategy="panel-nano"))
     assert first.partial and second.partial and not second.cache_hit
 
 
@@ -135,7 +135,7 @@ async def test_with_no_answers_yet_the_run_stops_and_says_why(tmp_path: Path) ->
     pipe = pipeline(tmp_path, provider)
     pipe.soft_timeout_s = 0.3
     async with asyncio.timeout(20):
-        result = await pipe.run(context(strategy="panel-cheap"))
+        result = await pipe.run(context(strategy="panel-nano"))
     assert result.partial and result.halt_reason == "timeout"
     assert "No answer was ready" in result.final_answer
     assert provider.cancelled == 3 and provider.finished == 0
@@ -144,7 +144,7 @@ async def test_with_no_answers_yet_the_run_stops_and_says_why(tmp_path: Path) ->
 async def test_no_limit_means_the_run_waits(tmp_path: Path) -> None:
     pipe = pipeline(tmp_path, Scripted(delay={"synthesizer": 0.6}))
     assert pipe.soft_timeout_s is None
-    result = await pipe.run(context(strategy="panel-cheap"))
+    result = await pipe.run(context(strategy="panel-nano"))
     assert not result.partial
 
 
@@ -153,7 +153,7 @@ async def test_the_limit_never_applies_to_a_benchmark_run(tmp_path: Path) -> Non
 
     pipe = pipeline(tmp_path, Scripted(delay={"synthesizer": 0.6}))
     pipe.soft_timeout_s = 0.2
-    result = await pipe.run(context(strategy="panel-cheap"), mode=Mode.BENCHMARK)
+    result = await pipe.run(context(strategy="panel-nano"), mode=Mode.BENCHMARK)
     assert not result.partial
 
 
@@ -165,7 +165,7 @@ async def test_a_per_call_cap_that_cannot_be_met_stops_before_any_model_is_calle
 ) -> None:
     provider = Scripted()
     pipe = pipeline(tmp_path, provider, priced=True)
-    result = await pipe.run(context(strategy="panel-cheap", max_cost_usd=1e-9))
+    result = await pipe.run(context(strategy="panel-nano", max_cost_usd=1e-9))
     assert result.halt_reason == "budget" and not provider.requests
     assert "Cost cap not met" in result.final_answer
 
@@ -181,7 +181,7 @@ async def test_a_tight_cap_shifts_the_strategy_down_with_a_warning(tmp_path: Pat
     """The priced mock panel is forecast at about $0.06; one model alone at about $0.004."""
     provider = Scripted()
     pipe = pipeline(tmp_path, provider, priced=True)
-    result = await pipe.run(context(strategy="panel-cheap", max_cost_usd=0.01))
+    result = await pipe.run(context(strategy="panel-nano", max_cost_usd=0.01))
     assert result.halt_reason is None and len(result.routing.selected_panel) == 1
     assert any("over its $0.0100 cap" in w for w in result.warnings)
     assert len(provider.models_called("panel")) == 1
@@ -191,11 +191,11 @@ async def test_the_lower_of_the_call_cap_and_the_strategy_cap_applies(tmp_path: 
     from fusion.orchestration.context import RunState
 
     pipe = pipeline(tmp_path, Scripted(), priced=True)
-    strategy = pipe.deps.routing.strategies.get("panel-cheap")
+    strategy = pipe.deps.routing.strategies.get("panel-nano")
     capped = strategy.model_copy(update={"max_cost_usd": 0.05})
-    pipe.deps.routing.strategies.strategies["panel-cheap"] = capped
+    pipe.deps.routing.strategies.strategies["panel-nano"] = capped
     for call_cap, expected in ((0.2, 0.05), (0.01, 0.01)):
-        state = RunState.start(context(strategy="panel-cheap", max_cost_usd=call_cap), pipe.deps)
+        state = RunState.start(context(strategy="panel-nano", max_cost_usd=call_cap), pipe.deps)
         assert state.strategy is not None and state.strategy.max_cost_usd == expected
 
 
@@ -242,7 +242,7 @@ async def test_the_http_transport_serves_the_same_tools_on_localhost(tmp_path: P
                     async with Client(f"http://127.0.0.1:{port}/mcp") as client:
                         tools = {t.name for t in await client.list_tools()}
                         result = await client.call_tool(
-                            "fusion_ask", {"input": {"prompt": PROMPT, "strategy": "solo-cheap"}}
+                            "fusion_ask", {"input": {"prompt": PROMPT, "strategy": "solo-haiku"}}
                         )
                     break
                 except (OSError, RuntimeError):

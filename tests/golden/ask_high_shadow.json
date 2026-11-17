@@ -546,7 +546,7 @@
   "risks": [],
   "routing": {
     "complexity": "low",
-    "estimated_cost_tier": "low",
+    "estimated_cost_tier": "nano",
     "judge_model": "mock-judge",
     "reasons": [
       "Applied strategy panel-refine"

@@ -548,7 +548,7 @@ async def test_unstructured_panel_answers_are_flagged_and_lower_confidence(tmp_p
 
 
 async def test_one_answer_is_flagged_low_information_in_the_output(tmp_path: Path) -> None:
-    result = await _pipe(tmp_path).run(_ctx(strategy="solo-cheap"))
+    result = await _pipe(tmp_path).run(_ctx(strategy="solo-haiku"))
     assert result.agreement is not None and result.agreement.low_information
     assert result.final_eval.confidence <= 0.5
     assert any("low-information" in w for w in result.warnings)
@@ -589,21 +589,21 @@ async def test_every_tool_still_fills_its_fields_when_there_is_no_synthesizer(
     assert review["critical_findings"] and review["recommended_changes"] and review["test_plan"]
     assert review["unique_insights"]
     debug = await tools.fusion_debug_error(
-        s.DebugErrorInput(error_message=LONG, strategy="solo-cheap")
+        s.DebugErrorInput(error_message=LONG, strategy="solo-haiku")
     )
     assert debug["ranked_hypotheses"] and {"hypothesis", "confidence", "evidence"} <= set(
         debug["ranked_hypotheses"][0]
     )
     assert debug["most_likely_causes"] and debug["verification_steps"]
     decide = await tools.fusion_decide_architecture(
-        s.DecideArchitectureInput(question=LONG, strategy="solo-cheap")
+        s.DecideArchitectureInput(question=LONG, strategy="solo-haiku")
     )
     assert decide["recommended_option"] and decide["test_strategy"]
     plan = await tools.fusion_plan_feature(
-        s.PlanFeatureInput(feature_description=LONG, strategy="solo-cheap")
+        s.PlanFeatureInput(feature_description=LONG, strategy="solo-haiku")
     )
     assert plan["implementation_sequence"] and plan["tests_to_add"]
-    ask = await tools.fusion_ask(McpAskInput(prompt=LONG, strategy="solo-cheap"))
+    ask = await tools.fusion_ask(McpAskInput(prompt=LONG, strategy="solo-haiku"))
     assert ask["answer"] and ask["suggested_actions"]
     assert 0.0 <= ask["confidence"] <= 0.5
     evaluation = await tools.fusion_eval_answer(s.EvalAnswerInput(question=LONG, answer=LONG))
@@ -651,7 +651,7 @@ async def test_display_text_is_never_cut_at_a_fixed_length(tmp_path: Path) -> No
     ask.deps.providers["mock"] = Long(latency_ms=0.0)
     for detail in ("compact", "full"):
         out = await ask.ask(
-            FusionAskInput(prompt="Explain it at length", strategy="solo-cheap", detail=detail)
+            FusionAskInput(prompt="Explain it at length", strategy="solo-haiku", detail=detail)
         )
         assert long_summary.strip() in out.display_markdown
     source = (

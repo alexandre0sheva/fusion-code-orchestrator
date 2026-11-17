@@ -42,7 +42,7 @@ __all__ = [
 ]
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
-_STRATEGY_KEYS = ("strategies", "budget_strategies")
+_STRATEGY_KEYS = ("strategies", "budget_strategies", "strategy_aliases")
 # Aggregators that make no model call, so they take no aggregator_model.
 NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest", "verified"})
 
@@ -219,14 +219,30 @@ def member_overrides(member: PanelMember | None) -> dict[str, Any]:
 
 
 class StrategyBook:
-    """The configured strategies and the budget-to-strategy table."""
+    """The configured strategies, the budget-to-strategy table and old names of strategies."""
 
-    def __init__(self, strategies: Mapping[str, Strategy], budget_map: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        strategies: Mapping[str, Strategy],
+        budget_map: Mapping[str, str],
+        aliases: Mapping[str, str] | None = None,
+    ) -> None:
         self.strategies = dict(strategies)
         self.budget_map = dict(budget_map)
+        # An alias is a strategy's previous name, kept working for one release.
+        self.aliases = {
+            old: new for old, new in (aliases or {}).items() if old not in self.strategies
+        }
         known = sorted(self.strategies)
+        for old, new in self.aliases.items():
+            if new not in self.strategies:
+                msg = (
+                    f"strategy_aliases.{old} names unknown strategy '{new}'; "
+                    f"defined strategies: {', '.join(known)}"
+                )
+                raise ConfigError(msg)
         for budget, name in self.budget_map.items():
-            if name not in self.strategies:
+            if name not in self.strategies and name not in self.aliases:
                 msg = (
                     f"budget_strategies.{budget} names unknown strategy '{name}'; "
                     f"defined strategies: {', '.join(known)}"
@@ -239,8 +255,11 @@ class StrategyBook:
     def get(self, name: str) -> Strategy:
         if name in self.strategies:
             return self.strategies[name]
-        close = difflib.get_close_matches(name, self.names(), n=1)
-        hint = f"; did you mean '{close[0]}'?" if close else ""
+        if name in self.aliases:
+            return self.strategies[self.aliases[name]]
+        close = difflib.get_close_matches(name, [*self.names(), *self.aliases], n=1)
+        suggestion = self.aliases.get(close[0], close[0]) if close else None
+        hint = f"; did you mean '{suggestion}'?" if suggestion else ""
         msg = f"Unknown strategy '{name}'{hint} Defined strategies: {', '.join(self.names())}"
         raise ConfigError(msg)
 
@@ -259,17 +278,37 @@ class StrategyBook:
         return {alias for strategy in self.strategies.values() for alias in strategy.models}
 
 
+def _merge(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 class _StrategyConfig(BaseModel):
     strategies: dict[str, Strategy]
     budget_strategies: dict[str, str] = Field(default_factory=dict)
+    strategy_aliases: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
     def _name_from_key(cls, data: Any) -> Any:
         if isinstance(data, dict) and isinstance(data.get("strategies"), dict):
+            strategies = dict(data["strategies"])
+            # A user override written under a strategy's old name ("panel-cheap: {rounds: 2}",
+            # no kind of its own) is applied to the renamed strategy.
+            for old, new in (data.get("strategy_aliases") or {}).items():
+                partial = strategies.get(old)
+                target = strategies.get(new)
+                if isinstance(partial, dict) and "kind" not in partial and isinstance(target, dict):
+                    strategies[new] = _merge(target, partial)
+                    del strategies[old]
             named = {
                 key: {**value, "name": key} if isinstance(value, dict) else value
-                for key, value in data["strategies"].items()
+                for key, value in strategies.items()
             }
             return {**data, "strategies": named}
         return data
@@ -290,7 +329,7 @@ def load_strategy_book(path: Path | None = None) -> StrategyBook:
         config = _StrategyConfig.model_validate(raw)
     except ValidationError as exc:
         raise format_validation_error(exc, section_prefix="", resolved=resolved) from exc
-    return StrategyBook(config.strategies, config.budget_strategies)
+    return StrategyBook(config.strategies, config.budget_strategies, config.strategy_aliases)
 
 
 def mock_strategy_book(book: StrategyBook, registry: ModelRegistry) -> StrategyBook:
@@ -313,4 +352,4 @@ def mock_strategy_book(book: StrategyBook, registry: ModelRegistry) -> StrategyB
                 "aggregator_model": synthesizer if strategy.aggregator_model else None,
             }
         )
-    return StrategyBook(mapped, book.budget_map)
+    return StrategyBook(mapped, book.budget_map, book.aliases)

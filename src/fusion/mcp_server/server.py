@@ -60,7 +60,7 @@ _TEXT_ONLY = (
     "is slower than one model) and costs cents; the response states the cost."
 )
 _VERIFY = (
-    _TEXT_ONLY + " Use strategy='solo-cheap' for the quickest answer or max_cost_usd to cap spend."
+    _TEXT_ONLY + " Use strategy='solo-haiku' for the quickest answer or max_cost_usd to cap spend."
 )
 
 ASK_DESCRIPTION = (

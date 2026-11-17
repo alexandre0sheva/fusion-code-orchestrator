@@ -81,9 +81,10 @@ def test_high_risk_can_be_allowed_to_exit_early() -> None:
 def test_members_run_cheapest_first_by_catalog_price_and_ties_keep_their_order() -> None:
     catalog = load_catalog()
     pricing = PricingRegistry(catalog)
-    members = [PanelMember(model=a) for a in ("claude-haiku", "gpt-luna", "gemini-flash")]
+    members = [PanelMember(model=a) for a in ("gemini-flash", "claude-haiku", "gpt-luna")]
     ordered = cheapest_first(members, catalog.models, pricing)
-    assert [m.model for m in ordered] == ["gpt-luna", "gemini-flash", "claude-haiku"]
+    # Haiku 5.5 and Luna cost the same ($0.10 / $0.50): the tie keeps their order.
+    assert [m.model for m in ordered] == ["claude-haiku", "gpt-luna", "gemini-flash"]
     free = [PanelMember(model=a) for a in (WEAK, FAST, SECURITY)]
     tied = cheapest_first(free, catalog.models, pricing)
     assert [m.model for m in tied] == [WEAK, FAST, SECURITY]

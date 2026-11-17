@@ -251,7 +251,7 @@ def test_answer_trees_apply_the_patch_to_the_tasks_files() -> None:
 @pytest.fixture
 def study(tmp_path: Path):
     dataset = dataset_of(tmp_path, PAGE, FAST)
-    cfg = config(dataset, arms="solo-cheap,panel-cheap", repeats=1, limit=2)
+    cfg = config(dataset, arms="solo-haiku,panel-nano", repeats=1, limit=2)
     env = sim_env(cfg, tmp_path / "results")
     run = run_virtual(run_bench(cfg, env=env, run_id="art"))
     return cfg, env, run, tmp_path / "results"
@@ -275,7 +275,7 @@ def test_a_mock_run_scores_a_frontend_and_a_performance_task_with_evidence_attac
 
 def test_measuring_is_never_added_to_the_arms_time_or_cost(study) -> None:
     _, _, run, _ = study
-    solo = [i for i in run.items if i.arm == "solo-cheap"]
+    solo = [i for i in run.items if i.arm == "solo-haiku"]
     for item in solo:
         # One simulated call is all the arm took; the evaluators' wall time is a separate number.
         assert item.metrics.calls == 1 and item.metrics.seconds_to_complete < 30
@@ -307,11 +307,11 @@ def test_a_study_with_agentic_judges_stores_the_trail_and_reports_the_gate(
     root = tmp_path / "results"
     cfg = config(
         dataset,
-        arms="solo-cheap",
+        arms="solo-haiku",
         repeats=1,
         judge_models=["gemini-flash", "gpt-sol", "claude-sonnet"],
     )
-    # solo-cheap is served by one provider; the judges from the others remain.
+    # solo-haiku is served by one provider; the judges from the others remain.
     run = run_virtual(run_bench(cfg, env=sim_env(cfg, root), run_id="judged"))
     item = run.items[0]
     assert (

@@ -343,7 +343,7 @@ def bench_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
                     "-d",
                     "v1",
                     "--arms",
-                    "solo-cheap,panel-duo",
+                    "solo-haiku,panel-duo",
                     "--repeats",
                     "1",
                     "--mock",
@@ -371,7 +371,7 @@ def test_benchmark_runs_are_listed(bench_client: TestClient) -> None:
         and one["status"] == "completed"
         and one["done_jobs"] == one["total_jobs"]
     )
-    assert one["arms"] == ["solo-cheap", "panel-duo"]
+    assert one["arms"] == ["solo-haiku", "panel-duo"]
 
 
 def test_the_benchmark_report_is_embedded_as_a_self_contained_page(
@@ -392,7 +392,7 @@ def test_the_benchmark_report_is_embedded_as_a_self_contained_page(
 def test_two_benchmark_runs_can_be_compared(bench_client: TestClient) -> None:
     result = get(bench_client, "/api/bench/compare?before=sim-a&after=sim-b")
     assert result["before"] == "sim-a" and result["shared_tasks"] > 0
-    assert {c["arm"] for c in result["changes"]} == {"solo-cheap", "panel-duo"}
+    assert {c["arm"] for c in result["changes"]} == {"solo-haiku", "panel-duo"}
     change = result["changes"][0]
     assert "mean_quality" in change["before"] and change["comparison"]["verdicts"]
 
@@ -417,7 +417,7 @@ def test_unknown_or_hostile_benchmark_ids_are_404(bench_client: TestClient) -> N
 def test_config_lists_strategies_models_and_staleness(client: TestClient) -> None:
     config = get(client, "/api/config")
     names = {s["name"] for s in config["strategies"]}
-    assert {"panel-duo", "solo-cheap"} <= names and config["default_strategy"] in names
+    assert {"panel-duo", "solo-haiku"} <= names and config["default_strategy"] in names
     assert all("mock" not in m["provider"] for m in config["models"])
     assert all(m["alias"] and "input_per_1m" in m for m in config["models"])
     assert isinstance(config["warnings"], list) and config["layers"][0]["name"]

@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from fusion.config.catalog import Catalog, CostTier, ModelEntry, load_catalog
+from fusion.config.catalog import Catalog, ModelEntry, PriceTier, load_catalog
 from fusion.config.layers import (
     ConfigError,
     ResolvedConfig,
@@ -21,7 +21,7 @@ __all__ = [
     "BaselineEntry",
     "BudgetConfig",
     "CacheConfig",
-    "CostTier",
+    "PriceTier",
     "EarlyReturn",
     "FanoutConfig",
     "ModelEntry",

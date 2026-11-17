@@ -122,7 +122,7 @@ def _halt_everything(env: Any) -> None:
 
 def test_resume_can_run_halted_jobs_again_and_the_report_says_so(tmp_path: Path) -> None:
     data = write_dataset(tmp_path / "data.jsonl", count=4)
-    cfg = config(data, arms="panel-cheap", repeats=1)
+    cfg = config(data, arms="panel-nano", repeats=1)
     env = sim_env(cfg, tmp_path / "r")
     _halt_everything(env)
     first = run_virtual(run_bench(cfg, env=env, run_id="r1"))
@@ -136,7 +136,7 @@ def test_resume_can_run_halted_jobs_again_and_the_report_says_so(tmp_path: Path)
     )
     assert retried.resumed_jobs == 0 and {i.status for i in retried.items} == {"completed"}
     store = BenchStore(tmp_path / "r")
-    assert store.retried_after_halt("r1") == {"panel-cheap": 4}
+    assert store.retried_after_halt("r1") == {"panel-nano": 4}
     record = store.get_run("r1")
     assert record is not None
     report = build_report(
@@ -146,12 +146,12 @@ def test_resume_can_run_halted_jobs_again_and_the_report_says_so(tmp_path: Path)
         rules=FAST,
     )
     assert any("4 job(s) halted on their first attempt" in n for n in report.notes)
-    assert any("panel-cheap (4)" in n for n in report.notes)
+    assert any("panel-nano (4)" in n for n in report.notes)
 
 
 def test_a_run_nobody_retried_has_no_retry_note(tmp_path: Path) -> None:
     data = write_dataset(tmp_path / "data.jsonl", count=3)
-    cfg = config(data, arms="solo-cheap", repeats=1)
+    cfg = config(data, arms="solo-haiku", repeats=1)
     run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "r"), run_id="r1"))
     assert BenchStore(tmp_path / "r").retried_after_halt("r1") == {}
 
@@ -165,7 +165,7 @@ def test_the_resume_command_has_the_option(fusion_home: Path) -> None:
             "-d",
             "toy",
             "--arms",
-            "solo-cheap",
+            "solo-haiku",
             "--mock",
             "--limit",
             "2",
@@ -188,7 +188,7 @@ def test_the_default_strategy_is_the_two_model_panel_the_study_chose() -> None:
     duo = book.get("panel-duo")
     assert [m.model for m in duo.members] == ["claude-haiku", "gpt-luna"]
     assert duo.aggregator == "llm" and duo.aggregator_model == "claude-haiku"
-    assert [m.model for m in book.get("panel-cheap").members] == [
+    assert [m.model for m in book.get("panel-nano").members] == [
         "claude-haiku",
         "gpt-luna",
         "gemini-flash",
@@ -216,7 +216,7 @@ def test_the_stand_alone_chart_is_valid_svg_with_its_own_styles(tmp_path: Path) 
     from _stats import two_arms
     from fusion.bench.store import BenchRunRecord
 
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     record = BenchRunRecord(
         run_id="r", status="completed", dataset="x", mock=True, config=cfg, total_jobs=1,
         done_jobs=1, spent_usd=0.0, eval_spent_usd=0.0, created_at="", updated_at="",

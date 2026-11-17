@@ -34,12 +34,13 @@ every call, scores each answer against the task's ground truth, and keeps everyt
   (so `coding` is `v1/coding`) and `evals/datasets/` (so `v1` is the whole shipped dataset).
 - **Arm** (`Arm`): a [strategy](CONFIGURATION.md#strategies-and-budgets) by name, with optional
   `overrides` (nested mappings merge), so "the cheap panel with three rounds" is one entry. The
-  `default` arm set is the six of the roadmap: `solo-frontier`, `solo-cheap`, `panel-cheap`,
-  `panel-refine`, `panel-cascade`, `panel-cheap-strong-synth`.
+  `default` arm set is six: `solo-opus`, `solo-haiku`, `panel-nano`, `panel-refine`,
+  `panel-cascade`, `panel-cheap-strong-synth`.
 - **Job**: one (task, arm, repeat), keyed by a hash of the task, the arm's strategy and the model
   ids behind it, the repeat and the seed. A finished job is never run twice.
 - **Mode**: every job runs in `Mode.BENCHMARK` ([what that changes](CONFIGURATION.md#modes)):
-  temperature 0, a seed per repeat (`seed + repeat - 1`), no prompt trimming, no shadow run, every
+  temperature 0 and a seed per repeat (`seed + repeat - 1`) for models whose catalog entry accepts
+  sampling parameters (none of the packaged ones do since 0.3.0), no prompt trimming, no shadow run, every
   call streamed so time to first token and decode speed are measured, and no secret redaction
   (ground-truth tasks may contain secret-looking strings on purpose; `--redact` turns it back on).
 
@@ -72,7 +73,7 @@ uv run fusion bench calibrate-judge --dataset v1 --mock --artifacts   # ...the b
 uv run fusion bench dataset validate evals/datasets/v1 --release   # check a dataset (also: stats, build)
 ```
 
-`--arms` takes strategy names (`solo-cheap,panel-cheap`), `name=strategy` to rename, or `default`.
+`--arms` takes strategy names (`solo-haiku,panel-nano`), `name=strategy` to rename, or `default`.
 `--config study.yaml` supplies any `BenchConfig` field, including arms with `overrides`; options on
 the command line win. Other options: `--limit N` (use N tasks, spread over categories and chosen by
 seed), `--seed`, `--concurrency` (jobs at once, default 8), `--no-cache`, `--redact`,
@@ -352,8 +353,8 @@ takes no virtual time, so simulated timings leave it out.
 
 ```bash
 uv run fusion bench dataset validate evals/datasets/v1/coding         # runs every task's solution, flaws and tests
-uv run fusion bench plan --dataset coding --arms solo-frontier,panel-cheap,best-of-n-verified --mock
-uv run fusion bench run  --dataset coding --arms solo-frontier,panel-cheap,best-of-n-verified --mock
+uv run fusion bench plan --dataset coding --arms solo-opus,panel-nano,best-of-n-verified --mock
+uv run fusion bench run  --dataset coding --arms solo-opus,panel-nano,best-of-n-verified --mock
 ```
 
 **Caveats.** The tasks are small, self-contained Python and standard library only (the sandbox runs
@@ -508,7 +509,7 @@ keeping the reserve. The planner prices a suite's design against what is left be
 
 | Suite | Stage | What it answers | Budget |
 |-------|-------|-----------------|--------|
-| `ablation` | tune on `dev` | panel size 1/2/3/5, refinement, a strong synthesizer, the cascade threshold (0.5 and 0.7; more if money remains), and self-mixtures of one model (Haiku by temperature, Luna by reasoning effort) against heterogeneous panels | about $4.80 |
+| `ablation` | tune on `dev` | panel size 1/2/3/5, refinement, a strong synthesizer, and the cascade threshold (0.5 and 0.7; more if money remains). The 0.2.0 self-mixture arms (one model sampled at several temperatures) were removed in 0.3.0 | about $4.80 |
 | `latency` | tune on `dev` | whether early return, hedging or a cascade shortens the wait; the response cache is off, since a replayed call has no real latency | about $1.20 |
 | `headline` | final, on `test` | Opus 5.5, Sol, Haiku and Luna alone against the default panel and the best variant, two repeats | about $11 |
 
@@ -541,7 +542,7 @@ frontend and performance tasks, which needs a judge from no arm's vendor, is ski
 `fusion bench report RUN` turns a run's items into statistics, verdicts and a report: `--format md`
 (default, for a README or docs page), `--format html` (one self-contained file, written to the run's
 folder or to `-o PATH`) or `--format json` (the same data, for scripts). `--baseline ARM` picks the
-arm the others are compared with (default `solo-frontier` when the run has it, else the first arm);
+arm the others are compared with (default `solo-opus`, or `solo-frontier` in a 0.2.0 run, when the run has it, else the first arm);
 `--margin`, `--min-tasks` and `--resamples` set the verdict rules below. `fusion bench compare
 RUN_A RUN_B` compares the same arm across two runs on the tasks both have, paired by task, and
 says whether the second is cheaper, faster, not worse or better.

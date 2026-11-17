@@ -7,9 +7,12 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel
 
-from fusion.config.catalog import FREE_PROVIDERS, Catalog
+from fusion.config.catalog import FREE_PROVIDERS, Catalog, newer_in_family
+from fusion.providers.anthropic import API_VERSION
 
-CheckStatus = Literal["ok", "unknown_id", "skipped", "error"]
+# newer: the ID is listed but the provider also lists a newer model of the same family.
+# redirect: the price's source_url answers with a redirect (the page moved; re-verify there).
+CheckStatus = Literal["ok", "unknown_id", "skipped", "error", "newer", "redirect"]
 
 _TIMEOUT_SECONDS = 20.0
 _MAX_PAGES = 20
@@ -32,7 +35,7 @@ async def _get_json(client: httpx.AsyncClient, url: str, headers: dict[str, str]
 
 
 async def _anthropic_ids(client: httpx.AsyncClient, api_key: str) -> set[str]:
-    headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    headers = {"x-api-key": api_key, "anthropic-version": API_VERSION}
     ids: set[str] = set()
     after: str | None = None
     for _ in range(_MAX_PAGES):
@@ -78,6 +81,40 @@ def _id_is_listed(model_id: str, listed: set[str]) -> bool:
     return model_id in listed or any(item.startswith(f"{model_id}-") for item in listed)
 
 
+async def _redirects(client: httpx.AsyncClient, url: str) -> str | None:
+    """Where ``url`` redirects to, or None (also when the page cannot be fetched)."""
+    try:
+        response = await client.get(url, follow_redirects=False, timeout=_TIMEOUT_SECONDS)
+    except httpx.HTTPError:
+        return None
+    if response.is_redirect:
+        return response.headers.get("location") or "another address"
+    return None
+
+
+async def _source_checks(catalog: Catalog, client: httpx.AsyncClient) -> list[ModelCheck]:
+    seen: dict[str, str | None] = {}
+    results: list[ModelCheck] = []
+    for alias, entry in catalog.models.items():
+        if not entry.enabled or entry.provider in FREE_PROVIDERS:
+            continue
+        for url in dict.fromkeys(p.source_url for p in entry.prices if p.source_url):
+            if url not in seen:
+                seen[url] = await _redirects(client, url)
+            target = seen[url]
+            if target is not None:
+                results.append(
+                    ModelCheck(
+                        alias=alias,
+                        provider=entry.provider,
+                        model_id=entry.model_id,
+                        status="redirect",
+                        detail=f"source_url {url} redirects to {target}; update it",
+                    )
+                )
+    return results
+
+
 async def check_catalog_live(
     catalog: Catalog,
     api_keys: dict[str, str],
@@ -85,7 +122,8 @@ async def check_catalog_live(
 ) -> list[ModelCheck]:
     """Compare enabled catalog models with what each provider reports as available.
 
-    Only the free list-models endpoints are called; keys are sent in headers and never logged.
+    Only free endpoints are called: each provider's list-models endpoint (keys are sent in headers
+    and never logged) and each price's ``source_url`` (to catch pages that moved).
     """
     listed: dict[str, set[str] | str] = {}
     for provider, fetch in _FETCHERS.items():
@@ -108,9 +146,13 @@ async def check_catalog_live(
             results.append(ModelCheck(**base, status="skipped", detail=detail))
         elif isinstance(provider_result, str):
             results.append(ModelCheck(**base, status="error", detail=provider_result))
-        elif _id_is_listed(entry.model_id, provider_result):
-            results.append(ModelCheck(**base, status="ok"))
-        else:
+        elif not _id_is_listed(entry.model_id, provider_result):
             detail = "provider does not list this model ID"
             results.append(ModelCheck(**base, status="unknown_id", detail=detail))
+        elif newer := newer_in_family(entry.provider, entry.model_id, provider_result):
+            detail = f"the provider lists {', '.join(newer)}, newer than this model"
+            results.append(ModelCheck(**base, status="newer", detail=detail))
+        else:
+            results.append(ModelCheck(**base, status="ok"))
+    results.extend(await _source_checks(catalog, client))
     return results

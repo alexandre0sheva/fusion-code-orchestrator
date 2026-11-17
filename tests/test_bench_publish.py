@@ -94,15 +94,15 @@ def test_an_empty_pool_is_an_answer_not_a_crash() -> None:
 def test_the_chosen_arm_comes_with_the_suite_line_that_runs_it() -> None:
     arm = ArmMeta(
         name="size-2",
-        strategy="panel-cheap",
+        strategy="panel-nano",
         overrides={
             "members": [{"model": "claude-haiku"}, {"model": "gpt-luna", "temperature": 0.5}]
         },
     )
     advice = _advice({"size-2": (0.8, 0.01), "x": (0.5, 0.02)}, arm_meta=[arm])
-    assert advice.strategy == "panel-cheap" and advice.overrides == arm.overrides
+    assert advice.strategy == "panel-nano" and advice.overrides == arm.overrides
     assert advice.arm_line() == (
-        "  - {name: fusion-best, strategy: panel-cheap, overrides: "
+        "  - {name: fusion-best, strategy: panel-nano, overrides: "
         "{members: [{model: claude-haiku}, {model: gpt-luna, temperature: 0.5}]}}"
     )
     plain = recommend(
@@ -122,7 +122,7 @@ def _record(run_id: str = "bench-20261006-120000-abcd", mock: bool = False) -> B
         status="completed",
         dataset="v1",
         mock=mock,
-        config=config(Path("v1"), arms="solo-cheap", repeats=2, mock=mock),
+        config=config(Path("v1"), arms="solo-haiku", repeats=2, mock=mock),
         total_jobs=10,
         done_jobs=10,
         spent_usd=3.0,
@@ -237,7 +237,7 @@ def test_recommend_prints_the_candidates_the_reason_and_the_suite_line(run_id: s
     assert result.exit_code == 0, result.output
     assert "Candidates" in result.output and "size-5" in result.output
     assert "cheapest per solved task" in result.output
-    assert "{name: fusion-best, strategy: panel-cheap" in result.output
+    assert "{name: fusion-best, strategy: panel-nano" in result.output
 
 
 def test_recommend_json_and_among(run_id: str) -> None:

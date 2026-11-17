@@ -31,7 +31,7 @@ __all__ = [
 ]
 
 INPUT_TOKENS_PER_CALL = 5_000
-REFERENCE = "solo-frontier"
+REFERENCE = "solo-opus"
 _JUDGE_MODEL = "gemini-flash"
 _START = re.compile(r"<!-- cost-table:start as-of=(\d{4}-\d{2}-\d{2}) -->")
 _BLOCK = re.compile(r"(<!-- cost-table:start as-of=\S+ -->\n).*?(<!-- cost-table:end -->)", re.S)

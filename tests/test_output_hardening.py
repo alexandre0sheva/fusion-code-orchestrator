@@ -148,7 +148,7 @@ def output(**over: Any) -> dict[str, Any]:
         "warnings": [],
         "cost_latency": {"total_cost_usd": 0.01, "total_latency_ms": 1200.0},
         "usage": {"successful_model_calls": 3},
-        "routing": {"strategy": "panel-cheap"},
+        "routing": {"strategy": "panel-nano"},
         "confidence": 0.8,
     }
     base.update(over)

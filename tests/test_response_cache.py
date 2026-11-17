@@ -39,7 +39,7 @@ def test_a_misspelled_cache_section_is_rejected(monkeypatch: pytest.MonkeyPatch)
 # ----------------------------------------------------------------------------------------- keys
 
 
-def _key(prompt: str = PROMPT, strategy: str = "panel-cheap", **kw: object) -> str:
+def _key(prompt: str = PROMPT, strategy: str = "panel-nano", **kw: object) -> str:
     return request_key(context(prompt, **kw), load_strategy_book().get(strategy))  # type: ignore[arg-type]
 
 

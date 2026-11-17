@@ -598,8 +598,14 @@ class StudyStats(BaseModel):
 
 
 def default_baseline(arms: Sequence[str]) -> str:
-    """``solo-frontier`` when the study has it (the arm Fusion must beat), else the first arm."""
-    return "solo-frontier" if "solo-frontier" in arms else arms[0]
+    """The frontier solo arm when the study has it (the arm Fusion must beat), else the first arm.
+
+    ``solo-frontier`` is the 0.2.0 name of ``solo-opus``; studies recorded then still use it.
+    """
+    for name in ("solo-opus", "solo-frontier"):
+        if name in arms:
+            return name
+    return arms[0]
 
 
 def _frontier(stats: Sequence[ArmStats], x: Callable[[ArmStats], float | None]) -> list[str]:

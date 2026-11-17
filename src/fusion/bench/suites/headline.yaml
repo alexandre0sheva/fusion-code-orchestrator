@@ -21,11 +21,11 @@ spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
 concurrency: 8
 judge_models: [gpt-luna]
 arms:
-  - {name: solo-frontier, strategy: solo-frontier}   # Claude Opus 5.5
-  - {name: solo-sol, strategy: solo-sol}             # GPT-6.1 Sol
-  - {name: solo-haiku, strategy: solo-cheap}
+  - {name: solo-opus, strategy: solo-opus}           # Claude Opus 5.5
+  - {name: solo-sol, strategy: solo-sol}             # GPT-6.2 Sol
+  - {name: solo-haiku, strategy: solo-haiku}
   - {name: solo-luna, strategy: solo-luna}
-  - {name: fusion-default, strategy: panel-cheap}
+  - {name: fusion-default, strategy: panel-nano}
   # Frozen from the dev ablation (run live-ablation): the cheapest arm per solved task on the
   # cost-quality frontier within 0.05 quality of the best. A lean, not a finding: see the results.
-  - {name: fusion-best, strategy: panel-cheap, overrides: {members: [{model: claude-haiku}, {model: gpt-luna}]}}
+  - {name: fusion-best, strategy: panel-nano, overrides: {members: [{model: claude-haiku}, {model: gpt-luna}]}}

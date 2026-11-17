@@ -87,13 +87,13 @@ def test_a_forecast_says_which_models_it_could_not_price() -> None:
 @pytest.mark.parametrize(
     ("name", "changes", "expected"),
     [
-        ("solo-cheap", {}, ["panel"]),
-        ("panel-cheap", {}, ["panel"] * 3 + ["synthesis"]),
+        ("solo-haiku", {}, ["panel"]),
+        ("panel-nano", {}, ["panel"] * 3 + ["synthesis"]),
         ("panel-digest", {}, ["panel"] * 3),
         ("panel-vote", {}, ["panel"] * 3),
         ("panel-refine", {}, ["panel"] * 3 + ["refine"] * 3 + ["synthesis"]),
-        ("panel-cheap", {"judge": "light"}, ["panel"] * 3 + ["judge"] * 3 + ["synthesis"]),
-        ("panel-cheap", {"judge": "full"}, ["panel"] * 3 + ["judge"] * 3 + ["eval", "synthesis"]),
+        ("panel-nano", {"judge": "light"}, ["panel"] * 3 + ["judge"] * 3 + ["synthesis"]),
+        ("panel-nano", {"judge": "full"}, ["panel"] * 3 + ["judge"] * 3 + ["eval", "synthesis"]),
         ("panel-cascade", {}, ["panel"] * 3 + ["synthesis"]),
     ],
 )
@@ -145,7 +145,7 @@ def test_the_ladder_drops_refinement_then_members_then_goes_solo() -> None:
 
 
 def test_the_ladder_for_a_judged_panel_also_drops_the_judge() -> None:
-    plan = _strategy("panel-cheap").model_copy(update={"judge": "light"})
+    plan = _strategy("panel-nano").model_copy(update={"judge": "light"})
     [(label, step), *_] = down_shifts(plan, CATALOG.models, PRICING)
     assert label == "dropped judge calls" and step.judge == "off"
 
@@ -156,7 +156,7 @@ def test_a_cascade_can_only_fall_back_to_one_model() -> None:
 
 
 def test_a_solo_strategy_has_nowhere_to_go() -> None:
-    assert list(down_shifts(_strategy("solo-cheap"), CATALOG.models, PRICING)) == []
+    assert list(down_shifts(_strategy("solo-haiku"), CATALOG.models, PRICING)) == []
 
 
 def test_preflight_keeps_a_strategy_that_fits_and_ignores_a_missing_cap() -> None:
@@ -200,7 +200,7 @@ def test_preflight_gives_up_when_even_the_cheapest_option_is_over() -> None:
 def test_preflight_cannot_check_a_cap_when_a_model_has_no_price() -> None:
     unpriced = priced_catalog({SECURITY: None})
     found = preflight(
-        _strategy("panel-cheap").model_copy(update={"max_cost_usd": 10.0}),
+        _strategy("panel-nano").model_copy(update={"max_cost_usd": 10.0}),
         models=unpriced.models,
         pricing=PricingRegistry(unpriced),
         judge_model=JUDGE,
@@ -310,7 +310,7 @@ async def test_a_run_over_its_cap_is_shifted_down_with_a_visible_warning(
 async def test_a_tight_cap_runs_the_cheapest_model_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _cap(monkeypatch, "panel-cheap", max_cost_usd=0.005)
+    _cap(monkeypatch, "panel-nano", max_cost_usd=0.005)
     provider = Scripted()
     result = await pipeline(tmp_path, provider, priced=True).run(context())
     assert provider.models_called() == [WEAK]
@@ -323,13 +323,13 @@ async def test_a_tight_cap_runs_the_cheapest_model_alone(
 async def test_a_cap_below_the_cheapest_option_refuses_the_run_before_any_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _cap(monkeypatch, "panel-cheap", max_cost_usd=0.0001)
+    _cap(monkeypatch, "panel-nano", max_cost_usd=0.0001)
     provider = Scripted()
     pipe = pipeline(tmp_path, provider, priced=True)
     result = await pipe.run(context())
     assert provider.requests == [] and result.ledger.records == []
-    assert result.final_answer.startswith("Cost cap not met: the cheapest way to run 'panel-cheap'")
-    assert "strategies.panel-cheap.max_cost_usd" in result.final_answer
+    assert result.final_answer.startswith("Cost cap not met: the cheapest way to run 'panel-nano'")
+    assert "strategies.panel-nano.max_cost_usd" in result.final_answer
     assert result.total_cost_usd == 0.0
     assert result.structured_output["budget_exceeded"] is True
     stored = pipe.deps.run_store.get_run(result.run_id)
@@ -344,7 +344,7 @@ async def test_a_run_without_a_cap_reports_no_budget(tmp_path: Path) -> None:
 async def test_a_cap_that_cannot_be_checked_up_front_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _cap(monkeypatch, "panel-cheap", max_cost_usd=10.0)
+    _cap(monkeypatch, "panel-nano", max_cost_usd=10.0)
     pipe = pipeline(tmp_path, Scripted(), pricing=PricingRegistry(priced_catalog({SECURITY: None})))
     result = await pipe.run(context())
     assert any(f"cannot be checked up front: no price for {SECURITY}" in w for w in result.warnings)
@@ -354,9 +354,9 @@ async def test_a_cap_that_cannot_be_checked_up_front_says_so(
 async def test_a_run_that_still_goes_over_its_cap_is_flagged_after_the_fact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _cap(monkeypatch, "solo-cheap", max_cost_usd=0.01)  # forecast about $0.008: passes
+    _cap(monkeypatch, "solo-haiku", max_cost_usd=0.01)  # forecast about $0.008: passes
     provider = Scripted(cost={"*": 0.02})  # but the call really costs $0.02
-    result = await pipeline(tmp_path, provider, priced=True).run(context(strategy="solo-cheap"))
+    result = await pipeline(tmp_path, provider, priced=True).run(context(strategy="solo-haiku"))
     assert any("exceeded its cap" in w for w in result.warnings)
 
 
@@ -366,8 +366,8 @@ async def test_a_run_that_still_goes_over_its_cap_is_flagged_after_the_fact(
 async def test_synthesis_that_would_pass_the_cap_becomes_a_free_digest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    panel = _usd(_strategy("panel-cheap"))
-    _cap(monkeypatch, "panel-cheap", max_cost_usd=panel + 0.001)  # the forecast fits
+    panel = _usd(_strategy("panel-nano"))
+    _cap(monkeypatch, "panel-nano", max_cost_usd=panel + 0.001)  # the forecast fits
     provider = Scripted(cost={"panel": 0.03})  # but the three panel calls cost $0.09
     result = await pipeline(tmp_path, provider, priced=True).run(context())
     assert stages(result) == ["panel"] * 3  # synthesis never started

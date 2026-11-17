@@ -51,8 +51,8 @@ def _clusters(**answers: str) -> tuple[list[ClaimCluster], AgreementReport, list
 
 def test_the_aggregator_follows_the_strategy_and_a_cascades_early_exit() -> None:
     book = load_strategy_book()
-    assert aggregator_for(book.get("solo-cheap")) == "solo"
-    assert aggregator_for(book.get("panel-cheap")) == "llm"
+    assert aggregator_for(book.get("solo-haiku")) == "solo"
+    assert aggregator_for(book.get("panel-nano")) == "llm"
     assert aggregator_for(book.get("panel-digest")) == "digest"
     assert aggregator_for(book.get("panel-vote")) == "vote"
     cascade = book.get("panel-cascade")

@@ -54,7 +54,7 @@ def _record(cfg: Any, run_id: str = "r1", *, mock: bool = True) -> BenchRunRecor
 def study(tmp_path: Path) -> tuple[BenchStore, BenchRunRecord, list[BenchItem]]:
     """A finished simulated study of three arms over twelve tasks."""
     data = write_dataset(tmp_path / "data.jsonl", count=12)
-    cfg = config(data, arms="solo-cheap,panel-cheap,solo-frontier", repeats=2)
+    cfg = config(data, arms="solo-haiku,panel-nano,solo-opus", repeats=2)
     env = sim_env(cfg, tmp_path / "results")
     run = run_virtual(run_bench(cfg, env=env, run_id="r1"))
     record = env.store.get_run("r1")
@@ -72,14 +72,14 @@ def test_a_run_writes_a_snapshot_of_what_it_was(
     meta = load_meta(store.run_dir("r1"))
     assert meta is not None and not meta.reconstructed
     assert meta.task_count == 12 and len(meta.dataset_hash) == 16
-    assert [a.name for a in meta.arms] == ["solo-cheap", "panel-cheap", "solo-frontier"]
+    assert [a.name for a in meta.arms] == ["solo-haiku", "panel-nano", "solo-opus"]
     assert all(m.verified_on for m in meta.models.values() if m.input_per_1m is not None)
     assert set(meta.tasks) == {f"t{n}" for n in range(12)}
 
 
 def test_a_resumed_run_keeps_the_snapshot_of_its_start(tmp_path: Path) -> None:
     data = write_dataset(tmp_path / "data.jsonl", count=4)
-    cfg = config(data, arms="solo-cheap", repeats=1)
+    cfg = config(data, arms="solo-haiku", repeats=1)
     env = sim_env(cfg, tmp_path / "results")
     run_virtual(run_bench(cfg, env=env, run_id="r1"))
     path = env.store.run_dir("r1") / "meta.json"
@@ -141,7 +141,7 @@ def test_the_markdown_report_has_every_section_and_the_methodology_footer(
         assert heading in text
     footer = text[text.index("## Methodology") :]
     assert meta.dataset_hash in footer
-    for arm in ("solo-cheap", "panel-cheap", "solo-frontier"):
+    for arm in ("solo-haiku", "panel-nano", "solo-opus"):
         assert f"**Arm {arm}:**" in footer
     assert "claude-haiku" in footer and "verified 2026" in footer  # model id and price date
     assert "**Repeats / seed:** 2 per task / seed 0" in footer
@@ -154,10 +154,10 @@ def test_the_headline_names_the_baseline_and_gives_a_reason_per_verdict(
     study: tuple[BenchStore, BenchRunRecord, list[BenchItem]],
 ) -> None:
     _, record, items = study
-    text = render_markdown(build_report(record, items, baseline="solo-frontier", rules=FAST))
+    text = render_markdown(build_report(record, items, baseline="solo-opus", rules=FAST))
     headline = text[text.index("## Headline") : text.index("## Arms")]
-    assert "solo-frontier" in headline
-    assert re.search(r"panel-cheap vs solo-frontier on all \(12 tasks\)", headline)
+    assert "solo-opus" in headline
+    assert re.search(r"panel-nano vs solo-opus on all \(12 tasks\)", headline)
     assert any(sym in headline for sym in ("✓", "✗", "?"))
 
 
@@ -176,7 +176,7 @@ def test_eval_cost_is_shown_beside_the_arm_and_not_added_to_it() -> None:
     items = [
         item("a", f"t{n}", 0.9, cost=0.10, eval_cost_usd=0.40, eval_seconds=3.0) for n in range(12)
     ]
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     report = build_report(_record(cfg), items, rules=FAST)
     arm = report.stats.arms[0]
     assert arm.cost_per_task is not None and arm.cost_per_task.estimate == pytest.approx(0.10)
@@ -225,7 +225,7 @@ def test_the_html_has_the_charts_and_a_table_with_the_same_numbers(
 
 
 def test_html_escapes_text_that_comes_from_the_data() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     items = [item("<b>arm</b>", f"t{n}", 0.8, category="frontend", solved=True) for n in range(3)]
     report = build_report(_record(cfg), items, rules=FAST)
     html = render_html(report)
@@ -233,7 +233,7 @@ def test_html_escapes_text_that_comes_from_the_data() -> None:
 
 
 def test_html_has_a_colour_per_arm_in_a_fixed_order() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     items = [item(a, f"t{n}", 0.5 + i / 20) for i, a in enumerate("abc") for n in range(12)]
     html = render_html(build_report(_record(cfg), items, rules=FAST))
     legend = re.search(r'<div class="legend" aria-label="Arms">(.*?)</div>', html)
@@ -278,7 +278,7 @@ def test_the_most_different_pairs_are_shown_with_their_evidence_and_screenshots(
             _artifact_item("fusion", f"t{n}", 0.5 + gap / 2, shot, "FUSION-EVIDENCE"),
             _artifact_item("solo", f"t{n}", 0.5 - gap / 2, shot, "SOLO-EVIDENCE"),
         ]
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     report = build_report(_record(cfg), items, baseline="solo", rules=FAST)
     assert report.examples and report.examples[0].task_id == "t3"
     assert report.examples[0].gap == pytest.approx(0.9)
@@ -300,7 +300,7 @@ def test_a_missing_or_oversized_screenshot_is_named_not_embedded(tmp_path: Path)
             _artifact_item("fusion", f"t{n}", 0.9, big if n == 0 else tmp_path / "gone.png"),
             _artifact_item("solo", f"t{n}", 0.2, big if n == 0 else tmp_path / "gone.png"),
         ]
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     html = render_html(build_report(_record(cfg), items, baseline="solo", rules=FAST))
     assert "data:image" not in html
     assert "not embedded" in html or "not found" in html
@@ -315,7 +315,7 @@ def test_a_screenshot_is_found_under_the_run_folder_when_the_path_moved(tmp_path
 
 
 def test_evidence_is_only_taken_from_artifact_categories_with_a_baseline_to_pair() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     items = two_arms(12)  # code review: no evidence
     assert build_report(_record(cfg), items, baseline="solo", rules=FAST).examples == []
 
@@ -331,7 +331,7 @@ def test_a_blocked_judge_gate_withholds_the_headline_and_the_judged_categories()
         if i.category == "frontend":
             i.score = ScoreResult(quality=0.7, scorer="artifact", trail=[{"tool": "x"}])
     gate = JudgeGate(blocked=True, floor=0.8, reasons=["judge j has not been calibrated"])
-    cfg = config(Path("x"), arms="solo-cheap", judge_models=["j"])
+    cfg = config(Path("x"), arms="solo-haiku", judge_models=["j"])
     report = build_report(_record(cfg), items, gate=gate, baseline="solo", rules=FAST)
     by_scope = {c.scope: {v.outcome for v in c.verdicts} for c in report.stats.comparisons}
     assert by_scope["all"] == {"blocked"} and by_scope["frontend"] == {"blocked"}
@@ -343,7 +343,7 @@ def test_a_blocked_judge_gate_withholds_the_headline_and_the_judged_categories()
 
 
 def test_an_allowed_gate_blocks_nothing() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     gate = JudgeGate(blocked=False, floor=0.8, accuracy={"j": 0.9})
     report = build_report(_record(cfg), two_arms(12), gate=gate, baseline="solo", rules=FAST)
     assert all(v.outcome != "blocked" for c in report.stats.comparisons for v in c.verdicts)
@@ -353,7 +353,7 @@ def test_an_allowed_gate_blocks_nothing() -> None:
 
 
 def test_the_report_states_every_caveat_that_applies() -> None:
-    cfg = config(Path("x"), arms="solo-cheap", repeats=1)
+    cfg = config(Path("x"), arms="solo-haiku", repeats=1)
     record = _record(cfg).model_copy(update={"status": "stopped", "stop_reason": "cap reached"})
     items = [
         item("a", f"t{n}", 0.9, cost_known=False, latency_valid=False, cache_hits=2)
@@ -374,7 +374,7 @@ def test_the_report_states_every_caveat_that_applies() -> None:
 
 
 def test_a_live_run_is_not_called_simulated() -> None:
-    cfg = config(Path("x"), arms="solo-cheap", mock=False)
+    cfg = config(Path("x"), arms="solo-haiku", mock=False)
     report = build_report(_record(cfg, mock=False), two_arms(12), baseline="solo", rules=FAST)
     assert not any("Simulated" in n for n in report.notes)
     assert "(simulated)" not in render_html(report)
@@ -396,11 +396,11 @@ def test_identical_runs_compare_as_not_worse_and_not_better(
         outcome = {v.claim: v.outcome for v in change.comparison.verdicts}
         assert outcome["not_worse"] == "yes" and outcome["better"] == "no"
     text = render_comparison(result)
-    assert "Before and after: r1 → r1" in text and "solo-cheap" in text
+    assert "Before and after: r1 → r1" in text and "solo-haiku" in text
 
 
 def test_compare_pairs_each_arm_with_itself_on_the_shared_tasks() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     before = [i for i in two_arms(14, effect=0.0, seed=1) if i.arm == "fusion"]
     better = [
         i.model_copy(
@@ -427,7 +427,7 @@ def test_compare_pairs_each_arm_with_itself_on_the_shared_tasks() -> None:
 
 
 def test_compare_lists_arms_only_one_run_has_and_warns_about_mixed_runs() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     a = [item("old", f"t{n}", 0.5) for n in range(12)]
     b = [item("new", f"t{n}", 0.5) for n in range(12)]
     result = compare_runs(
@@ -440,7 +440,7 @@ def test_compare_lists_arms_only_one_run_has_and_warns_about_mixed_runs() -> Non
 
 
 def test_compare_with_no_shared_task_says_so() -> None:
-    cfg = config(Path("x"), arms="solo-cheap")
+    cfg = config(Path("x"), arms="solo-haiku")
     result = compare_runs(
         (_record(cfg, "a"), [item("x", "t1", 0.5)], None),
         (_record(cfg, "b"), [item("x", "t2", 0.5)], None),
@@ -479,15 +479,15 @@ def test_report_prints_markdown_by_default(run_id: str) -> None:
     result = _invoke("report", run_id, "--min-tasks", "5", "--resamples", "200")
     assert result.exit_code == 0, result.output
     assert f"# Benchmark report: {run_id}" in result.output and "## Methodology" in result.output
-    assert "solo-frontier" in result.output and "Simulated run" in result.output
+    assert "solo-opus" in result.output and "Simulated run" in result.output
 
 
 def test_report_json_is_the_full_report(run_id: str) -> None:
     result = _invoke("report", run_id, "--format", "json", "--resamples", "200")
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert data["run"]["run_id"] == run_id and data["stats"]["baseline"] == "solo-frontier"
-    assert {a["arm"] for a in data["stats"]["arms"]} >= {"solo-cheap", "panel-cheap"}
+    assert data["run"]["run_id"] == run_id and data["stats"]["baseline"] == "solo-opus"
+    assert {a["arm"] for a in data["stats"]["arms"]} >= {"solo-haiku", "panel-nano"}
     assert data["meta"]["dataset_hash"] and data["notes"]
 
 
@@ -510,11 +510,11 @@ def test_report_writes_markdown_to_a_file_on_request(fusion_home: Path, run_id: 
 
 def test_report_baseline_and_margin_options_are_used(run_id: str) -> None:
     result = _invoke(
-        "report", run_id, "-f", "json", "--baseline", "panel-cheap", "--margin", "0.1",
+        "report", run_id, "-f", "json", "--baseline", "panel-nano", "--margin", "0.1",
         "--resamples", "200",
     )  # fmt: skip
     data = json.loads(result.output)
-    assert data["stats"]["baseline"] == "panel-cheap" and data["stats"]["margin"] == 0.1
+    assert data["stats"]["baseline"] == "panel-nano" and data["stats"]["margin"] == 0.1
 
 
 def test_report_errors_are_plain(run_id: str) -> None:
@@ -527,7 +527,7 @@ def test_report_errors_are_plain(run_id: str) -> None:
 
 def test_report_of_a_run_with_nothing_finished_says_so(fusion_home: Path) -> None:
     store = BenchStore(fusion_home / "project" / "bench-results")
-    cfg = config(Path("toy"), arms="solo-cheap")
+    cfg = config(Path("toy"), arms="solo-haiku")
     store.create_run("empty", cfg, 4)
     result = _invoke("report", "empty")
     assert result.exit_code == 1 and "no finished items" in result.output
@@ -540,7 +540,7 @@ def test_compare_runs_from_the_command_line(fusion_home: Path, run_id: str) -> N
     assert len(ids) == 2
     result = _invoke("compare", ids[0], ids[1], "--min-tasks", "5", "--resamples", "200")
     assert result.exit_code == 0, result.output
-    assert "Before and after" in result.output and "solo-frontier" in result.output
+    assert "Before and after" in result.output and "solo-opus" in result.output
     as_json = json.loads(_invoke("compare", ids[0], ids[1], "-f", "json").output)
     assert as_json["shared_tasks"] == 8 and len(as_json["changes"]) == 6
     assert _invoke("compare", ids[0], "nope").exit_code == 1

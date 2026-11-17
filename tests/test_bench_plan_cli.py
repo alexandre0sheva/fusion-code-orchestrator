@@ -58,15 +58,15 @@ def test_the_plan_prices_every_arm_with_a_range_around_the_expectation(
     assert plan.low_usd < plan.expected_usd < plan.high_usd
     assert plan.expected_usd == pytest.approx(sum(a.expected_usd for a in plan.per_arm))
     by_arm = {a.arm: a.expected_usd for a in plan.per_arm}
-    assert by_arm["solo-cheap"] < by_arm["panel-cheap"] < by_arm["panel-refine"]
-    assert by_arm["solo-frontier"] > by_arm["solo-cheap"]
+    assert by_arm["solo-haiku"] < by_arm["panel-nano"] < by_arm["panel-refine"]
+    assert by_arm["solo-opus"] > by_arm["solo-haiku"]
     assert plan.wall_seconds > 0 and plan.fits and plan.suggestion is None
 
 
 def test_the_estimate_is_in_the_right_range_of_what_a_simulated_run_spends(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="solo-cheap,panel-cheap,panel-refine", repeats=2)
+    cfg = config(dataset, arms="solo-haiku,panel-nano,panel-refine", repeats=2)
     env = sim_env(cfg, tmp_path)
     plan, *_ = _plan(cfg, env)
     actual = run_virtual(run_bench(cfg, env=env, run_id="r")).spent_usd
@@ -76,7 +76,7 @@ def test_the_estimate_is_in_the_right_range_of_what_a_simulated_run_spends(
 def test_a_cascade_is_priced_between_its_first_wave_and_its_full_panel(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="panel-cascade,panel-cheap")
+    cfg = config(dataset, arms="panel-cascade,panel-nano")
     env = sim_env(cfg, tmp_path)
     _, book, routing = _plan(cfg, env)
     task = load_dataset(dataset)[0]
@@ -118,7 +118,7 @@ def test_then_fewer_tasks_then_fewer_arms(tmp_path: Path) -> None:
     fewer_arms, *_ = _plan(cfg.model_copy(update={"max_usd": one_repeat * 0.05}), env)
     s = fewer_arms.suggestion
     assert s is not None and s.repeats == 1 and len(s.arms) < 6
-    assert "solo-frontier" not in s.arms  # the dearest arm goes first
+    assert "solo-opus" not in s.arms  # the dearest arm goes first
     assert s.expected_usd <= one_repeat * 0.05
 
     nothing, *_ = _plan(cfg.model_copy(update={"max_usd": 0.00001}), env)
@@ -128,7 +128,7 @@ def test_then_fewer_tasks_then_fewer_arms(tmp_path: Path) -> None:
 def test_the_budget_is_the_smaller_of_max_usd_and_what_the_spend_cap_has_left(
     tmp_path: Path, dataset: Path
 ) -> None:
-    cfg = config(dataset, arms="solo-cheap", mock=False, max_usd=100)
+    cfg = config(dataset, arms="solo-haiku", mock=False, max_usd=100)
     env = sim_env(cfg, tmp_path)
     plan, *_ = _plan(cfg, env, spend_left=0.001)
     assert plan.budget_usd == 0.001 and not plan.fits
@@ -141,10 +141,10 @@ def test_a_model_without_a_price_fails_a_live_plan_but_not_a_simulated_one(
     models = dict(catalog.models)
     models["claude-haiku"] = models["claude-haiku"].model_copy(update={"prices": []})
     unpriced = PricingRegistry(catalog.model_copy(update={"models": models}))
-    live = config(dataset, arms="solo-cheap", mock=False)
+    live = config(dataset, arms="solo-haiku", mock=False)
     plan, *_ = _plan(live, sim_env(live, tmp_path), pricing=unpriced)
     assert plan.unpriced == ["claude-haiku"] and not plan.fits
-    mock = config(dataset, arms="solo-cheap", mock=True)
+    mock = config(dataset, arms="solo-haiku", mock=True)
     simulated, *_ = _plan(mock, sim_env(mock, tmp_path), pricing=unpriced)
     assert simulated.fits
 
@@ -161,7 +161,7 @@ def test_bench_run_mock_works_end_to_end_on_the_toy_dataset(fusion_home: Path) -
     assert result.exit_code == 0, result.output
     out = result.output
     assert "The plan fits" in out and "simulated" in out
-    assert "completed" in out and "48/48" in out and "solo-frontier" in out
+    assert "completed" in out and "48/48" in out and "solo-opus" in out
     runs = list((fusion_home / "project" / "bench-results").glob("bench-*"))
     assert len(runs) == 1 and (runs[0] / "results.jsonl").exists()
     assert not (fusion_home / "project" / "bench-results" / "spend.json").exists()
@@ -169,23 +169,23 @@ def test_bench_run_mock_works_end_to_end_on_the_toy_dataset(fusion_home: Path) -
 
 def test_list_show_and_resume_work_on_a_finished_run(fusion_home: Path) -> None:
     assert _invoke("list").output.strip().startswith("No benchmark runs yet")
-    _invoke("run", "-d", "toy", "--arms", "solo-cheap,panel-cheap", "--mock", "--repeats", "1")
+    _invoke("run", "-d", "toy", "--arms", "solo-haiku,panel-nano", "--mock", "--repeats", "1")
     listed = _invoke("list")
     assert "mock" in listed.output and "16/16" in listed.output and "completed" in listed.output
     run_id = next(p.name for p in (fusion_home / "project" / "bench-results").glob("bench-*"))
 
     shown = _invoke("show", run_id)
-    assert shown.exit_code == 0 and "panel-cheap" in shown.output
+    assert shown.exit_code == 0 and "panel-nano" in shown.output
     payload = json.loads(_invoke("show", run_id, "--json").output)
     assert payload["run"]["status"] == "completed" and len(payload["arms"]) == 2
-    assert {a["arm"] for a in payload["arms"]} == {"solo-cheap", "panel-cheap"}
+    assert {a["arm"] for a in payload["arms"]} == {"solo-haiku", "panel-nano"}
 
     resumed = _invoke("resume", run_id)
     assert resumed.exit_code == 0 and "16/16" in resumed.output
 
 
 def test_show_and_resume_name_the_runs_that_exist_when_the_id_is_wrong(fusion_home: Path) -> None:
-    _invoke("run", "-d", "toy", "--arms", "solo-cheap", "--mock", "--repeats", "1", "--limit", "2")
+    _invoke("run", "-d", "toy", "--arms", "solo-haiku", "--mock", "--repeats", "1", "--limit", "2")
     for command in ("show", "resume"):
         result = _invoke(command, "no-such-run")
         assert result.exit_code == 1 and "no-such-run" in result.output
@@ -225,9 +225,9 @@ def test_a_live_run_that_does_not_pass_the_plan_will_not_start_without_yes(
 
 
 def test_a_live_run_needs_an_explicit_spending_limit_and_api_keys(fusion_home: Path) -> None:
-    missing = _invoke("run", "-d", "toy", "--arms", "solo-cheap")
+    missing = _invoke("run", "-d", "toy", "--arms", "solo-haiku")
     assert missing.exit_code == 1 and "--max-usd is required" in missing.output
-    no_keys = _invoke("run", "-d", "toy", "--arms", "solo-cheap", "--max-usd", "1")
+    no_keys = _invoke("run", "-d", "toy", "--arms", "solo-haiku", "--max-usd", "1")
     assert no_keys.exit_code == 1 and "No cloud providers configured" in no_keys.output
 
 
@@ -240,7 +240,7 @@ def test_config_file_supplies_defaults_that_options_override(
         "mock: true\n"
         "repeats: 1\n"
         "arms:\n"
-        "  - {name: solo-cheap, strategy: solo-cheap}\n"
+        "  - {name: solo-haiku, strategy: solo-haiku}\n"
         "  - {name: refine-3, strategy: panel-refine, overrides: {rounds: 3}}\n"
     )
     result = _invoke("run", "--config", str(spec), "--limit", "2")

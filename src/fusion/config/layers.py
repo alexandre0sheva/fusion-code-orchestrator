@@ -29,6 +29,7 @@ SECTIONS = frozenset(
     {
         "models",
         "provider_limits",
+        "tiering",
         "policies",
         "budgets",
         "fanout",
@@ -36,6 +37,7 @@ SECTIONS = frozenset(
         "cache",
         "strategies",
         "budget_strategies",
+        "strategy_aliases",
         "baselines",
     }
 )

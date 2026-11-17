@@ -113,7 +113,7 @@ def test_select_tasks_spreads_over_categories_and_is_repeatable(tmp_path: Path) 
 
 def test_config_rejects_repeated_arm_names_and_bad_numbers(tmp_path: Path) -> None:
     dataset = write_dataset(tmp_path / "d.jsonl")
-    arms = [Arm(name="a", strategy="solo-cheap"), Arm(name="a", strategy="panel-cheap")]
+    arms = [Arm(name="a", strategy="solo-haiku"), Arm(name="a", strategy="panel-nano")]
     with pytest.raises(ValueError, match="unique"):
         BenchConfig(dataset=dataset, arms=arms, max_usd=1)
     with pytest.raises(ValueError):
@@ -127,10 +127,10 @@ def test_config_rejects_repeated_arm_names_and_bad_numbers(tmp_path: Path) -> No
 
 def test_parse_arms_understands_names_aliases_and_default() -> None:
     assert [a.name for a in parse_arms("default")] == list(DEFAULT_ARMS)
-    arms = parse_arms("solo-cheap, cheap-panel=panel-cheap")
+    arms = parse_arms("solo-haiku, cheap-panel=panel-nano")
     assert [(a.name, a.strategy) for a in arms] == [
-        ("solo-cheap", "solo-cheap"),
-        ("cheap-panel", "panel-cheap"),
+        ("solo-haiku", "solo-haiku"),
+        ("cheap-panel", "panel-nano"),
     ]
     with pytest.raises(ConfigError):
         parse_arms(" , ")
@@ -169,6 +169,6 @@ def test_nested_overrides_merge_instead_of_replacing() -> None:
 def test_an_invalid_override_names_the_arm_and_the_problem() -> None:
     book = load_strategy_book()
     with pytest.raises(ConfigError, match=r"Arm 'bad'.*rounds"):
-        resolve_arm(Arm(name="bad", strategy="panel-cheap", overrides={"rounds": 99}), book)
+        resolve_arm(Arm(name="bad", strategy="panel-nano", overrides={"rounds": 99}), book)
     with pytest.raises(ConfigError, match="Unknown strategy"):
         resolve_arm(Arm(name="x", strategy="no-such"), book)
