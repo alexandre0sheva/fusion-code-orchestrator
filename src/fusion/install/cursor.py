@@ -103,8 +103,8 @@ def install_cursor(
     )
     report.notes.append(
         "Provider keys come from the environment Cursor starts in (launch it from a shell that "
-        "has ANTHROPIC_API_KEY, OPENAI_API_KEY or GOOGLE_API_KEY exported); a project .env is "
-        "also read when the server starts in the project directory."
+        "has ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY or OPENROUTER_API_KEY exported); "
+        "a project .env is also read when the server starts in the project directory."
     )
     return report
 

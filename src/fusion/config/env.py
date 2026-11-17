@@ -5,6 +5,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Cloud provider -> the environment variable that holds its API key. The one list every command,
+# installer and check reads.
+PROVIDER_KEY_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "google": "GOOGLE_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+# Vendors whose models can also be reached through OpenRouter (catalog ``route``/``openrouter_id``).
+ROUTABLE_VENDORS = ("anthropic", "openai", "google")
+
 
 def load_env() -> None:
     """Load `.env` from the project root when present."""

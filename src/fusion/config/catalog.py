@@ -26,6 +26,9 @@ PriceTier = Literal["nano", "low", "medium", "high", "premium"]
 LatencyTier = Literal["low", "medium", "high"]
 ContextTier = Literal["small", "medium", "long"]
 QualityTier = Literal["weak", "medium", "strong", "frontier"]
+# How a vendor model is reached: its own API, OpenRouter, or the vendor's API when its key is set
+# and OpenRouter otherwise. Models of provider ``openrouter`` are always reached through OpenRouter.
+Route = Literal["direct", "openrouter", "auto"]
 
 # Providers that have no per-token bill; a missing price block means "free".
 FREE_PROVIDERS = frozenset({"mock", "ollama", "lmstudio"})
@@ -142,9 +145,22 @@ class ModelEntry(BaseModel):
     # or ignore them, so Fusion sends none unless the catalog says otherwise.
     supports_sampling_params: bool = False
     retirement_not_before: date | None = None
+    route: Route = "auto"
+    # The model's ID on OpenRouter (``anthropic/claude-haiku-5.5``); for provider ``openrouter``
+    # it is the model ID itself.
+    openrouter_id: str | None = None
     prices: list[PriceSchedule] = Field(default_factory=list)
     # Set by the Catalog that holds the entry; the packaged tiering otherwise.
     _tiering: Tiering | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _check_route(self) -> Self:
+        if self.provider == "openrouter":
+            self.openrouter_id = self.model_id
+        elif self.route == "openrouter" and not self.openrouter_id:
+            msg = f"Model {self.alias or self.model_id}: route 'openrouter' needs an openrouter_id"
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def _check_prices(self) -> Self:
@@ -209,6 +225,27 @@ class ModelEntry(BaseModel):
 CatalogEntry = ModelEntry
 
 
+class OpenRouterPolicy(BaseModel):
+    """The ``openrouter:`` block: who may serve Fusion's requests on OpenRouter.
+
+    ``provider_ignore`` names OpenRouter providers (by slug) that may train on prompts; every
+    request asks OpenRouter to skip them. A config layer can add slugs but never remove the packaged
+    ones (see ``Catalog``), so the "no training" rule cannot be relaxed by an override.
+    """
+
+    provider_ignore: list[str] = Field(default_factory=list)
+    verified_on: date | None = None
+    source_url: str = ""
+
+
+@lru_cache(maxsize=1)
+def packaged_openrouter_policy() -> OpenRouterPolicy:
+    """The ``openrouter:`` block of the packaged catalog."""
+    with (_CONFIG_DIR / "catalog.yaml").open(encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    return OpenRouterPolicy.model_validate(raw.get("openrouter") or {})
+
+
 class ProviderLimits(BaseModel):
     """Client-side limits for one provider; ``None`` means unlimited."""
 
@@ -222,11 +259,20 @@ class Catalog(BaseModel):
     models: dict[str, ModelEntry] = Field(default_factory=dict)
     provider_limits: dict[str, ProviderLimits] = Field(default_factory=dict)
     tiering: Tiering = Field(default_factory=packaged_tiering)
+    openrouter: OpenRouterPolicy = Field(default_factory=packaged_openrouter_policy)
 
     @model_validator(mode="after")
     def _share_tiering(self) -> Self:
         for entry in self.models.values():
             entry._tiering = self.tiering
+        return self
+
+    @model_validator(mode="after")
+    def _keep_packaged_ignores(self) -> Self:
+        packaged = packaged_openrouter_policy()
+        ignored = list(dict.fromkeys([*packaged.provider_ignore, *self.openrouter.provider_ignore]))
+        if ignored != self.openrouter.provider_ignore:
+            self.openrouter = self.openrouter.model_copy(update={"provider_ignore": ignored})
         return self
 
     def models_in_tier(
@@ -248,6 +294,13 @@ class Catalog(BaseModel):
             msg = f"Unknown model: {alias}"
             raise KeyError(msg)
         return self.models[alias]
+
+    def find_openrouter(self, openrouter_id: str) -> ModelEntry | None:
+        """First catalog entry served on OpenRouter under ``openrouter_id``."""
+        for entry in self.models.values():
+            if entry.openrouter_id == openrouter_id:
+                return entry
+        return None
 
     def find(self, provider: str, model_id: str) -> ModelEntry | None:
         """First catalog entry for a provider model ID (aliases share one price)."""
@@ -291,7 +344,12 @@ def catalog_from_raw(
         if isinstance(raw.get("tiering"), dict)
         else packaged_tiering()
     )
-    return Catalog(models=models, provider_limits=limits, tiering=tiering)
+    openrouter = (
+        build(OpenRouterPolicy, "openrouter", raw["openrouter"])
+        if isinstance(raw.get("openrouter"), dict)
+        else packaged_openrouter_policy()
+    )
+    return Catalog(models=models, provider_limits=limits, tiering=tiering, openrouter=openrouter)
 
 
 def load_catalog(path: Path | None = None) -> Catalog:

@@ -126,13 +126,17 @@ synthesizing
 ### `fusion doctor`
 
 Checks, in the order to fix them: the Fusion and Python versions and whether `uv` is on `PATH`; the
-configuration files; each provider's key (shown as `…` and its last four characters, never whole);
-catalog staleness and retiring models; that the database folder is writable; that `fusion mcp`
+configuration files; each provider's key (shown as `…` and its last four characters, never whole;
+with `OPENROUTER_API_KEY` set, a vendor without its own key is `ok` because its models run through
+OpenRouter), and, with that key, the [OpenRouter privacy setting](#openrouter-routes-and-data-policy)
+it cannot verify; catalog staleness and retiring models; that the database folder is writable; that `fusion mcp`
 starts, speaks only JSON-RPC on stdout and lists its tools (it runs on the mock provider and a
 scratch database, so it needs no keys and touches nothing of yours; `--no-mcp` skips it); and each
 client's setup (Claude Code, Cursor, Codex; a client you do not use shows as `info`). A failing
 check prints a `fix:` line. `--live` also asks each provider for its model list, which is free and
-proves the key and the network work; it never sends a completion, so it costs nothing. Exit code 1
+proves the key and the network work, and runs the OpenRouter price and privacy checks of
+`fusion models check --live` ([COSTS.md](COSTS.md#keeping-prices-honest)); it never sends a
+completion, so it costs nothing. Exit code 1
 when a check is an error (`--strict`: or a warning); `--json` prints `{ok, checks: [{name, status,
 detail, fix}]}`.
 
@@ -176,6 +180,8 @@ Restart the shell afterwards. Completion covers commands, subcommands and flags.
 | `ANTHROPIC_API_KEY` | Anthropic API key | — |
 | `OPENAI_API_KEY` | OpenAI API key | — |
 | `GOOGLE_API_KEY` | Google API key | — |
+| `OPENROUTER_API_KEY` | OpenRouter API key: the open-weight models, and the route for any vendor whose key is unset ([OpenRouter](#openrouter-routes-and-data-policy)) | — |
+| `FUSION_OPENROUTER_PRIVACY` | Set to `confirmed` once your OpenRouter account excludes providers that may train on prompts; turns the `fusion doctor` reminder into `ok` (Fusion still cannot read the setting) | unset |
 | `OLLAMA_ENABLED` | Enable the Ollama provider | `false` |
 | `OLLAMA_BASE_URL` | Ollama endpoint | `http://localhost:11434` |
 | `LMSTUDIO_ENABLED` | Enable the LM Studio provider | `false` |
@@ -207,6 +213,7 @@ How the shadow A/B works and how to read its results: [BENCHMARKING.md](BENCHMAR
 | Anthropic | `ANTHROPIC_API_KEY` | Enabled when the key is set |
 | OpenAI | `OPENAI_API_KEY` | Enabled when the key is set |
 | Google | `GOOGLE_API_KEY` | Enabled when the key is set |
+| OpenRouter | `OPENROUTER_API_KEY` | Enabled when the key is set; serves the open-weight models and stands in for a vendor without a key |
 | Ollama | `OLLAMA_ENABLED=true`, `OLLAMA_BASE_URL` | Optional, off by default |
 | LM Studio | `LMSTUDIO_ENABLED=true`, `LMSTUDIO_BASE_URL` | Optional, off by default |
 | Mock | `FUSION_DEFAULT_PROVIDER=mock` or `--mock` | Tests and offline development only |
@@ -222,6 +229,47 @@ ollama pull llama3.2
 # then set `ollama-llama` to enabled: true in catalog.yaml
 ```
 
+### OpenRouter: routes and data policy
+
+OpenRouter is a fourth provider (OpenAI-compatible Chat Completions at
+`https://openrouter.ai/api/v1`). It serves the open-weight models in the catalog (DeepSeek, MiniMax,
+Qwen, GLM, MiMo, Hunyuan, Muse, Mistral, Kimi, Grok; `fusion models list`), and it is a second
+route to the Anthropic, OpenAI and Google models. Each of those has two catalog fields:
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `route` | `auto` (default), `direct`, `openrouter` | `auto`: the vendor's own API when its key is set, OpenRouter otherwise. `direct`: only the vendor's API. `openrouter`: always OpenRouter |
+| `openrouter_id` | for example `anthropic/claude-haiku-5.5` | The model's ID on OpenRouter; without it the model has no OpenRouter route |
+
+So `OPENROUTER_API_KEY` alone is enough to run every default strategy. Each call records the route
+that served it: the run's ledger shows provider `openrouter` and the OpenRouter ID. A call through
+OpenRouter is billed what OpenRouter reports (`usage.cost`), which the ledger records instead of the
+catalog estimate; the estimate before the run (and `max_cost_usd`) still uses the catalog price,
+which for a vendor model is the vendor's list price (`fusion models check --live` flags where
+OpenRouter's differs by more than 5%). Through OpenRouter the Anthropic-only features are not used:
+no prompt caching breakpoints and no Anthropic structured-output mode (JSON schema goes through
+OpenRouter's `response_format` instead).
+
+**Data policy (no training on prompts).** OpenRouter forwards each request to one of several hosts
+for the model. Fusion's rule is that no host which may *train* on prompts gets them; hosts that
+retain or log prompts without training are allowed. OpenRouter has no per-request switch for that
+(its `data_collection: "deny"` also drops every host that stores data, and zero-data-retention is
+stricter still), so the rule is enforced in two layers:
+
+1. **Your account setting (required).** At <https://openrouter.ai/settings/privacy>, turn off
+   providers that may train on your inputs (for paid models). OpenRouter then never routes to them.
+   Fusion cannot read this setting: `fusion doctor` shows `openrouter-privacy` as a warning until
+   you set `FUSION_OPENROUTER_PRIVACY=confirmed`, and even then says it did not verify it.
+2. **An ignore list on every request.** Each request sends `provider: {ignore: [...],
+   data_collection: "allow", require_parameters: true}`. The list is `openrouter.provider_ignore`
+   in the catalog: the providers OpenRouter's provider list marks as possibly training on prompts
+   (on 2026-11-17: DeepSeek, Liquid, NVIDIA, Thinking Machines; DeepSeek's own models still run, on
+   other hosts). A config layer can add slugs but never remove these. `fusion models check --live`
+   re-reads OpenRouter's list and reports any training provider missing from it as `POLICY`.
+
+Requests carry a generic `X-Title: fusion-code-orchestrator` header and nothing that identifies
+you. What OpenRouter itself sees is in [SECURITY.md](../SECURITY.md#what-leaves-the-machine).
+
 ### Rate limits and reasoning effort
 
 Three catalog settings tune provider calls (all in `src/fusion/config/catalog.yaml`):
@@ -230,7 +278,7 @@ Three catalog settings tune provider calls (all in `src/fusion/config/catalog.ya
 |---------|-------|--------|
 | `provider_limits.<provider>.max_concurrent` | top level | Most in-flight requests to that provider, shared by every call (panel, refinement, judge). |
 | `provider_limits.<provider>.rpm` | top level | Most request starts in any 60 s window. Omit either key for "unlimited". Set both to your account's real quota. |
-| `default_reasoning_effort` | per model | Effort sent when a request does not choose one (`none`..`max`; Gemini maps to `low`/`medium`/`high`). Panel models default to `low`; the baseline and synthesizer keep provider defaults so comparisons stay fair. |
+| `default_reasoning_effort` | per model | Effort sent when a request does not choose one (`none`..`max`; Gemini maps to `low`/`medium`/`high`; OpenRouter gets it as `reasoning: {effort}`). Panel models default to `low`; the baseline and synthesizer keep provider defaults so comparisons stay fair. |
 | `persona` | per model | Panel persona prompt (for example `security_reviewer`). Without one a model answers with the task's own system prompt. |
 | `max_tokens` | per model | Output cap Fusion requests. Thinking tokens count against it, so reasoning models use 16384. |
 
@@ -287,6 +335,8 @@ budget_strategies:
 | `panel-duo` (default) | Claude Haiku 5.5 + GPT-6 Luna, merged by Haiku 5.5; no spare model if one fails | 2 + 1 |
 | `panel-nano` | Haiku 5.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 5.5 | 3 + 1 |
 | `panel-mid` | GPT-6.1 Terra + Gemini 4 Hydrogen + Claude Sonnet 5.5, merged by Sonnet 5.5 | 3 + 1 |
+| `panel-open` | open-weight models through OpenRouter: DeepSeek V4.1 Flash + MiniMax M3.1 Flash + Qwen 3.8 Flash + GLM-5.3, merged by Haiku 5.5; needs `OPENROUTER_API_KEY`; a 0.3.0 ablation candidate, not a default | 4 + 1 |
+| `panel-mixed` | Haiku 5.5 + GPT-6 Luna + DeepSeek V4.1 Flash (OpenRouter), merged by Haiku 5.5; a 0.3.0 ablation candidate, not a default | 3 + 1 |
 | `panel-cheap-strong-synth` | the `panel-nano` models, merged by Claude Sonnet 5.5 | 3 + 1 |
 | `panel-refine` | the `panel-nano` models plus one refinement round, merged by Haiku 5.5 | 3 + 3 + 1 |
 | `panel-digest` | the `panel-nano` models, no synthesis: the answers come back for Claude Code to merge | 3 |

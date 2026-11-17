@@ -26,7 +26,13 @@ from fusion import __version__
 from fusion.cli.common import PROVIDER_KEYS, JsonOption, console, echo_json
 from fusion.config import paths as fusion_paths
 from fusion.config.catalog import catalog_warnings, load_catalog
-from fusion.config.catalog_check import ModelCheck, check_catalog_live
+from fusion.config.catalog_check import (
+    POLICY_ALIAS,
+    ModelCheck,
+    check_catalog_live,
+    check_openrouter_live,
+)
+from fusion.config.env import ROUTABLE_VENDORS
 from fusion.config.layers import ConfigError, resolve_config
 from fusion.install.checks import inspect_clients
 from fusion.install.common import InstallError, ServerSpec, verify_server
@@ -64,10 +70,17 @@ def default_mcp_check() -> list[str]:
         )
 
 
+OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy"
+# Set to "confirmed" once the OpenRouter account setting is done; Fusion cannot read it.
+OPENROUTER_PRIVACY_ENV = "FUSION_OPENROUTER_PRIVACY"
+
+
 def default_live_check(keys: Mapping[str, str]) -> list[ModelCheck]:
     async def _run() -> list[ModelCheck]:
+        catalog = load_catalog()
         async with httpx.AsyncClient() as client:
-            return await check_catalog_live(load_catalog(), dict(keys), client)
+            direct = await check_catalog_live(catalog, dict(keys), client)
+            return [*direct, *await check_openrouter_live(catalog, client)]
 
     return asyncio.run(_run())
 
@@ -154,25 +167,59 @@ def _keys(env: Mapping[str, str]) -> list[Check]:
         for provider in PROVIDER_KEYS
         if any(m.enabled and m.provider == provider for m in models)
     ]
-    present = {p: env.get(PROVIDER_KEYS[p], "").strip() for p in providers}
+    present = {p: env.get(PROVIDER_KEYS[p], "").strip() for p in PROVIDER_KEYS}
     none_set = not any(present.values())
+    via_openrouter = bool(present.get("openrouter"))
     checks: list[Check] = []
     for provider in providers:
         variable = PROVIDER_KEYS[provider]
+        fix = f"export {variable}=... or put it in a .env file in the directory you run from"
         if present[provider]:
             checks.append(
                 Check(f"key:{provider}", "ok", f"{variable} is set ({mask(present[provider])})")
             )
+        elif via_openrouter and provider in ROUTABLE_VENDORS:
+            detail = f"{variable} is not set; its models run through OpenRouter"
+            checks.append(Check(f"key:{provider}", "ok", detail))
+        elif provider == "openrouter" and not none_set:
+            # Optional: only the open-weight models (no default strategy) need it.
+            detail = f"{variable} is not set; the open-weight models it serves are skipped"
+            checks.append(Check(f"key:{provider}", "info", detail, fix))
         else:
             checks.append(
                 Check(
                     f"key:{provider}",
                     "error" if none_set else "warn",
                     f"{variable} is not set" + ("" if none_set else "; its models are skipped"),
-                    f"export {variable}=... or put it in a .env file in the directory you run from",
+                    fix,
                 )
             )
+    if via_openrouter:
+        checks.append(_openrouter_privacy(env))
     return checks
+
+
+def _openrouter_privacy(env: Mapping[str, str]) -> Check:
+    """The account setting that keeps prompts away from providers that train on them."""
+    ignored = len(load_catalog().openrouter.provider_ignore)
+    unverifiable = (
+        "Fusion cannot read your OpenRouter account settings, so it cannot verify that providers "
+        "which may train on prompts are turned off"
+    )
+    if env.get(OPENROUTER_PRIVACY_ENV, "").strip().lower() == "confirmed":
+        detail = (
+            f"you confirmed the account setting ({unverifiable[0].lower()}{unverifiable[1:]}); "
+            f"every request also ignores {ignored} such providers"
+        )
+        return Check("openrouter-privacy", "ok", detail)
+    return Check(
+        "openrouter-privacy",
+        "warn",
+        f"{unverifiable}; every request ignores {ignored} known ones, the account setting covers "
+        "the rest (required setup step)",
+        f"turn off training providers at {OPENROUTER_PRIVACY_URL}, then set "
+        f"{OPENROUTER_PRIVACY_ENV}=confirmed",
+    )
 
 
 def _catalog() -> list[Check]:
@@ -245,14 +292,18 @@ def _live(env: Mapping[str, str], check: LiveCheck) -> list[Check]:
         "error": "error",
         "newer": "warn",
         "redirect": "warn",
+        "price_drift": "warn",
+        "policy": "error",
     }
     out: list[Check] = []
     for item in check(keys):
+        routed = item.provider == "openrouter" and item.alias != POLICY_ALIAS
         out.append(
             Check(
-                f"live:{item.alias}",
+                f"live:{item.alias}" + ("@openrouter" if routed else ""),
                 labels[item.status],
-                f"{item.provider}/{item.model_id}" + (f" ({item.detail})" if item.detail else ""),
+                (f"{item.provider}/{item.model_id}" if item.model_id else item.provider)
+                + (f" ({item.detail})" if item.detail else ""),
                 "fusion models check --live" if item.status not in {"ok", "skipped"} else "",
             )
         )

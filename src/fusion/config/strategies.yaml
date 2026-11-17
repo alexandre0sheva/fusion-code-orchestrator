@@ -133,6 +133,32 @@ strategies:
     aggregator: llm
     aggregator_model: claude-sonnet
 
+  panel-open:
+    kind: panel
+    description: >-
+      Four nano-tier open-weight models through OpenRouter (DeepSeek V4.1 Flash, MiniMax M3.1
+      Flash, Qwen 3.8 Flash, GLM-5.3), merged by Claude Haiku 5.5. Needs OPENROUTER_API_KEY.
+      A candidate for the 0.3.0 ablation, not a default.
+    members:
+      - model: deepseek-flash
+      - model: minimax-flash
+      - model: qwen-flash
+      - model: glm
+    aggregator: llm
+    aggregator_model: claude-haiku
+
+  panel-mixed:
+    kind: panel
+    description: >-
+      Claude Haiku 5.5, GPT-6 Luna and DeepSeek V4.1 Flash (through OpenRouter), merged by Haiku.
+      A candidate for the 0.3.0 ablation, not a default.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: deepseek-flash
+    aggregator: llm
+    aggregator_model: claude-haiku
+
   panel-cheap-strong-synth:
     kind: panel
     description: The nano panel, merged by Claude Sonnet 5.5 for a stronger final answer.

@@ -402,3 +402,9 @@ def test_cli_reports_an_install_error_and_exits_with_one(
 def test_cli_rejects_an_unknown_scope() -> None:
     result = CliRunner().invoke(app, ["install", "claude-code", "--scope", "galaxy"])
     assert result.exit_code != 0
+
+
+
+def test_the_install_notes_name_the_openrouter_key(claude: FakeClaude, home: Path) -> None:
+    report = run(claude, home)
+    assert any("OPENROUTER_API_KEY" in note for note in report.notes)

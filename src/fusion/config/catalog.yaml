@@ -33,6 +33,26 @@ provider_limits:
   anthropic: {max_concurrent: 8, rpm: 1000}
   openai: {max_concurrent: 8, rpm: 1000}
   google: {max_concurrent: 8, rpm: 1000}
+  openrouter: {max_concurrent: 8, rpm: 1000}
+
+# OpenRouter (provider `openrouter`, key OPENROUTER_API_KEY). It serves the open-weight models
+# below, and it is the fallback route for Anthropic, OpenAI and Google models: each of those has
+# `route` (direct | openrouter | auto; auto = the vendor's API when its key is set, else OpenRouter)
+# and `openrouter_id`. A call through OpenRouter is billed what OpenRouter reports (usage.cost).
+#
+# Privacy (owner rule: no provider that trains on prompts; retaining or logging is allowed).
+# OpenRouter has no per-request "no training" switch, so it is enforced in two layers:
+#   1. the account setting at https://openrouter.ai/settings/privacy that disables providers which
+#      may train on inputs (required; `fusion doctor` reminds you, it cannot read the setting);
+#   2. provider_ignore below, sent with every request: the providers OpenRouter's provider list
+#      marks `dataPolicy.training: true`. `fusion models check --live` re-reads that list and flags
+#      any training provider missing here. A config layer can add slugs, never remove these.
+# Requests also send data_collection: "allow" (deny would drop every provider that stores data,
+# stricter than the rule) and require_parameters: true.
+openrouter:
+  provider_ignore: [deepseek, liquid, nvidia, thinkingmachines]
+  verified_on: 2026-11-17
+  source_url: https://openrouter.ai/docs/guides/privacy/provider-logging
 
 models:
   # ---------------------------------------------------------------------------
@@ -94,6 +114,7 @@ models:
   claude-haiku:
     provider: anthropic
     model_id: claude-haiku-5-5
+    openrouter_id: anthropic/claude-haiku-5.5
     display_name: Claude Haiku 5.5
     notes: >-
       Fastest Claude; nano-tier panel model and cheap synthesizer. Adaptive thinking is on by
@@ -132,6 +153,7 @@ models:
   claude-sonnet:
     provider: anthropic
     model_id: claude-sonnet-5-5
+    openrouter_id: anthropic/claude-sonnet-5.5
     display_name: Claude Sonnet 5.5
     notes: Strong synthesizer and mid-tier panel model. Adaptive thinking, provider default effort high.
     roles: [synthesizer, panel]
@@ -160,6 +182,7 @@ models:
   claude-opus:
     provider: anthropic
     model_id: claude-opus-5-5
+    openrouter_id: anthropic/claude-opus-5.5
     display_name: Claude Opus 5.5
     notes: Frontier baseline (the default). Adaptive thinking is always on; provider default effort medium.
     roles: [baseline]
@@ -188,6 +211,7 @@ models:
   claude-fable:
     provider: anthropic
     model_id: claude-fable-5-2
+    openrouter_id: anthropic/claude-fable-5.2
     display_name: Claude Fable 5.2
     notes: >-
       Anthropic's most capable model; benchmark-only baseline. Adaptive thinking is always on;
@@ -267,6 +291,7 @@ models:
   gpt-luna:
     provider: openai
     model_id: gpt-6-luna
+    openrouter_id: openai/gpt-6-luna
     display_name: GPT-6 Luna
     notes: >-
       Most efficient OpenAI model. Reasoning effort none..max (provider default medium, Fusion
@@ -302,6 +327,7 @@ models:
   gpt-luna-security:
     provider: openai
     model_id: gpt-6-luna
+    openrouter_id: openai/gpt-6-luna
     display_name: GPT-6 Luna Security Reviewer
     notes: Security-focused panel role using GPT-6 Luna
     roles: [panel]
@@ -324,6 +350,7 @@ models:
   gpt-terra:
     provider: openai
     model_id: gpt-6.1-terra
+    openrouter_id: openai/gpt-6.1-terra
     display_name: GPT-6.1 Terra
     notes: >-
       Fast, efficient low-tier model; mid-tier panel member. Reasoning effort none..max (Fusion
@@ -358,6 +385,7 @@ models:
   gpt-sol:
     provider: openai
     model_id: gpt-6.2-sol
+    openrouter_id: openai/gpt-6.2-sol
     display_name: GPT-6.2 Sol
     notes: >-
       Balances intelligence and cost; second frontier-class baseline. Reasoning effort low..max
@@ -394,6 +422,7 @@ models:
   gpt-astra:
     provider: openai
     model_id: gpt-6.2-astra
+    openrouter_id: openai/gpt-6.2-astra
     display_name: GPT-6.2 Astra
     notes: >-
       OpenAI's flagship for complex reasoning and coding; benchmark-only baseline. Reasoning
@@ -460,6 +489,7 @@ models:
   gemini-flash:
     provider: google
     model_id: gemini-3.8-flash
+    openrouter_id: google/gemini-3.8-flash
     display_name: Gemini 3.8 Flash
     notes: >-
       Newest and most capable Flash model (not Flash-Lite, which is not used). Introductory price
@@ -495,6 +525,7 @@ models:
   gemini-hydrogen:
     provider: google
     model_id: gemini-4-hydrogen
+    openrouter_id: google/gemini-4-hydrogen
     display_name: Gemini 4 Hydrogen
     notes: Fast, efficient Gemini 4 model for everyday coding and agentic work; mid-tier panel member.
     roles: [panel]
@@ -520,6 +551,7 @@ models:
   gemini-carbon:
     provider: google
     model_id: gemini-4-carbon
+    openrouter_id: google/gemini-4-carbon
     display_name: Gemini 4 Carbon
     notes: >-
       Google's most capable reasoning model, for complex software engineering; the Google
@@ -553,6 +585,7 @@ models:
   gemini-argon:
     provider: google
     model_id: gemini-4-argon
+    openrouter_id: google/gemini-4-argon
     display_name: Gemini 4 Argon
     notes: >-
       Efficient Gemini 4 reasoning model: faster and fewer tokens per turn than Carbon, at the
@@ -570,6 +603,404 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     prices: *gemini4-frontier-prices
+
+  # ---------------------------------------------------------------------------
+  # Open-weight models via OpenRouter (newest snapshot of each family; dated IDs where one exists).
+  # Prices are OpenRouter's list prices; each new model starts as a panel candidate and joins a
+  # default strategy only through the Task 16 ablation. Through OpenRouter the upstream host varies
+  # per request (see the openrouter: block for which hosts are excluded).
+  # ---------------------------------------------------------------------------
+  deepseek-flash:
+    provider: openrouter
+    model_id: deepseek/deepseek-v4.1-flash-1017
+    display_name: DeepSeek V4.1 Flash (1017)
+    notes: >-
+      October 17, 2026 snapshot of DeepSeek V4.1 Flash, a sparse mixture-of-experts model.
+      DeepSeek's own API may train on prompts, so OpenRouter routes it to other hosts
+      (provider_ignore).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 943718
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 0.036
+        output_per_1m: 0.5
+        cached_input_per_1m: 0.01
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  minimax-flash:
+    provider: openrouter
+    model_id: minimax/minimax-m3.1-flash
+    display_name: MiniMax M3.1 Flash
+    notes: >-
+      Multimodal MiniMax model. OpenRouter prices it by time of day: $0.075 / $0.30 from 15:00
+      to 01:00 UTC and $0.15 / $0.60 otherwise; the catalog keeps the higher rate so estimates
+      and max_cost_usd never undercount (the ledger records the billed cost).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 524288
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 0.15
+        output_per_1m: 0.6
+        cached_input_per_1m: 0.015
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  qwen-flash:
+    provider: openrouter
+    model_id: qwen/qwen3.8-flash
+    display_name: Qwen 3.8 Flash
+    notes: >-
+      Alibaba's multimodal reasoning Flash model, suited to coding and codebase analysis. No
+      reasoning-effort control on OpenRouter.
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1000000
+    max_output: 131072
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    prices:
+      - input_per_1m: 0.15
+        output_per_1m: 0.47
+        cached_input_per_1m: 0.016
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  glm:
+    provider: openrouter
+    model_id: z-ai/glm-5.3
+    display_name: GLM-5.3
+    notes: >-
+      Z.ai's large reasoning model for complex software engineering and long-horizon agent
+      tasks (provider default effort max; Fusion's panel default is low). Text only.
+    roles: [panel]
+    strengths: [code_review, debugging, implementation_plan]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 943718
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: false
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 0.0699
+        output_per_1m: 1.4
+        cached_input_per_1m: 0.0689
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  mimo-flash:
+    provider: openrouter
+    model_id: xiaomi/mimo-v2.6-flash
+    display_name: MiMo-V2.6-Flash
+    notes: >-
+      Xiaomi's open-source mixture-of-experts model (309B total, 15B active). No
+      reasoning-effort control on OpenRouter.
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1050000
+    max_output: 131072
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    prices:
+      - input_per_1m: 0.14
+        output_per_1m: 0.28
+        cached_input_per_1m: 0.0028
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  hy4-flash:
+    provider: openrouter
+    model_id: tencent/hy4-flash
+    display_name: Tencent Hy4 Flash
+    notes: >-
+      Cost-efficient variant of Tencent Hy4, about a quarter of the flagship's parameters. No
+      reasoning-effort control on OpenRouter.
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 65536
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    prices:
+      - input_per_1m: 0.035
+        output_per_1m: 0.1405
+        cached_input_per_1m: 0.0015
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  muse-ember:
+    provider: openrouter
+    model_id: meta/muse-ember
+    display_name: Meta Muse Ember
+    notes: >-
+      Meta's smallest, most efficient reasoning model, built for the repetitive work agents do
+      (provider default effort max; Fusion's panel default is low).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: medium
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 943718
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 0.1
+        output_per_1m: 0.5
+        cached_input_per_1m: 0.004
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  mimo-pro:
+    provider: openrouter
+    model_id: xiaomi/mimo-v2.6-pro
+    display_name: MiMo-V2.6-Pro
+    notes: >-
+      Xiaomi's flagship foundation model (over 1T parameters). No reasoning-effort control on
+      OpenRouter.
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: low
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1050000
+    max_output: 131072
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    prices:
+      - input_per_1m: 0.435
+        output_per_1m: 0.87
+        cached_input_per_1m: 0.0036
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  deepseek-pro:
+    provider: openrouter
+    model_id: deepseek/deepseek-v4-pro-0813
+    display_name: DeepSeek V4 Pro (0813)
+    notes: >-
+      GA release of DeepSeek V4 Pro, a large mixture-of-experts reasoning model with
+      output-heavy pricing. Text only; DeepSeek's own API is excluded (provider_ignore).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 943718
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: false
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 0.111
+        output_per_1m: 4.44
+        cached_input_per_1m: 0.097
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  mistral-large:
+    provider: openrouter
+    model_id: mistralai/mistral-large-4-0
+    display_name: Mistral Large 4
+    notes: >-
+      Mistral's multimodal model for reasoning, coding and agentic work. Reasoning is high or
+      none, so Fusion leaves the provider default (high).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 262144
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    prices:
+      - input_per_1m: 0.7
+        output_per_1m: 2.1
+        cached_input_per_1m: 0.07
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  muse-spark-open:
+    provider: openrouter
+    model_id: meta/muse-spark-open
+    display_name: Meta Muse Spark Open
+    notes: >-
+      Coding-optimised open-weight model trained for agentic coding workflows (provider
+      default effort medium; Fusion's panel default is low).
+    roles: [panel]
+    strengths: [code_review, debugging, implementation_plan]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 943718
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 1.25
+        output_per_1m: 4.25
+        cached_input_per_1m: 0.15
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  qwen-max:
+    provider: openrouter
+    model_id: qwen/qwen4-max
+    display_name: Qwen4 Max
+    notes: >-
+      Flagship of Alibaba's Qwen4 series (text, image and video input).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1000000
+    max_output: 131072
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 1.425
+        output_per_1m: 4.275
+        cached_input_per_1m: 0.07125
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  kimi:
+    provider: openrouter
+    model_id: moonshotai/kimi-k3.1-pro
+    display_name: Kimi K3.1 Pro
+    notes: >-
+      Moonshot AI's flagship open-weight multimodal reasoning model; output-heavy pricing, so
+      long answers cost more than the blended price suggests (provider default effort max;
+      Fusion's panel default is low).
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 1048576
+    max_output: 943718
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 0.2403
+        output_per_1m: 8.4023
+        cached_input_per_1m: 0.2
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+
+  grok:
+    provider: openrouter
+    model_id: x-ai/grok-4.7
+    display_name: Grok 4.7
+    notes: >-
+      xAI's flagship for coding, agentic tasks and knowledge work (provider default effort
+      high; Fusion's panel default is low). A request over 200,000 prompt tokens pays the
+      long-context row in full.
+    roles: [panel]
+    strengths: [code_review, debugging]
+    latency_tier: medium
+    context_tier: long
+    quality_tier: strong
+    max_tokens: 16384
+    context_window: 500000
+    max_output: 450000
+    supports_json: true
+    supports_json_schema: true
+    supports_tools: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    default_reasoning_effort: low
+    prices:
+      - input_per_1m: 2.0
+        output_per_1m: 6.0
+        cached_input_per_1m: 0.5
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
+      - input_per_1m: 4.0
+        output_per_1m: 12.0
+        cached_input_per_1m: 1.0
+        above_prompt_tokens: 200000
+        verified_on: 2026-11-17
+        source_url: https://openrouter.ai/api/v1/models
 
   # ---------------------------------------------------------------------------
   # Local models (optional, disabled by default; free)

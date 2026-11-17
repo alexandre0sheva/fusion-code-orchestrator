@@ -14,6 +14,8 @@ def _force_test_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("FUSION_OPENROUTER_PRIVACY", raising=False)
     monkeypatch.delenv("OLLAMA_ENABLED", raising=False)
     monkeypatch.delenv("LMSTUDIO_ENABLED", raising=False)
 

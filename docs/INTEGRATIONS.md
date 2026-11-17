@@ -27,7 +27,9 @@ with `/mcp` (the server `plugin:fusion:fusion` should be connected) and `/fusion
 
 **Provider keys** reach the server through the environment Claude Code starts in, or a `.env` file
 in the project directory you open Claude Code in (the server starts there). Set at least one of
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`. Without any, Fusion answers with the
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY` (OpenRouter alone runs
+every default strategy; see [OpenRouter](CONFIGURATION.md#openrouter-routes-and-data-policy) for the
+privacy setting it needs). Without any, Fusion answers with the
 failures listed in `warnings`. Run `claude` from a shell that has them exported.
 
 ### Choose how to install
@@ -157,7 +159,7 @@ Codex's defaults do not suit Fusion:
 |-----|--------|-----|
 | `startup_timeout_sec` | 120 (Codex default 10) | The first start clones and builds Fusion |
 | `tool_timeout_sec` | 180 (Codex default 60) | A call takes tens of seconds and Fusion's own soft limit is 90 s; at 60 s Codex would abort first |
-| `env_vars` | the three provider keys | Codex forwards only the variables listed here to an MCP server, so without it the server runs without keys |
+| `env_vars` | the four provider keys (`OPENROUTER_API_KEY` included) | Codex forwards only the variables listed here to an MCP server, so without it the server runs without keys |
 
 A larger value you already have is kept, never lowered. The file is edited with `tomlkit`, so your
 comments, ordering and other servers stay as they were; a different `fusion` entry is refused

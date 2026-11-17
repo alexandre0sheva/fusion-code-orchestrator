@@ -7,7 +7,7 @@
 # See what is in effect, and where each value came from:  fusion config show --resolved
 #
 # API keys do not belong here. Export them or put them in a .env file:
-#   ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY
+#   ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, OPENROUTER_API_KEY
 
 # Client-side limits per provider (set to your account's real quota).
 # provider_limits:

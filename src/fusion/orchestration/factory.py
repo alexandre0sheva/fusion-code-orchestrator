@@ -55,8 +55,11 @@ def build_provider_registry(use_mock: bool = False) -> ProviderSet:
     from fusion.providers.mock import MockProvider
     from fusion.providers.ollama import OllamaProvider
     from fusion.providers.openai import OpenAIProvider
+    from fusion.providers.openrouter import OpenRouterProvider
+    from fusion.providers.routes import with_openrouter_routes
 
-    limiters = build_limiters(load_catalog())
+    catalog = load_catalog()
+    limiters = build_limiters(catalog)
     providers: ProviderSet = {}
     if use_mock:
         providers["mock"] = MockProvider()
@@ -72,11 +75,15 @@ def build_provider_registry(use_mock: bool = False) -> ProviderSet:
         instance = cls(limiter=limiters.get(cls.name))
         if instance.is_available():
             providers[instance.name] = instance
+    # OpenRouter serves the open-weight models and stands in for any vendor whose key is unset.
+    openrouter = OpenRouterProvider(limiter=limiters.get(OpenRouterProvider.name))
+    providers = with_openrouter_routes(providers, openrouter, catalog)
 
-    if not use_mock and not any(name in providers for name in ("anthropic", "openai", "google")):
+    cloud = ("anthropic", "openai", "google", "openrouter")
+    if not use_mock and not any(name in providers for name in cloud):
         msg = (
             "No cloud providers configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, "
-            "and/or GOOGLE_API_KEY in .env, or run with --mock for offline mode."
+            "GOOGLE_API_KEY and/or OPENROUTER_API_KEY in .env, or run with --mock for offline mode."
         )
         raise RuntimeError(msg)
 

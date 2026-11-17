@@ -114,6 +114,8 @@ class Parsed:
     cached_input_tokens: int | None = None
     cache_write_tokens: int | None = None
     reasoning_tokens: int | None = None
+    # What the provider says it billed for this call (OpenRouter's usage.cost), when it says.
+    actual_cost_usd: float | None = None
     finish_reason: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -430,6 +432,7 @@ class HttpProvider(ModelProvider):
             cached_input_tokens=parsed.cached_input_tokens,
             cache_write_tokens=parsed.cache_write_tokens,
             reasoning_tokens=parsed.reasoning_tokens,
+            actual_cost_usd=parsed.actual_cost_usd,
             latency_ms=latency_ms,
             ttft_ms=ttft_ms,
             decode_tokens_per_s=decode_tps,

@@ -305,3 +305,69 @@ def test_doctor_output_is_stable_without_a_terminal(
     assert all("\x1b" not in line for line in lines)
     assert any(line.startswith("ok    python") for line in lines)
     assert any(line.startswith("info  client:codex") for line in lines)
+
+
+# -- OpenRouter ----------------------------------------------------------------------------------
+
+OPENROUTER_KEY = {"OPENROUTER_API_KEY": "sk-or-v1-ORSECRET0123456789-mnop"}
+
+
+def test_only_an_openrouter_key_is_enough_and_vendors_say_they_route_through_it(
+    machine: Path,
+) -> None:
+    checks = run(machine, OPENROUTER_KEY)
+    (openrouter,) = named(checks, "key:openrouter")
+    assert openrouter.status == "ok" and "…mnop" in openrouter.detail
+    for provider in ("anthropic", "openai", "google"):
+        (key,) = named(checks, f"key:{provider}")
+        assert key.status == "ok", key
+        assert "through OpenRouter" in key.detail
+    assert "ORSECRET" not in " ".join(c.detail for c in checks)
+
+
+def test_without_an_openrouter_key_its_optional_models_are_skipped_as_info(machine: Path) -> None:
+    # No default strategy needs OpenRouter, so its absence is not a fault when a vendor key works.
+    (openrouter,) = named(run(machine, ALL_KEYS), "key:openrouter")
+    assert openrouter.status == "info" and "skipped" in openrouter.detail
+    assert "OPENROUTER_API_KEY" in openrouter.fix
+
+
+def test_the_account_privacy_setting_is_a_required_step_doctor_cannot_verify(
+    machine: Path,
+) -> None:
+    (privacy,) = named(run(machine, OPENROUTER_KEY), "openrouter-privacy")
+    assert privacy.status == "warn"
+    assert "cannot" in privacy.detail and "train" in privacy.detail
+    assert "https://openrouter.ai/settings/privacy" in privacy.fix
+    confirmed = {**OPENROUTER_KEY, "FUSION_OPENROUTER_PRIVACY": "confirmed"}
+    (ok,) = named(run(machine, confirmed), "openrouter-privacy")
+    assert ok.status == "ok" and "cannot" in ok.detail  # still says Fusion did not read it
+    assert not named(run(machine, ALL_KEYS), "openrouter-privacy")  # no key, no OpenRouter calls
+
+
+def test_live_reports_openrouter_drift_and_training_providers(machine: Path) -> None:
+    def fake(keys: Any) -> list[ModelCheck]:
+        return [
+            ModelCheck(alias="glm", provider="openrouter", model_id="z-ai/glm-5.3", status="ok"),
+            ModelCheck(
+                alias="gemini-flash",
+                provider="openrouter",
+                model_id="google/gemini-3.8-flash",
+                status="price_drift",
+                detail="10% apart",
+            ),
+            ModelCheck(
+                alias="openrouter-privacy",
+                provider="openrouter",
+                model_id="",
+                status="policy",
+                detail="newcomer may train",
+            ),
+        ]
+
+    checks = run(machine, OPENROUTER_KEY, live=True, live_check=fake)
+    by_name = {c.name: c for c in checks if c.name.startswith("live")}
+    assert by_name["live:glm@openrouter"].status == "ok"
+    assert by_name["live:gemini-flash@openrouter"].status == "warn"
+    assert by_name["live:openrouter-privacy"].status == "error"
+    assert by_name["live:openrouter-privacy"].detail == "openrouter (newcomer may train)"

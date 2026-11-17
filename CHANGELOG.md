@@ -9,7 +9,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `OPENROUTER_API_KEY=` in `.env.example` (the provider that reads it arrives later in 0.3.0).
+- **OpenRouter as a fourth provider** (`OPENROUTER_API_KEY`): every Anthropic, OpenAI and Google model gets an `openrouter_id` and a `route` (`auto`, the default, uses the vendor's API when its key is set and OpenRouter otherwise; `direct`; `openrouter`), so the OpenRouter key alone runs every default strategy, and each call's record names the route that served it. Calls through OpenRouter record the cost OpenRouter billed (`usage.cost`). See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#openrouter-routes-and-data-policy).
+- Open-weight models through OpenRouter, prices verified 2026-11-17: DeepSeek V4.1 Flash and V4 Pro, MiniMax M3.1 Flash, Qwen 3.8 Flash and Qwen4 Max, GLM-5.3, MiMo-V2.6 Flash and Pro, Tencent Hy4 Flash, Meta Muse Ember and Muse Spark Open, Mistral Large 4, Kimi K3.1 Pro and Grok 4.7 (panel candidates, in no default strategy); strategies `panel-open` (four open-weight Flash-class models, merged by Haiku 5.5) and `panel-mixed` (Haiku 5.5 + Luna + DeepSeek V4.1 Flash).
+- `fusion models check --live` (and `fusion doctor --live`) compares every price with OpenRouter's public list (no key needed), flags drift over 5% (`DRIFT`), an OpenRouter ID that is not listed and a newer model of the same family, and flags any OpenRouter host that may train on prompts and is missing from the catalog's ignore list (`POLICY`).
+- `fusion doctor` checks `OPENROUTER_API_KEY` (masked), reports vendors without a key as served through OpenRouter, and reminds you of the OpenRouter account privacy setting it cannot verify (`FUSION_OPENROUTER_PRIVACY=confirmed` once done); `fusion install codex` forwards `OPENROUTER_API_KEY`.
 - Latest models in the catalog, prices verified 2026-11-17: Claude Haiku 5.5 and Fable 5.2, GPT-6.1 Terra, GPT-6.2 Sol and GPT-6.2 Astra, Gemini 4 Hydrogen, Carbon and Argon; strategies `panel-nano` (Haiku 5.5 + Luna + Gemini 3.8 Flash), `panel-mid` (Terra + Hydrogen + Sonnet 5.5) and a `solo-<model>` strategy per model; Fable 5.2, GPT-6.2 Astra and Gemini 4 Carbon as benchmark-only baselines.
 - Price tiers computed from price (`nano`, `low`, `medium`, `high`, `premium` by blended price `(3 × input + output) / 4`, rule in `catalog.yaml` `tiering:`); `fusion models list` shows blended price, tier and coming tier changes, and takes `--on DATE`.
 - Long-context prices (`above_prompt_tokens` rows: Haiku 5.5 above 100K prompt tokens, GPT-6.x above 272K); the ledger and the `max_cost_usd` guard price each call by its own prompt size.
@@ -34,6 +37,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- OpenRouter requests are kept away from hosts that may train on prompts: every request sends `provider.ignore` with the hosts OpenRouter marks as training (DeepSeek, Liquid, NVIDIA, Thinking Machines on 2026-11-17; a config layer can add to the list, never shrink it), `data_collection: "allow"` and `require_parameters: true`, and the docs make the account's training opt-out a required setup step. Only a generic `X-Title` header is sent.
 - `uv.lock` now pins authlib 1.9.8, dnspython 2.9.2, joserfc 1.8.0 and opentelemetry-api 1.45.2, which fix the advisories that failed the CI `audit` job; `pip-audit` reports none.
 
 ## [0.2.0] - 2026-10-06

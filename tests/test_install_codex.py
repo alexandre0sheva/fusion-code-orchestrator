@@ -301,3 +301,8 @@ def test_inspect_clients_sees_a_registered_claude_code_server(home: Path, projec
         (f.client, f.status) for f in inspect_clients(project_dir=project, environ={}, home=home)
     }
     assert ("claude-code", "ok") in by_client and ("claude-code", "error") in by_client
+
+
+def test_the_openrouter_key_is_forwarded_too(home: Path, project: Path) -> None:
+    run(home, project)
+    assert "OPENROUTER_API_KEY" in fusion(config(home))["env_vars"]

@@ -30,6 +30,7 @@ SECTIONS = frozenset(
         "models",
         "provider_limits",
         "tiering",
+        "openrouter",
         "policies",
         "budgets",
         "fanout",

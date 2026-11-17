@@ -27,6 +27,7 @@ import tomlkit
 from tomlkit.exceptions import TOMLKitError
 from tomlkit.toml_document import TOMLDocument
 
+from fusion.config.env import PROVIDER_KEY_ENV
 from fusion.install.common import (
     SERVER_NAME,
     ClientCheck,
@@ -44,7 +45,7 @@ from fusion.install.common import (
 Verifier = Callable[[ServerSpec], list[str]]
 STARTUP_TIMEOUT_S = 120
 TOOL_TIMEOUT_S = 180
-PROVIDER_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY")
+PROVIDER_KEYS = tuple(PROVIDER_KEY_ENV.values())
 BEGIN = "<!-- fusion:begin (managed by `fusion install codex`; edits inside are replaced) -->"
 END = "<!-- fusion:end -->"
 _BLOCK = re.compile(rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?", re.DOTALL)

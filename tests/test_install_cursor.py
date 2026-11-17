@@ -205,3 +205,8 @@ def test_cli_installs_and_refuses_with_exit_code_one(
     (project / ".cursor" / "mcp.json").write_text("{")
     bad = CliRunner().invoke(app, ["install", "cursor", "--no-verify"])
     assert bad.exit_code == 1 and "not valid JSON" in bad.output
+
+
+def test_the_install_notes_name_the_openrouter_key(project: Path, home: Path) -> None:
+    report = run(project, home)
+    assert any("OPENROUTER_API_KEY" in note for note in report.notes)

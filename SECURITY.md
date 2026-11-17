@@ -56,12 +56,14 @@ caller (the caller already has your files and shell). Fusion does not defend aga
 | Destination | What is sent | When |
 |-------------|--------------|------|
 | Model providers (Anthropic, OpenAI, Google) | The system prompt and the task: the diff, question, context, file snippets and changed-file names, after redaction. Later calls also carry model output: refinement (other models' answers), judge, synthesis. The API key goes in a request header, never in a URL | Every run, to the models its strategy names |
+| OpenRouter, and the host it picks for the model | The same as a model provider, for open-weight models and for vendor models whose own key is unset (or whose catalog `route` is `openrouter`). OpenRouter sees every such prompt and answer and forwards them to one of the model's hosts; hosts that may train on prompts are excluded by your account setting and by the `provider.ignore` list on every request ([CONFIGURATION.md](docs/CONFIGURATION.md#openrouter-routes-and-data-policy)); hosts that retain or log prompts are allowed. Headers carry the key and a generic `X-Title`, nothing about you | Only with `OPENROUTER_API_KEY` set |
 | The baseline and judge models | The task prompt goes to the baseline model; the task and both answers go to the judge model | Only when shadow A/B is on (`FUSION_SHADOW_MODE`) |
-| Provider model-list endpoints | A request carrying your key, no prompt | `fusion doctor --live`, `fusion models check` |
+| Provider model-list endpoints | A request carrying your key, no prompt | `fusion doctor --live`, `fusion models check --live` |
+| OpenRouter's public model and provider lists | A plain request with no key and no prompt | `fusion doctor --live`, `fusion models check --live` |
 | Ollama and LM Studio | The task, to the local address you configured | Only when you enable them |
 
-Nothing else leaves: no telemetry, analytics or update checks. Fusion talks to no aggregator or
-proxy; the adapters call each provider directly. The dashboard and the optional HTTP transport
+Nothing else leaves: no telemetry, analytics or update checks. Apart from OpenRouter, which you opt
+into with its key, Fusion talks to no aggregator or proxy; the adapters call each provider directly. The dashboard and the optional HTTP transport
 only listen on 127.0.0.1.
 
 What stays on the machine, in your user data directory or `bench-results/`: the run database (the
@@ -78,7 +80,8 @@ private code without `--redact`.
 
 | Control | Behavior |
 |---------|----------|
-| Direct providers | Fusion calls model providers through its own adapters; no aggregator sees prompts |
+| Direct providers | Fusion calls model providers through its own adapters; no aggregator sees prompts unless you set `OPENROUTER_API_KEY` (then OpenRouter does, for the calls it serves) |
+| OpenRouter data policy | Hosts that may train on prompts are excluded twice: the account setting and a catalog ignore list sent with every request, which a config layer cannot shrink; `fusion models check --live` flags a training host missing from the list |
 | Secret redaction | Known key shapes, key blocks, `.env` lines, connection strings and (by default) high-entropy tokens are replaced before any external call; see below |
 | Sanitized storage | The run database holds the redacted input unless `FUSION_LOG_RAW_PROMPTS=true`; stored and displayed errors are redacted |
 | Prompt-injection delimiters | Forwarded text and model output sit inside `<untrusted>` blocks, and every system prompt says such blocks are data |
@@ -212,6 +215,9 @@ datasets you did not write.
   (see [docs/COSTS.md](docs/COSTS.md)).
 - LLM-as-judge evaluations can fail or disagree; deterministic checks and warnings stay visible.
 - The pinned actions and the audit cover known problems only; review Dependabot updates.
+- Through OpenRouter, the "no training" rule rests on OpenRouter's own record of each host's policy
+  and on your account setting, which Fusion cannot read. The ignore list is only as current as the
+  last `fusion models check --live`, which reads an undocumented OpenRouter endpoint.
 - Always verify Fusion recommendations against your codebase before applying them.
 
 ## What not to commit

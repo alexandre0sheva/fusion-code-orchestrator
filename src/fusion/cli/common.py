@@ -28,7 +28,7 @@ from rich.console import Console
 
 from fusion.cli.live import RunView
 from fusion.config.catalog import load_catalog
-from fusion.config.env import is_local_provider_enabled
+from fusion.config.env import PROVIDER_KEY_ENV, is_local_provider_enabled
 from fusion.mcp_server.tools import FusionTools
 
 T = TypeVar("T")
@@ -39,11 +39,7 @@ EXIT_USAGE = 2
 EXIT_HALTED = 3
 
 # Provider -> the environment variable that holds its key.
-PROVIDER_KEYS = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "google": "GOOGLE_API_KEY",
-}
+PROVIDER_KEYS = PROVIDER_KEY_ENV
 
 console = Console()
 err_console = Console(stderr=True)

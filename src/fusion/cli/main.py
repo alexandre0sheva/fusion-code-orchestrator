@@ -183,7 +183,7 @@ def init(
     typer.echo(
         "\nNext steps:\n"
         "  1. Set provider keys (environment or a .env file): ANTHROPIC_API_KEY, "
-        "OPENAI_API_KEY, GOOGLE_API_KEY\n"
+        "OPENAI_API_KEY, GOOGLE_API_KEY and/or OPENROUTER_API_KEY\n"
         "  2. Check the setup:  fusion doctor\n"
         '  3. Ask something:  fusion ask "How should I retry a failed HTTP call?"\n'
         "  4. See the effective configuration:  fusion config show --resolved\n"

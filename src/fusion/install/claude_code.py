@@ -116,7 +116,8 @@ def install_claude_code(
     )
     report.notes.append(
         "Provider keys come from the environment Claude Code starts in, or a .env file in the "
-        "project directory: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY."
+        "project directory: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, and/or "
+        "OPENROUTER_API_KEY (open-weight models, and a fallback for vendors without a key)."
     )
     return report
 

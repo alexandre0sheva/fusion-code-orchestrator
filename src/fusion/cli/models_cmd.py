@@ -20,17 +20,11 @@ from fusion.config.catalog import (
     catalog_warnings,
     load_catalog,
 )
-from fusion.config.catalog_check import ModelCheck, check_catalog_live
+from fusion.config.catalog_check import ModelCheck, check_catalog_live, check_openrouter_live
+from fusion.config.env import PROVIDER_KEY_ENV
 
 models_app = typer.Typer(help="Inspect and verify the model catalog (IDs and prices)")
 console = Console()
-
-_KEY_ENV = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "google": "GOOGLE_API_KEY",
-}
-
 
 def _price_text(catalog: Catalog, alias: str, today: date) -> tuple[str, str]:
     schedule = catalog.models[alias].price_at(today)
@@ -134,7 +128,7 @@ def models_list(
 def _api_keys() -> dict[str, str]:
     return {
         provider: os.environ[env]
-        for provider, env in _KEY_ENV.items()
+        for provider, env in PROVIDER_KEY_ENV.items()
         if os.environ.get(env, "").strip()
     }
 
@@ -149,6 +143,8 @@ def _print_live(results: list[ModelCheck]) -> int:
             "error": "[yellow]ERROR[/yellow]",
             "newer": "[yellow]NEWER[/yellow]",
             "redirect": "[yellow]MOVED[/yellow]",
+            "price_drift": "[yellow]DRIFT[/yellow]",
+            "policy": "[red]POLICY[/red]",
         }[item.status]
         detail = f" ({item.detail})" if item.detail else ""
         console.print(f"{label} {item.alias}: {item.provider}/{item.model_id}{detail}")
@@ -165,7 +161,8 @@ def models_check(
             "--live",
             help=(
                 "Also ask each provider's free list-models endpoint (needs API keys) for unknown "
-                "IDs and newer models, and check that price pages have not moved"
+                "IDs and newer models, check that price pages have not moved, and compare every "
+                "price and OpenRouter ID with OpenRouter's public list (no key needed)"
             ),
         ),
     ] = False,
@@ -186,7 +183,8 @@ def models_check(
 
         async def _run() -> list[ModelCheck]:
             async with httpx.AsyncClient() as client:
-                return await check_catalog_live(catalog, keys, client)
+                direct = await check_catalog_live(catalog, keys, client)
+                return [*direct, *await check_openrouter_live(catalog, client)]
 
         checked = asyncio.run(_run())
         if as_json:

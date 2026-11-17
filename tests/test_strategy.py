@@ -198,6 +198,8 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-nano",
         "panel-duo",
         "panel-mid",
+        "panel-open",
+        "panel-mixed",
         "panel-cheap-strong-synth",
         "panel-refine",
         "panel-digest",
@@ -233,6 +235,40 @@ def test_the_panels_run_on_the_latest_models() -> None:
     catalog = load_catalog()
     assert catalog.models["claude-haiku"].model_id == "claude-haiku-5-5"
     assert catalog.models["gemini-hydrogen"].model_id == "gemini-4-hydrogen"
+
+
+def test_the_openrouter_ablation_panels_are_defined_but_not_defaults() -> None:
+    book = load_strategy_book()
+    open_panel, mixed = book.get("panel-open"), book.get("panel-mixed")
+    assert [m.model for m in open_panel.members] == [
+        "deepseek-flash",
+        "minimax-flash",
+        "qwen-flash",
+        "glm",
+    ]
+    assert (open_panel.aggregator, open_panel.aggregator_model) == ("llm", "claude-haiku")
+    assert [m.model for m in mixed.members] == ["claude-haiku", "gpt-luna", "deepseek-flash"]
+    assert (mixed.aggregator, mixed.aggregator_model) == ("llm", "claude-haiku")
+    assert not {"panel-open", "panel-mixed"} & set(book.budget_map.values())
+
+
+def test_cli_mock_run_takes_the_open_weight_panel(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "ask",
+            "--mock",
+            "--strategy",
+            "panel-open",
+            "--db-path",
+            str(tmp_path / "o.db"),
+            "--context",
+            "A Python service calling an HTTP API with httpx.",
+            PROMPT,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "panel-open" in result.output
 
 
 def test_old_strategy_names_still_work_as_aliases() -> None:

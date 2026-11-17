@@ -61,7 +61,8 @@ Local and mock models need no price block and are free. Token accounting rules:
 no cached rate is configured); reasoning tokens are assumed to be part of `output_tokens` unless a
 separate `reasoning_per_1m` is set.
 
-If provider billing returns an actual cost, Fusion prefers that. Otherwise it estimates from the
+If provider billing returns an actual cost, Fusion prefers that (OpenRouter does: every call
+through it asks for `usage.cost`, which the ledger records as billed, not estimated). Otherwise it estimates from the
 catalog price in effect today and the reported token usage. If pricing or token usage is missing,
 cost is marked unknown rather than invented.
 
@@ -69,7 +70,7 @@ cost is marked unknown rather than invented.
 
 ```bash
 uv run fusion models check          # stale prices, price changes and retirements coming up
-uv run fusion models check --live   # also ask each provider's free list-models endpoint
+uv run fusion models check --live   # also ask each provider's free list-models endpoint, and OpenRouter
 ```
 
 `check` warns when a price was verified more than 60 days ago, when a price changes within 30 days
@@ -77,7 +78,13 @@ uv run fusion models check --live   # also ask each provider's free list-models 
 catalog, and when a provider's earliest retirement date for a model is within 60 days. `--live`
 sends your API keys (in headers) to the providers' free `models` endpoints only, and also flags an
 ID the provider does not list, a family where the provider lists a newer model (Flash-Lite and
-other suffixed variants count as other families), and a price `source_url` that redirects. It
+other suffixed variants count as other families), and a price `source_url` that redirects. It also
+reads OpenRouter's public model list (no key) and, for every model with an OpenRouter ID, flags an
+ID OpenRouter does not list (`UNKNOWN`), a price more than 5% away from OpenRouter's in either
+direction, long-context and time-of-day rates included (`DRIFT`), and a newer model of the same
+family, by version and listing date (`NEWER`); and it reads OpenRouter's provider list for hosts
+that may train on prompts missing from `openrouter.provider_ignore` (`POLICY`). The vendors'
+list-models endpoints carry no prices, so prices are compared with OpenRouter only. It
 makes no completion calls and costs nothing. `fusion doctor` shows the same warnings (the live ones
 with `--live`).
 
@@ -117,6 +124,8 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `solo-luna` | 1 | $0.0013 | 0.02x |
 | `panel-cascade (first wave agrees)` | 2 | $0.0025 | 0.05x |
 | `panel-duo` | 3 | $0.0042 | 0.08x |
+| `panel-mixed` | 4 | $0.0054 | 0.11x |
+| `panel-open` | 5 | $0.0086 | 0.17x |
 | `solo-flash` | 1 | $0.0094 | 0.19x |
 | `best-of-n-verified` | 3 | $0.0119 | 0.24x |
 | `panel-digest` | 3 | $0.0119 | 0.24x |
