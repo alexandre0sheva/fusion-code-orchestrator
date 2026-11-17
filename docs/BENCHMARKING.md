@@ -14,9 +14,9 @@ than a single frontier model. Cost methodology is in [COSTS.md](COSTS.md); confi
 | [Shadow A/B](#shadow-ab-live-measurement) | Real baseline answer and blind pairwise verdict on live calls | Yes |
 
 Benchmark mode is the framework the 0.2.0 study is built on. Its scorers, datasets, statistics and
-report are added task by task in the
-[0.2.0 roadmap](superpowers/plans/2026-10-05-v0.2.0-roadmap.md) (Tasks 16 to 19); this page says what
-exists today.
+report were built in 0.2.0 and are extended in the
+[0.3.0 roadmap](superpowers/plans/2026-11-17-v0.3.0-roadmap.md) (Tasks 10 and 13 to 16); this page says
+what exists today.
 
 ## Benchmark mode (`fusion bench`)
 

@@ -15,7 +15,8 @@ Claude Code, Cursor and Codex. The measured answer to "does a cheap panel match 
 **cheaper (about 0.3x Opus per solved task), slower (about 1.5x), and not shown to be better or worse**:
 the study is small and its intervals are wide ([docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md)).
 Read [Known limitations](#known-limitations) before quoting a number. The work was planned task by task
-in [docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md](docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md).
+in a roadmap that was retired after the release (it is in git history:
+`git show 9f3faec:docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md`).
 
 ### Added
 

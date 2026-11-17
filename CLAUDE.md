@@ -3,8 +3,8 @@
 Python MCP server + CLI that gives Claude Code (and Cursor/Codex) a panel of cheap LLMs for
 review, debugging, planning and answers, and measures whether that panel beats one big model on
 cost, speed and quality. Claude Code stays the executor: Fusion tools return text, never edit
-files or run commands. v0.2.0 is built and tag-ready; the owner commits and tags it (the plan and
-what each task changed are in `docs/superpowers/plans/2026-10-05-v0.2.0-roadmap.md`).
+files or run commands. v0.2.0 is released; v0.3.0 is planned task by task in
+`docs/superpowers/plans/2026-11-17-v0.3.0-roadmap.md` ("implement task N" = one task per session).
 
 ## Commands
 
