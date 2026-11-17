@@ -62,7 +62,7 @@ uv run fusion bench resume RUN --retry-halted   # ...and run again the jobs that
 uv run fusion bench report RUN            # intervals, paired comparisons, $ per solved task, verdicts (md)
 uv run fusion bench report RUN --format html   # one self-contained file with the charts
 uv run fusion bench compare RUN_A RUN_B   # before and after a tuning change
-uv run fusion bench spend                 # the live-spend ledger
+uv run fusion bench spend                 # each budget's live spend and what is left
 uv run fusion bench suite list            # the packaged studies; `suite show NAME` for one
 uv run fusion bench plan --suite ablation # price a suite (also: run --suite NAME)
 uv run fusion bench recommend RUN         # which arm to make the default, from a dev run
@@ -96,11 +96,13 @@ Two caps hold a live study:
   call at the assumed size) is reserved against what is left; when it will not fit, the run stops
   cleanly with status `stopped` and can be resumed with more money. Estimates are not
   measurements, so a run can pass the cap by at most the excess of the jobs in flight.
-- **The live-spend ledger** limits everything ever run live. The roadmap allows **$20 in total**.
-  Every live job appends its cost (arm and scorer) to `bench-results/spend.json`, a JSON array of
-  `{date, task, purpose, usd}` that is only ever appended to, and no job starts that would take the
-  total past the cap. A damaged ledger stops live runs rather than being reset. Simulated runs spend
-  nothing and are never recorded. `fusion bench spend` shows it.
+- **The live-spend ledger** limits everything run live under one roadmap's budget: **$15 for v0.3.0**
+  (the current budget; v0.2.0 had $20). Every live job appends its cost (arm and scorer) to
+  `bench-results/spend.json`, a JSON array of `{date, task, purpose, usd, budget}` that is only ever
+  appended to, and no job starts that would take its budget's total past the cap. An entry without
+  `budget` was written by 0.2.0 and counts as `v0.2.0`, never against `v0.3.0`. A damaged ledger
+  stops live runs rather than being reset. Simulated runs spend nothing and are never recorded.
+  `fusion bench spend` shows each budget's total and what is left.
 
 ### What is measured
 
@@ -501,7 +503,7 @@ plus a description and a stage, with arms written as a strategy and overrides. `
 (`--suite headline --mock --repeats 1`). `--suite` also takes the path of a suite file of your own.
 A task `quota` (tasks per category, a seeded sample of each; categories not named are left out)
 gives every suite a stratified subset that includes the executable, frontend and performance
-categories in small numbers, and `spend_stop_usd` stops a suite at $18 of the $20 ledger cap,
+categories in small numbers, and `spend_stop_usd` stops a suite at $14.50 of the $15 ledger cap,
 keeping the reserve. The planner prices a suite's design against what is left below that line.
 
 | Suite | Stage | What it answers | Budget |

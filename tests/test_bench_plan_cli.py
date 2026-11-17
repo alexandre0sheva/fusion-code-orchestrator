@@ -258,4 +258,17 @@ def test_spend_command_reports_the_ledger(fusion_home: Path) -> None:
 
     default_ledger().append(1.5, task="5", purpose="check")
     out = _invoke("spend").output
-    assert "$1.5000 of $20.00" in out and "1 entries" in out
+    assert "v0.3.0: spent $1.5000 of $15.00 ($13.5000 left)" in out and "1 entries" in out
+
+
+def test_spend_command_shows_every_budget_and_a_fresh_v030(fusion_home: Path) -> None:
+    import json
+
+    from fusion.bench.spend import default_ledger
+
+    path = default_ledger().path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps([{"date": "d", "task": "bench", "purpose": "r a", "usd": 15.66}]))
+    out = _invoke("spend").output
+    assert "v0.2.0: spent $15.6600 of $20.00 ($4.3400 left)" in out
+    assert "v0.3.0: spent $0.0000 of $15.00 ($15.0000 left)" in out

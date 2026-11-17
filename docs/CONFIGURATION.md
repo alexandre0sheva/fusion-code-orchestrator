@@ -160,12 +160,6 @@ view and tooltips that work from the keyboard; the page follows the system light
 (a button overrides it). An empty database shows the command that fills it. The baseline figures are
 estimates (the same tokens at the baseline model's list price), as in [COSTS.md](COSTS.md).
 
-### Deprecated commands
-
-`fusion review`, `fusion list-runs`, `fusion run-mock` and `fusion compare-cost` print a notice on
-stderr and still work in 0.2.x; they are removed in 0.3.0. Use `fusion review-diff -f DIFF`,
-`fusion runs list`, any run command with `--mock`, and `fusion runs compare-baseline RUN_ID`.
-
 ### Shell completion
 
 ```bash

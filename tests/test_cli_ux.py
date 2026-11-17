@@ -301,33 +301,18 @@ def test_runs_export_is_one_json_object_per_line(runner: CliRunner) -> None:
 # -- deprecations ---------------------------------------------------------------------------------
 
 
-def test_legacy_commands_warn_on_stderr_and_still_work(runner: CliRunner, tmp_path: Path) -> None:
-    runner.invoke(app, ["ask", LONG_QUESTION, "--mock", "-q"])
-    listed = runner.invoke(app, ["list-runs"])
-    assert listed.exit_code == 0 and "Recent Runs" in listed.stdout
-    assert "`fusion list-runs` will be removed in 0.3.0; use `fusion runs list`" in listed.stderr
+REMOVED = {
+    "review": "review-diff",
+    "run-mock": "ask",
+    "list-runs": "runs list",
+    "compare-cost": "runs compare-baseline",
+}
 
-    mocked = runner.invoke(app, ["run-mock"])
-    assert mocked.exit_code == 0 and "Run ID" in mocked.stdout and "run-mock" in mocked.stderr
 
-    diff = tmp_path / "x.diff"
-    diff.write_text(DIFF)
-    reviewed = runner.invoke(app, ["review", str(diff)])
-    assert reviewed.exit_code == 0 and "review-diff --file DIFF" in reviewed.stderr
-
-    gone = runner.invoke(
-        app,
-        [
-            "compare-cost",
-            "--fusion-run-id",
-            "run_nope",
-            "--opus-input-tokens",
-            "1",
-            "--opus-output-tokens",
-            "1",
-        ],
-    )
-    assert gone.exit_code == 1 and "compare-cost" in gone.stderr
+@pytest.mark.parametrize("command", REMOVED)
+def test_the_commands_deprecated_in_02_are_gone(runner: CliRunner, command: str) -> None:
+    result = runner.invoke(app, [command])
+    assert result.exit_code == 2 and "No such command" in result.output
 
 
 def test_the_current_commands_do_not_warn(runner: CliRunner) -> None:
@@ -338,12 +323,12 @@ def test_the_current_commands_do_not_warn(runner: CliRunner) -> None:
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def test_help_names_every_deprecated_command_as_such(runner: CliRunner) -> None:
+def test_help_lists_no_removed_command_and_no_deprecation(runner: CliRunner) -> None:
     # GitHub Actions sets GITHUB_ACTIONS, which makes Typer colour its help even when piped.
     text = ANSI.sub("", runner.invoke(app, ["--help"], terminal_width=200).stdout)
-    for command in ("review", "run-mock", "list-runs", "compare-cost"):
-        line = next(ln for ln in text.splitlines() if re.search(rf"│ {command}\s", ln))
-        assert "Deprecated" in line
+    for command in REMOVED:
+        assert not any(re.search(rf"│ {command}\s", ln) for ln in text.splitlines())
+    assert "Deprecated" not in text
 
 
 # -- the old import path keeps working ------------------------------------------------------------

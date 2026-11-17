@@ -16,6 +16,7 @@ from typing import Any
 from fusion.bench.report.data import Report
 from fusion.bench.report.fmt import money
 from fusion.bench.report.markdown import render_markdown
+from fusion.bench.spend import BUDGET_CAPS_USD, CURRENT_BUDGET
 
 __all__ = ["LIMITATIONS", "render_results", "spend_by_run"]
 
@@ -64,6 +65,7 @@ def render_results(
     supporting: list[Report] | None = None,
     *,
     ledger: list[dict[str, Any]] | None = None,
+    cap_usd: float = BUDGET_CAPS_USD[CURRENT_BUDGET],
     html_link: str | None = None,
     commands: list[str] | None = None,
     today: str | None = None,
@@ -101,7 +103,7 @@ def render_results(
         out += ["## Spend", ""]
         out += ["| Run | Live spend |", "|---|---|"]
         out += [f"| {name} | {money(usd)} |" for name, usd in rows]
-        out += [f"| **Total** | **{money(sum(u for _, u in rows))}** of the $20 cap |", ""]
+        out += [f"| **Total** | **{money(sum(u for _, u in rows))}** of the ${cap_usd:g} cap |", ""]
     out += ["## Limitations", "", LIMITATIONS]
     cmds = commands or [
         f"uv run fusion bench report {run.run_id} --format html",

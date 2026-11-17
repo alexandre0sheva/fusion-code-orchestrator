@@ -15,7 +15,12 @@ from fusion.bench.cache import CachingProvider, ResponseDiskCache, request_diges
 from fusion.bench.metrics import build_metrics
 from fusion.bench.scoring import AnswerView, PointsScorer, ScoreEnv, is_solved
 from fusion.bench.spec import BenchConfig, BenchTask, load_dataset
-from fusion.bench.spend import LIVE_SPEND_CAP_USD, SpendCapError, SpendLedger
+from fusion.bench.spend import (
+    BUDGET_CAPS_USD,
+    CURRENT_BUDGET,
+    SpendCapError,
+    SpendLedger,
+)
 from fusion.bench.store import BenchItem, BenchStore
 from fusion.bench.virtual import run_virtual
 from fusion.config.catalog import load_catalog
@@ -35,8 +40,77 @@ from fusion.telemetry.cost import PricingRegistry
 # ------------------------------------------------------------------------------- spend ledger
 
 
-def test_the_live_cap_is_twenty_dollars() -> None:
-    assert LIVE_SPEND_CAP_USD == 20.0
+def test_each_roadmap_has_its_own_budget_and_the_current_one_is_v030() -> None:
+    assert BUDGET_CAPS_USD == {"v0.2.0": 20.0, "v0.3.0": 15.0}
+    assert CURRENT_BUDGET == "v0.3.0"
+    assert SpendLedger(Path("x.json")).cap_usd == 15.0
+    assert SpendLedger(Path("x.json"), budget="v0.2.0").cap_usd == 20.0
+    assert SpendLedger(Path("x.json"), cap_usd=3.0).cap_usd == 3.0
+
+
+def test_an_unknown_budget_needs_an_explicit_cap(tmp_path: Path) -> None:
+    with pytest.raises(SpendCapError, match="v9"):
+        SpendLedger(tmp_path / "s.json", budget="v9")
+    assert SpendLedger(tmp_path / "s.json", budget="v9", cap_usd=1.0).cap_usd == 1.0
+
+
+def _old_ledger(path: Path) -> None:
+    """A ledger as 0.2.0 left it: entries without a ``budget`` field, $15.66 in all."""
+    old = [
+        {"date": "2026-10-05T10:00:00Z", "task": "bench", "purpose": "r1 a", "usd": 10.0},
+        {"date": "2026-10-06T10:00:00Z", "task": "5", "purpose": "check", "usd": 5.66},
+    ]
+    path.write_text(json.dumps(old, indent=1) + "\n")
+
+
+def test_earlier_spending_does_not_count_against_v030(tmp_path: Path) -> None:
+    path = tmp_path / "spend.json"
+    _old_ledger(path)
+    ledger = SpendLedger(path)
+    assert ledger.total() == 0.0 and ledger.entries() == []
+    assert ledger.remaining() == pytest.approx(15.0)
+    ledger.check(15.0)  # the whole $15 is still there
+
+
+def test_legacy_entries_count_as_v020(tmp_path: Path) -> None:
+    path = tmp_path / "spend.json"
+    _old_ledger(path)
+    old = SpendLedger(path, budget="v0.2.0")
+    assert old.total() == pytest.approx(15.66)
+    assert old.remaining() == pytest.approx(4.34)
+    assert len(old.entries()) == 2
+
+
+def test_the_cap_is_enforced_per_budget(tmp_path: Path) -> None:
+    path = tmp_path / "spend.json"
+    _old_ledger(path)
+    new = SpendLedger(path)
+    new.append(14.0, task="bench", purpose="r2 a")
+    with pytest.raises(SpendCapError, match=r"\$15\.00"):
+        new.check(1.5)
+    SpendLedger(path, budget="v0.2.0").check(4.0)  # v0.2.0 still has $4.34 left, unaffected
+
+
+def test_new_entries_carry_their_budget_and_old_ones_are_untouched(tmp_path: Path) -> None:
+    path = tmp_path / "spend.json"
+    _old_ledger(path)
+    before = json.loads(path.read_text())
+    SpendLedger(path).append(1.0, task="bench", purpose="r2 a")
+    after = json.loads(path.read_text())
+    assert after[:2] == before  # append-only: no rewrite, no "budget" added to old entries
+    assert after[2]["budget"] == "v0.3.0"
+
+
+def test_totals_by_budget_lists_every_budget_with_its_remainder(tmp_path: Path) -> None:
+    path = tmp_path / "spend.json"
+    _old_ledger(path)
+    SpendLedger(path).append(2.0, task="bench", purpose="r2 a")
+    summary = SpendLedger(path).budget_summary()
+    assert summary == {
+        "v0.2.0": (pytest.approx(15.66), 20.0, pytest.approx(4.34)),
+        "v0.3.0": (pytest.approx(2.0), 15.0, pytest.approx(13.0)),
+    }
+    assert list(SpendLedger(tmp_path / "none.json").budget_summary()) == ["v0.2.0", "v0.3.0"]
 
 
 def test_spend_is_appended_with_date_task_purpose_and_usd(tmp_path: Path) -> None:
@@ -46,9 +120,9 @@ def test_spend_is_appended_with_date_task_purpose_and_usd(tmp_path: Path) -> Non
     ledger.append(0.5, task="bench", purpose="run x")
     entries = ledger.entries()
     assert [e["usd"] for e in entries] == [1.25, 0.5]
-    assert set(entries[0]) == {"date", "task", "purpose", "usd"}
+    assert set(entries[0]) == {"date", "task", "purpose", "usd", "budget"}
     assert ledger.total() == pytest.approx(1.75)
-    assert ledger.remaining() == pytest.approx(18.25)
+    assert ledger.remaining() == pytest.approx(13.25)
 
 
 def test_free_calls_are_not_recorded(tmp_path: Path) -> None:

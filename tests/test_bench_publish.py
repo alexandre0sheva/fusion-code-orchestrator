@@ -188,9 +188,11 @@ def test_the_spend_table_lists_each_run_and_the_total_against_the_cap() -> None:
         ("judge-calibration", 0.25),
     ]
     report = build_report(_record(), two_arms(12), baseline="solo", rules=FAST)
-    text = render_results(report, ledger=ledger, today="2026-10-06")
+    text = render_results(report, ledger=ledger, cap_usd=20.0, today="2026-10-06")
     assert "## Spend" in text and "| bench-20261006-120000-aaaa | $2.00 |" in text
     assert "**$3.25** of the $20 cap" in text
+    # the cap in the text is the budget's, and the current budget is the default
+    assert "of the $15 cap" in render_results(report, ledger=ledger, today="2026-10-06")
     assert "## Spend" not in render_results(report, today="2026-10-06")
 
 

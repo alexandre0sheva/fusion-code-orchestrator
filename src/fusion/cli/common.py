@@ -181,13 +181,3 @@ def run_tool(
             await tools.aclose()
 
     return asyncio.run(go())
-
-
-def deprecated(old: str, new: str) -> None:
-    """One-release deprecation notice on stderr; the command still runs."""
-    err_console.print(
-        f"[yellow]Deprecated:[/yellow] `fusion {old}` will be removed in 0.3.0; "
-        f"use `fusion {new}`.",
-        soft_wrap=True,
-        highlight=False,
-    )

@@ -16,7 +16,7 @@ quota: {code_review: 3, debugging: 3, architecture: 2, planning: 3, coding: 2, f
 repeats: 1
 seed: 0
 max_usd: 4.8
-spend_stop_usd: 18.0   # the $20 roadmap cap keeps a $2 reserve
+spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
 concurrency: 8
 # Rubric items the keywords cannot decide go to a cheap judge. Every vendor is in the panels, so
 # no judge is cross-family with every arm; the agentic judge of frontend and performance tasks

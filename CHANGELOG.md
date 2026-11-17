@@ -7,11 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `OPENROUTER_API_KEY=` in `.env.example` (the provider that reads it arrives later in 0.3.0).
+
 ### Changed
+
+- The live-spend ledger is scoped by budget: 0.3.0 has its own $15 (`v0.3.0`) and 0.2.0's $15.66 no longer counts against it (entries without a `budget` field count as `v0.2.0`; new entries record theirs). `fusion bench spend` shows each budget's total and remaining, and the packaged suites stop at $14.50 instead of $18.
 
 - Dependencies updated to current releases (FastMCP 4.2, Typer 0.29, Pydantic 2.14, Starlette 1.10, Ruff 0.17, pytest 9.2, pytest-asyncio 1.5, Playwright 1.65 and the rest of `uv.lock`), with the minimum versions in `pyproject.toml` raised to the tested ones; `pytest-xdist` is a new dev dependency.
 - GitHub Actions bumped and SHA-pinned: `astral-sh/setup-uv` v10.3.3, `actions/upload-artifact` v7.0.2, `actions/download-artifact` v8.0.2 (and `pypa/gh-action-pypi-publish` v1.14.3 in the switched-off PyPI job).
 - CI runs the tests in parallel (`pytest -n auto`; about 2 minutes on 4 workers) and checks the shipped dataset by running its tasks in a separate `dataset` job; the timing tests assert on ordering and ratios instead of millisecond ceilings that a busy runner could miss.
+
+### Removed
+
+- `fusion review`, `fusion list-runs`, `fusion run-mock` and `fusion compare-cost`, deprecated in 0.2.0. Use `fusion review-diff -f DIFF`, `fusion runs list`, any run command with `--mock` (for example `fusion ask "..." --mock`) and `fusion runs compare-baseline RUN_ID`.
 
 ### Security
 

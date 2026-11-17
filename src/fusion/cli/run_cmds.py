@@ -8,8 +8,6 @@ progress and warnings to stderr. Exit codes are listed in ``fusion.cli.common``.
 
 from __future__ import annotations
 
-import asyncio
-import os
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -19,7 +17,6 @@ from rich.markdown import Markdown
 
 from fusion.cli.common import (
     EXIT_HALTED,
-    CliError,
     ContextFileOption,
     ContextOption,
     DbPathOption,
@@ -33,7 +30,6 @@ from fusion.cli.common import (
     check_max_cost,
     console,
     context_text,
-    deprecated,
     echo_json,
     err_console,
     make_tools,
@@ -52,8 +48,6 @@ from fusion.mcp_server.schemas import (
     PlanFeatureInput,
     ReviewDiffInput,
 )
-from fusion.orchestration.pipelines import PipelineContext, Settings, build_pipeline
-from fusion.routing.classifier import TaskType
 
 FileOption = Annotated[
     list[Path] | None,
@@ -384,48 +378,6 @@ def compare_claude_runs(
         typer.echo(result.display_markdown)
 
 
-# -- deprecated, one release ----------------------------------------------------------------------
-
-
-def review(
-    diff: Annotated[Path, typer.Argument(help="Path to diff file")],
-    context: Annotated[str, typer.Option(help="Additional context")] = "",
-    db_path: DbPathOption = None,
-) -> None:
-    """Deprecated: use `fusion review-diff --file DIFF`."""
-    deprecated("review", "review-diff --file DIFF")
-    review_diff(file=diff, context=context, db_path=db_path)
-
-
-def run_mock(
-    task: Annotated[str, typer.Option(help="Task type")] = "code_review",
-    content: Annotated[
-        str, typer.Option(help="Primary content")
-    ] = "Sample diff content for testing",
-    strategy: StrategyOption = None,
-    db_path: DbPathOption = None,
-) -> None:
-    """Deprecated: use any run command with --mock, e.g. `fusion ask "..." --mock`."""
-    deprecated("run-mock", 'ask "..." --mock')
-    try:
-        task_type = TaskType(task)
-    except ValueError:
-        msg = f"Unknown task type: {task}"
-        raise CliError(msg) from None
-
-    os.environ["FUSION_DEFAULT_PROVIDER"] = "mock"
-    pipeline = build_pipeline(Settings(use_mock=True, db_path=db_path))
-    ctx = PipelineContext(task_type=task_type, primary_content=content, strategy=strategy)
-    result = asyncio.run(pipeline.run(ctx))
-
-    console.print(f"\n[bold green]Run ID:[/bold green] {result.run_id}")
-    summary = str(result.structured_output.get("summary", result.final_answer))[:500]
-    console.print(f"[bold]Summary:[/bold]\n{summary}")
-    console.print(
-        f"\nCost: ${result.total_cost_usd:.4f} | Latency: {result.total_latency_ms:.0f}ms"
-    )
-
-
 def register(app: typer.Typer) -> None:
     """Add the run commands to the root app."""
     app.command("ask")(ask)
@@ -435,9 +387,3 @@ def register(app: typer.Typer) -> None:
     app.command("plan")(plan)
     app.command("eval-answer")(eval_answer)
     app.command("compare-claude-runs")(compare_claude_runs)
-
-
-def register_legacy(app: typer.Typer) -> None:
-    """Add the deprecated commands (they warn, then run; removed in 0.3.0)."""
-    app.command("review")(review)
-    app.command("run-mock")(run_mock)

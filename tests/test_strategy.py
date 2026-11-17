@@ -586,17 +586,35 @@ def test_cli_strategies_list_shows_every_strategy_and_budget_alias() -> None:
     assert by_name["solo-cheap"]["members"][0]["model"] == "claude-haiku"
 
 
-def test_cli_run_mock_takes_a_strategy(tmp_path: Path) -> None:
+def test_cli_mock_run_takes_a_strategy(tmp_path: Path) -> None:
     result = CliRunner().invoke(
-        app, ["run-mock", "--strategy", "solo-cheap", "--db-path", str(tmp_path / "c.db")]
+        app,
+        [
+            "ask",
+            "How should I retry a failed HTTP call?",
+            "--mock",
+            "--strategy",
+            "solo-cheap",
+            "--db-path",
+            str(tmp_path / "c.db"),
+        ],
     )
     assert result.exit_code == 0, result.output
-    assert "Run ID" in result.output
+    assert "solo-cheap" in result.output
 
 
 def test_cli_unknown_strategy_is_a_message_not_a_traceback(tmp_path: Path) -> None:
     result = CliRunner().invoke(
-        app, ["run-mock", "--strategy", "panel-cheep", "--db-path", str(tmp_path / "c.db")]
+        app,
+        [
+            "ask",
+            "How should I retry a failed HTTP call?",
+            "--mock",
+            "--strategy",
+            "panel-cheep",
+            "--db-path",
+            str(tmp_path / "c.db"),
+        ],
     )
     assert result.exit_code == 1
     assert "did you mean 'panel-cheap'" in result.output

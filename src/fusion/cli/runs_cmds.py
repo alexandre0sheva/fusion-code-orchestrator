@@ -13,7 +13,6 @@ from fusion.cli.common import (
     DbPathOption,
     JsonOption,
     console,
-    deprecated,
     echo_json,
 )
 from fusion.storage.run_store import RunRecord, RunStore
@@ -195,80 +194,3 @@ def runs_export(
                 default=str,
             )
         )
-
-
-# -- deprecated, one release ----------------------------------------------------------------------
-
-
-def list_runs(
-    limit: Annotated[int, typer.Option(help="Max runs to show")] = 10,
-    db_path: DbPathOption = None,
-) -> None:
-    """Deprecated: use `fusion runs list`."""
-    deprecated("list-runs", "runs list")
-    runs_list(limit=limit, db_path=db_path)
-
-
-def compare_cost(
-    fusion_run_id: Annotated[str, typer.Option(help="Fusion run_id from MCP output")],
-    opus_input_tokens: Annotated[int, typer.Option(help="Opus input tokens from Claude Code")],
-    opus_output_tokens: Annotated[int, typer.Option(help="Opus output tokens from Claude Code")],
-    opus_model: Annotated[str, typer.Option(help="Catalog model alias for pricing")] = (
-        "claude-opus"
-    ),
-    db_path: DbPathOption = None,
-) -> None:
-    """Deprecated: use `fusion runs compare-baseline RUN_ID` or `fusion compare-claude-runs`."""
-    from fusion.telemetry.cost import estimate_alias_cost
-
-    deprecated("compare-cost", "runs compare-baseline RUN_ID")
-    record = _get_run(_store(db_path), fusion_run_id)
-    fusion_in = sum(s.input_tokens for s in record.steps)
-    fusion_out = sum(s.output_tokens for s in record.steps)
-    try:
-        estimate = estimate_alias_cost(
-            opus_model, input_tokens=opus_input_tokens, output_tokens=opus_output_tokens
-        )
-    except KeyError:
-        msg = f"Unknown catalog model: {opus_model}"
-        raise CliError(msg) from None
-    opus_cost = estimate.amount_usd or 0.0
-
-    table = Table(title="Fusion vs Opus cost (estimated list prices)")
-    table.add_column("Source")
-    table.add_column("Input tokens", justify="right")
-    table.add_column("Output tokens", justify="right")
-    table.add_column("Cost USD", justify="right")
-    table.add_column("Latency", justify="right")
-    table.add_row(
-        "Fusion MCP",
-        f"{fusion_in:,}",
-        f"{fusion_out:,}",
-        f"${record.total_cost_usd:.4f}",
-        f"{record.total_latency_ms:.0f}ms",
-    )
-    table.add_row(
-        "Claude Opus",
-        f"{opus_input_tokens:,}",
-        f"{opus_output_tokens:,}",
-        f"${opus_cost:.4f}",
-        "n/a",
-    )
-    console.print(table)
-
-    delta = record.total_cost_usd - opus_cost
-    if delta < 0:
-        console.print(f"[green]Fusion cheaper by ${abs(delta):.4f}[/green]")
-    elif delta > 0:
-        console.print(f"[yellow]Fusion costlier by ${delta:.4f}[/yellow]")
-    else:
-        console.print("Estimated costs match.")
-    console.print(
-        "[dim]Opus tokens are from Claude Code, not Fusion MCP. "
-        "Judge LLM calls may add uncaptured Fusion cost.[/dim]"
-    )
-
-
-def register_legacy(app: typer.Typer) -> None:
-    app.command("list-runs")(list_runs)
-    app.command("compare-cost")(compare_cost)

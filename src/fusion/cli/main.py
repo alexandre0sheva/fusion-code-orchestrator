@@ -17,7 +17,7 @@ from typer.core import TyperGroup
 from typer.exceptions import TyperException
 
 from fusion.bench.cli import bench_app
-from fusion.cli import dashboard_cmd, doctor, run_cmds, runs_cmds
+from fusion.cli import dashboard_cmd, doctor, run_cmds
 from fusion.cli.common import (
     EXIT_ERROR,
     CliError,
@@ -245,9 +245,6 @@ def version(as_json: JsonOption = False) -> None:
         return
     console.print(f"fusion-code-orchestrator v{__version__}")
 
-
-run_cmds.register_legacy(app)
-runs_cmds.register_legacy(app)
 
 if __name__ == "__main__":
     app()

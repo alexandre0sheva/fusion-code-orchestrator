@@ -128,7 +128,7 @@ def test_a_suite_keeps_the_money_inside_the_roadmaps_stage_budgets(name: str) ->
     cfg = _bench_config(name)
     budgets = {"ablation": 6.0, "latency": 6.0, "headline": 11.0}
     assert cfg.max_usd <= budgets[name]
-    assert cfg.spend_stop_usd == 18.0  # $2 of the $20 stays in reserve
+    assert cfg.spend_stop_usd == 14.5  # $0.50 of the $15 v0.3.0 budget stays in reserve
     tuning = _bench_config("ablation").max_usd + _bench_config("latency").max_usd
     assert tuning <= 6.0 and tuning + _bench_config("headline").max_usd <= 18.0
 
@@ -177,7 +177,7 @@ def test_suite_list_and_show_describe_what_would_run(fusion_home: Path) -> None:
     shown = runner.invoke(app, ["bench", "suite", "show", "ablation"])
     assert shown.exit_code == 0, shown.output
     assert "size-5" in shown.output and "cascade-0.5" in shown.output
-    assert "stop at $18.0" in shown.output.replace("\n", " ") or "$18.0" in shown.output
+    assert "stop at $14.5 cumulative" in shown.output.replace("\n", " ")
     assert runner.invoke(app, ["bench", "suite", "show", "nope"]).exit_code == 1
 
 
@@ -288,11 +288,21 @@ def test_the_stop_line_counts_what_earlier_runs_spent(tmp_path: Path) -> None:
     assert run.done_jobs == 0 and run.status == "stopped"
 
 
+def test_the_stop_line_keeps_the_ledgers_budget(tmp_path: Path) -> None:
+    """The runner re-creates the ledger with the lower cap; that must not switch budgets."""
+    data = write_dataset(tmp_path / "data.jsonl", count=4)
+    cfg = config(data, arms="solo-cheap", repeats=1, mock=False, spend_stop_usd=5.0)
+    ledger = SpendLedger(tmp_path / "spend.json", budget="v0.2.0")
+    ledger.append(4.9999, task="earlier", purpose="a previous run")
+    run = run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "r", spend=ledger), run_id="s3"))
+    assert run.done_jobs == 0 and run.status == "stopped"
+
+
 def test_the_plan_budget_is_what_is_left_below_the_stop_line(fusion_home: Path) -> None:
     ledger = SpendLedger(fusion_home / "project" / "bench-results" / "spend.json")
-    ledger.append(17.5, task="earlier", purpose="a previous run")
+    ledger.append(14.0, task="earlier", purpose="a previous run")
     result = runner.invoke(app, ["bench", "plan", "--suite", "headline"])
-    assert result.exit_code == 2 and "does not fit" in result.output  # $0.50 left under $18
+    assert result.exit_code == 2 and "does not fit" in result.output  # $0.50 left under $14.50
 
 
 # ---------------------------------------------------------------- per-strategy fan-out controls

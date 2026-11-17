@@ -17,7 +17,7 @@ quota: {code_review: 6, debugging: 6, architecture: 5, planning: 5, coding: 6, f
 repeats: 2
 seed: 100
 max_usd: 11.0
-spend_stop_usd: 18.0
+spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
 concurrency: 8
 judge_models: [gpt-luna]
 arms:

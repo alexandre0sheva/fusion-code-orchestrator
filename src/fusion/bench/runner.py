@@ -342,7 +342,9 @@ async def run_bench(
     if (
         spend is not None and cfg.spend_stop_usd is not None
     ):  # stop short of the cap, keep a reserve
-        spend = SpendLedger(spend.path, cap_usd=min(spend.cap_usd, cfg.spend_stop_usd))
+        spend = SpendLedger(
+            spend.path, budget=spend.budget, cap_usd=min(spend.cap_usd, cfg.spend_stop_usd)
+        )
     if spend is not None:
         spend.check(0.0, "starting a live run")
 

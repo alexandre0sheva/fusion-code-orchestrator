@@ -317,7 +317,16 @@ def test_the_command_line_can_run_a_cascade_and_list_it(tmp_path: Path) -> None:
     from fusion.cli.app import app
 
     ran = CliRunner().invoke(
-        app, ["run-mock", "--strategy", "panel-cascade", "--db-path", str(tmp_path / "c.db")]
+        app,
+        [
+            "ask",
+            "How should I retry a failed HTTP call?",
+            "--mock",
+            "--strategy",
+            "panel-cascade",
+            "--db-path",
+            str(tmp_path / "c.db"),
+        ],
     )
     assert ran.exit_code == 0, ran.output
     listed = CliRunner().invoke(app, ["strategies", "list", "--json"])

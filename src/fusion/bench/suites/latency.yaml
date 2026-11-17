@@ -15,7 +15,7 @@ quota: {code_review: 3, debugging: 3, architecture: 1, planning: 2}
 repeats: 1
 seed: 0
 max_usd: 1.2
-spend_stop_usd: 18.0
+spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
 concurrency: 4
 cache: false
 judge_models: []

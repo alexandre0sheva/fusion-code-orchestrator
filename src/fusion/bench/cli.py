@@ -52,7 +52,14 @@ from fusion.bench.spec import (
     resolve_dataset,
     select_tasks,
 )
-from fusion.bench.spend import SPEND_FILE, SpendCapError, SpendLedger, default_ledger
+from fusion.bench.spend import (
+    BUDGET_CAPS_USD,
+    CURRENT_BUDGET,
+    SPEND_FILE,
+    SpendCapError,
+    SpendLedger,
+    default_ledger,
+)
 from fusion.bench.stats import DEFAULT_BOOTSTRAP, DEFAULT_MARGIN, DEFAULT_MIN_TASKS, study_stats
 from fusion.bench.stats import Rules as StatRules
 from fusion.bench.store import BenchItem, BenchRunRecord, BenchStore
@@ -824,7 +831,8 @@ def results_cmd(
         svg.parent.mkdir(parents=True, exist_ok=True)
         svg.write_text(cost_quality_svg(headline), encoding="utf-8")
         console.print(f"Wrote {svg}")
-    ledger = None if headline.run.mock else SpendLedger(store.root / SPEND_FILE).entries()
+    spend_ledger = None if headline.run.mock else SpendLedger(store.root / SPEND_FILE)
+    ledger = None if spend_ledger is None else spend_ledger.entries()
     commands = [
         f"uv run fusion bench report {run_id} --format html",
         f"uv run fusion bench results {run_id}"
@@ -832,7 +840,14 @@ def results_cmd(
         + (f" --html {html}" if html else "")
         + (f" --svg {svg}" if svg else ""),
     ]
-    text = render_results(headline, supporting, ledger=ledger, html_link=link, commands=commands)
+    text = render_results(
+        headline,
+        supporting,
+        ledger=ledger,
+        cap_usd=spend_ledger.cap_usd if spend_ledger else BUDGET_CAPS_USD[CURRENT_BUDGET],
+        html_link=link,
+        commands=commands,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text, encoding="utf-8")
     console.print(f"Wrote {output}")
@@ -1178,7 +1193,8 @@ def suite_show_cmd(name: Annotated[str, typer.Argument(help="Suite name or YAML 
     )
     console.print(
         f"{cfg.get('repeats', 3)} repeat(s), seed {cfg.get('seed', 0)}; budget "
-        f"${cfg.get('max_usd')}, stop at ${cfg.get('spend_stop_usd', 20)} cumulative; "
+        f"${cfg.get('max_usd')}, stop at "
+        f"${cfg.get('spend_stop_usd', BUDGET_CAPS_USD[CURRENT_BUDGET])} cumulative; "
         f"judges {judges}; response cache {'on' if cfg.get('cache', True) else 'off'}",
         markup=False,
     )
@@ -1193,12 +1209,18 @@ def suite_show_cmd(name: Annotated[str, typer.Argument(help="Suite name or YAML 
 
 @bench_app.command("spend")
 def spend_cmd() -> None:
-    """Show the live-spend ledger: what has been spent against the roadmap's cap."""
+    """Show the live-spend ledger: what each roadmap budget has spent and has left."""
     ledger = default_ledger()
-    entries = ledger.entries()
+    for name, (spent, cap, left) in ledger.budget_summary().items():
+        current = " (current)" if name == ledger.budget else ""
+        console.print(
+            f"{name}: spent ${spent:.4f} of ${cap:.2f} (${left:.4f} left){current}",
+            markup=False,
+        )
     console.print(
-        f"Spent ${ledger.total():.4f} of ${ledger.cap_usd:.2f} "
-        f"(${ledger.remaining():.4f} left), {len(entries)} entries in {ledger.path}"
+        f"{len(ledger.entries())} entries in {ledger.budget}, ledger {ledger.path}",
+        markup=False,
+        soft_wrap=True,
     )
 
 
