@@ -64,6 +64,9 @@ class BenchItem(BaseModel):
     calls: list[CallRecord] = Field(default_factory=list)  # the full ledger of the arm's calls
     metrics: BenchMetrics
     score: ScoreResult | None = None
+    # verified-synth: the cross-check matrix, the checks kept or dropped and why, and the reason
+    # for the pick (``CrossCheckReport.record``); None for every other arm.
+    verification: dict[str, Any] | None = None
 
 
 class BenchRunRecord(BaseModel):

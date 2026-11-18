@@ -255,8 +255,8 @@ def _rung_strategy(state: RunState, deps: PipelineDeps, climb: Climb, index: int
 
 
 def _usable(strategy: Strategy, mode: Mode) -> bool:
-    """The verified aggregator runs code, so a rung using it is skipped outside a benchmark."""
-    return strategy.aggregator != "verified" or mode is Mode.BENCHMARK
+    """A verified aggregator runs code, so a rung using one is skipped outside a benchmark."""
+    return not strategy.runs_code or mode is Mode.BENCHMARK
 
 
 def _records_since(state: RunState, mark: int) -> list[CallRecord]:
@@ -551,7 +551,8 @@ class EscalateStage:
         """Route the rung and check it fits; '' when it has nothing new to ask (skipped)."""
         rung = climb.policy.rungs[index]
         if not _usable(strategy, current.mode):
-            self._skip(current, climb, index, strategy, "its verified aggregator runs code")
+            why = f"its {strategy.aggregator} aggregator runs code"
+            self._skip(current, climb, index, strategy, why)
             return ""
         ran = self._phase_seconds(current, climb)  # measured before routing the next rung
         nxt = await self.route.run(_fresh_rung(current, strategy))

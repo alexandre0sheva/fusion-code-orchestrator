@@ -67,3 +67,6 @@ arms:
   # are calibrated on this split. auto-route-frontier also allows rung 3 (Opus 5.5 alone).
   - {name: auto-route, strategy: auto}
   - {name: auto-route-frontier, strategy: auto-frontier}
+  # --- verified generation (roadmap Task 10) ---
+  # Patches judged by the panel's own checks in a sandbox; on the non-coding tasks it selects.
+  - {name: verified-synth, strategy: verified-synth}

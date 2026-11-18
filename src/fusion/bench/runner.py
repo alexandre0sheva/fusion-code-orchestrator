@@ -28,7 +28,7 @@ from fusion.bench.meta import build_meta, load_meta, write_meta
 from fusion.bench.metrics import build_metrics
 from fusion.bench.plan import estimate_job
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoreResult, get_scorer, is_solved
-from fusion.bench.scoring.coding import coding_verifier
+from fusion.bench.scoring.coding import coding_crosschecker, coding_verifier
 from fusion.bench.scoring.pairwise import providers_of
 from fusion.bench.spec import (
     BenchConfig,
@@ -329,6 +329,7 @@ def _context(task: BenchTask, arm: str) -> PipelineContext:
         strategy=arm,
         expects_patch=task.expects_patch,
         verifier=coding_verifier(task),
+        crosscheck=coding_crosschecker(task),
     )
 
 
@@ -599,4 +600,5 @@ async def _execute(
         calls=list(ledger.records),
         metrics=metrics,
         score=score,
+        verification=result.disagreement.get("crosscheck"),
     )

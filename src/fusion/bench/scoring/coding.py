@@ -19,6 +19,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shlex
+import sys
 import threading
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -37,10 +39,13 @@ from fusion.bench.scoring.base import (
 from fusion.bench.spec import BenchTask, CodingTruth, task_hash
 from fusion.bench.virtual import offload
 from fusion.routing.budget import PlannedCall
+from fusion.verify.crosscheck import CheckEnv, CrossCheckReport, crosscheck
+from fusion.verify.synthesis import Candidate, CheckScript
 
 __all__ = [
     "CodingOutcome",
     "CodingScorer",
+    "coding_crosschecker",
     "coding_verifier",
     "parse_test_results",
     "run_hidden_tests",
@@ -260,6 +265,49 @@ def coding_verifier(task: BenchTask) -> Callable[[str], Awaitable[float | None]]
         return await offload(visible_pass_fraction, task, patch)
 
     return verify
+
+
+_VISIBLE_TEST = re.compile(r"(^|/)tests?/(.+/)?test[^/]*\.py$")
+GENERATED_CHECK_TIMEOUT_S = 10.0  # each panel-written check; the task's own tests get its timeout
+
+
+def visible_tests_check(task: BenchTask, truth: CodingTruth) -> CheckScript | None:
+    """The task's visible tests as a check every candidate is run against (``invariant``,
+    authored by the task), or None when the files the model sees hold no Python tests."""
+    if not any(_VISIBLE_TEST.search(path) for path in task.files):
+        return None
+    command = [sys.executable if c in ("python", "python3") else c for c in truth.command]
+    body = (
+        "[ ! -d tests ] || [ -e tests/__init__.py ] || : > tests/__init__.py\n"
+        f"exec {shlex.join(command)}\n"
+    )
+    return CheckScript(name="visible_tests", language="shell", kind="invariant", body=body)
+
+
+def coding_crosschecker(
+    task: BenchTask,
+) -> Callable[[list[Candidate]], Awaitable[CrossCheckReport]] | None:
+    """The function the ``verified-synth`` aggregator calls to run every candidate patch against
+    every panel-written check (and the task's visible tests) in sandbox copies of the task's files
+    (None for a task that is not a coding task). Benchmark only: it runs code. The hidden tests
+    are never used: they grade the answer afterwards."""
+    if not task.expects_patch:
+        return None
+    truth = CodingTruth.model_validate(task.truth)
+    visible = visible_tests_check(task, truth)
+    env = CheckEnv(
+        source=dict(task.files),
+        timeout_s=min(GENERATED_CHECK_TIMEOUT_S, truth.timeout_s),
+        mem_mb=truth.mem_mb,
+        task_checks=(visible,) if visible else (),
+        task_timeout_s=truth.timeout_s,
+        workers=2,  # several jobs cross-check at once; keep each one's sandboxes few
+    )
+
+    async def check(candidates: list[Candidate]) -> CrossCheckReport:
+        return await offload(crosscheck, candidates, env)
+
+    return check
 
 
 # -- the scorer -----------------------------------------------------------------------------------

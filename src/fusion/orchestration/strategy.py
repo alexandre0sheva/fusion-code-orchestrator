@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "LENS_AGGREGATORS",
+    "CODE_AGGREGATORS",
     "MODEL_AGGREGATORS",
     "SELECT_AGGREGATORS",
     "MODE_SETTINGS",
@@ -68,22 +69,29 @@ AggregatorName = Literal[
     "union+check",
     "select",
     "select+patch",
+    "verified-synth",
 ]
 # Aggregators that make no model call, so they take no aggregator_model.
 NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest", "verified", "union"})
 # Aggregators that call a model (aggregator_model, else the catalog's synthesizer). `auto` is
 # planned as if it did: it becomes union (no call) or select+patch (one call) per task.
-MODEL_AGGREGATORS = frozenset({"auto", "llm", "union+check", "select", "select+patch"})
+MODEL_AGGREGATORS = frozenset(
+    {"auto", "llm", "union+check", "select", "select+patch", "verified-synth"}
+)
 # Aggregators that keep what each lens found. vote, best_of and verified keep only what several
 # answers share, or one whole answer, so they would throw away every lens's own findings. `auto`
 # lenses the task types whose answer is a list of findings and gives approaches to the others.
 LENS_AGGREGATORS = frozenset({"auto", "llm", "digest", "union", "union+check"})
 # Aggregators that pick ONE whole answer among rivals, so members get approaches, not lenses.
-SELECT_AGGREGATORS = frozenset({"select", "select+patch"})
+# verified-synth picks by running checks and asks the selector only on a tie.
+SELECT_AGGREGATORS = frozenset({"select", "select+patch", "verified-synth"})
+# Aggregators that run code to choose (a patch against tests or checks): benchmark only until
+# Task 11's sandboxed tool; the MCP tools never run code.
+CODE_AGGREGATORS = frozenset({"verified", "verified-synth"})
 
 
 class BenchmarkOnlyError(ConfigError):
-    """A strategy that runs code (the ``verified`` aggregator) was used outside a benchmark."""
+    """A strategy that runs code (``verified``, ``verified-synth``) was used outside a benchmark."""
 
 
 class Mode(StrEnum):
@@ -378,6 +386,11 @@ class Strategy(BaseModel):
         skip = self.skip_aggregator
         if skip is not None and skip.use == "union" and self.lenses != "auto":
             problems.append("skip_aggregator.use: union needs lenses")
+        if self.aggregator == "verified-synth" and self.rounds != 1:
+            problems.append(
+                "verified-synth takes rounds: 1: members write their patch and checks once, and a "
+                "refinement round would rewrite answers without them"
+            )
         if self.aggregator in NO_MODEL_AGGREGATORS and self.aggregator_model is not None:
             problems.append(
                 f"a {self.aggregator} aggregator calls no model, so aggregator_model must be unset"
@@ -417,6 +430,11 @@ class Strategy(BaseModel):
             raise ValueError("; ".join(problems))
         self.lenses = self.approaches = "off"
         return self
+
+    @property
+    def runs_code(self) -> bool:
+        """Whether its aggregator runs code to choose (``CODE_AGGREGATORS``): benchmark only."""
+        return self.aggregator in CODE_AGGREGATORS
 
     @property
     def calls_aggregator_model(self) -> bool:

@@ -95,6 +95,7 @@ from fusion.security.redaction import redact_secrets, redact_value
 from fusion.storage.run_store import ShadowComparisonRecord
 from fusion.telemetry.cost import CostComparison, compare_to_baseline
 from fusion.telemetry.traces import OrchestrationTrace, StepTrace
+from fusion.verify.synthesis import candidates_from_answers
 
 
 class Stage(Protocol):
@@ -518,6 +519,7 @@ class PanelStage(_Stage):
             lenses=state.lenses,
             approaches=state.approaches,
             self_check=state.strategy.self_check if state.strategy else False,
+            checks=_asks_for_checks(state),
         )
 
     def _fanout_config(self, state: RunState) -> FanoutConfig:
@@ -954,7 +956,9 @@ class AggregateStage(_Stage):
     unless the cost or latency cap leaves no room for it, in which case the digest is returned,
     or the strategy's ``skip_aggregator`` finds the panel already agrees. ``select`` and
     ``select+patch`` make one small call that picks the best of the anonymised answers (see
-    ``select.py``) and fall back to a vote when it names no valid choice.
+    ``select.py``) and fall back to a vote when it names no valid choice. ``verified-synth``
+    (benchmark only) runs every member's patch against every member's checks in sandbox copies
+    and returns the best-scoring patch, asking the selector only on a tie.
     """
 
     async def run(self, state: RunState) -> RunState:
@@ -967,6 +971,8 @@ class AggregateStage(_Stage):
             kind = self._skip(state) or kind
         if kind in {"union", "union+check"}:
             state.synth_response = await self._union(state, check=kind == "union+check")
+        elif kind == "verified-synth":
+            state.synth_response = await self._verified_synth(state, readable)
         elif kind in SELECT_AGGREGATORS:
             state.synth_response = await self._select(
                 state, readable, with_points=kind == "select+patch"
@@ -1212,6 +1218,45 @@ class AggregateStage(_Stage):
             )
         return response
 
+    async def _verified_synth(
+        self, state: RunState, readable: list[tuple[str, str]]
+    ) -> ModelResponse:
+        """The patch that passes the most checks the others wrote (``fusion.verify``); a tie goes
+        to the selector, among the tied patches only. Benchmark mode only: it runs code."""
+        if not state.ctx.expects_patch:  # nothing to run: the answers are rivals, so select
+            if state.routing is not None:
+                state.routing.reasons.append("verified-synth: the task asks for no patch; selected")
+            return await self._select(state, readable, with_points=False)
+        check = state.ctx.crosscheck
+        if check is None:
+            state.warnings.append(
+                "verified-synth needs the benchmark's sandbox to run the panel's checks; none "
+                "was given, so the selector chose"
+            )
+            return await self._select(state, readable, with_points=False)
+        present = dict(readable)
+        candidates = [c for c in candidates_from_answers(state.answers) if c.id in present]
+        if not candidates:
+            state.warnings.append(
+                "verified-synth: no answer contained a patch; returned the best answer"
+            )
+            return self._best_of(state, readable)
+        report = await check(candidates)
+        state.disagreement["crosscheck"] = report.record()
+        state.disagreement["verified"] = dict(report.shares)
+        reasons = state.routing.reasons if state.routing is not None else []
+        if report.winner is not None:
+            state.chosen = report.winner
+            reasons.append(f"cross-check picked {report.winner}'s patch: {report.reason}")
+            return ModelResponse(
+                provider="fusion", model="verified-synth", text=present[report.winner]
+            )
+        tied = report.tied or [c.id for c in candidates]
+        reasons.append(f"cross-check: {report.reason}; the selector chose among {', '.join(tied)}")
+        return await self._select(
+            state, [(m, t) for m, t in readable if m in tied], with_points=False
+        )
+
     async def _synthesize(self, state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
         assert state.agreement is not None
         sizes = [r.output_tokens or ANSWER_OUTPUT_TOKENS for _, r in state.successful]
@@ -1337,6 +1382,12 @@ def _headline(state: RunState) -> str:
     if len(summaries) == 1:
         return summaries[0][1]
     return "\n".join(f"{m}: {s}" for m, s in summaries)
+
+
+def _asks_for_checks(state: RunState) -> bool:
+    """verified-synth on a task whose answer is a patch: members write checks with it."""
+    strategy = state.strategy
+    return bool(strategy and strategy.aggregator == "verified-synth" and state.ctx.expects_patch)
 
 
 def _chosen_answers(state: RunState) -> dict[str, PanelAnswer]:

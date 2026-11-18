@@ -140,6 +140,7 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `panel-nano-union` | 3 | $0.0124 | 0.25x |
 | `solo-terra` | 1 | $0.0125 | 0.25x |
 | `panel-nano-select` | 4 | $0.0133 | 0.27x |
+| `verified-synth` | 4 | $0.0133 | 0.27x |
 | `auto (answered at rung 1, nano-panel)` | 4 | $0.0144 | 0.29x |
 | `auto-frontier (answered at rung 1, nano-panel)` | 4 | $0.0144 | 0.29x |
 | `panel-nano` | 4 | $0.0144 | 0.29x |

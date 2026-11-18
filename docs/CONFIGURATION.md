@@ -321,7 +321,8 @@ strategies:
     approaches: auto             # auto | off; unset = auto for select, select+patch
     rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
     aggregator: llm              # auto (the default) | llm | digest | vote | best_of | union
-                                 # | union+check | select | select+patch | verified (benchmark only)
+                                 # | union+check | select | select+patch
+                                 # | verified | verified-synth (both benchmark only)
     aggregator_model: claude-sonnet   # llm, union+check, select; omit for the catalog's synthesizer
     judge: off                   # off | light | full
     judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
@@ -372,6 +373,7 @@ budget_strategies:
 | `panel-luna-lenses`, `panel-haiku-lenses` | one model asked once per lens (up to three copies), merged by `union`: a self-mixture whose diversity comes from lenses; a 0.3.0 ablation candidate, not a default | up to 3 |
 | `panel-cascade` | the two cheapest of the `panel-nano` models first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
 | `best-of-n-verified` | **benchmark only** (refused elsewhere, it runs code): the `panel-nano` models each write a patch and the task's visible tests pick one, no synthesis; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 |
+| `verified-synth` | **benchmark only** (refused elsewhere, it runs code): the `panel-nano` models each write a complete patch and the checks that judge any fix; every patch runs against every check in a sandbox copy and the one passing most of the others' checks wins, a tie goes to one Haiku 5.5 selector call; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 + 1 on a tie |
 | `panel-local` | Ollama and LM Studio models; falls back to the cloud panel with a warning when none are enabled | 2 + 1 |
 
 Model tiers (`nano` to `premium`) are computed from catalog prices; see
@@ -398,7 +400,11 @@ How the fields behave:
   with one small call (see [Approaches and `select`](#approaches-and-select)). **`auto`**, the
   default when a strategy names none, becomes `union` for review and debugging and `select+patch`
   for plans, decisions, asks and patches. `verified` (benchmark mode only, for coding tasks) runs the task's
-  visible tests on each panelist's patch and returns the best. `vote`, `best_of`, `digest`, `union`
+  visible tests on each panelist's patch and returns the best. `verified-synth` (benchmark mode
+  only) has each member write its patch plus the checks that judge it and runs every patch against
+  every member's checks in sandbox copies; a tie goes to one `select` call (`aggregator_model`), and
+  it takes `rounds: 1` (see
+  [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox)). `vote`, `best_of`, `digest`, `union`
   and `verified` take no `aggregator_model`. When the task's answer is a code patch, `vote` returns
   the patch most models gave (see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox)).
 - **`judge`**: `off` runs only the deterministic checks and makes no judge call (the default, so a

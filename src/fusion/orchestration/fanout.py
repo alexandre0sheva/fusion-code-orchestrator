@@ -26,6 +26,7 @@ from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.budget import ANSWER_OUTPUT_TOKENS
 from fusion.routing.classifier import TaskType
+from fusion.verify.synthesis import checks_instruction
 
 if TYPE_CHECKING:
     from fusion.orchestration.approaches import Approach
@@ -109,6 +110,7 @@ async def fanout_to_panel(
     lenses: Mapping[str, Lens] | None = None,
     approaches: Mapping[str, Approach] | None = None,
     self_check: bool = False,
+    checks: bool = False,
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
@@ -124,7 +126,8 @@ async def fanout_to_panel(
     ``label`` names the wave in progress messages ("panel 2/3 done"). ``lenses`` gives members
     their lens (``lenses.assign_lenses``) and ``approaches`` their stance
     (``approaches.assign_approaches``); a hedge or fallback asked for a member keeps both.
-    ``self_check`` asks every member to check its answer and report an honest confidence.
+    ``self_check`` asks every member to check its answer and report an honest confidence;
+    ``checks`` asks every member for check scripts and guardrails with its patch (verified-synth).
     Cancelling the caller cancels every call still in flight.
     """
     fanout_config = config or FanoutConfig()
@@ -146,6 +149,7 @@ async def fanout_to_panel(
         lenses=lenses or {},
         approaches=approaches or {},
         self_check=self_check,
+        checks=checks,
     )
     return await panel.run()
 
@@ -182,9 +186,11 @@ class _Panel:
         lenses: Mapping[str, Lens] | None = None,
         approaches: Mapping[str, Approach] | None = None,
         self_check: bool = False,
+        checks: bool = False,
     ) -> None:
         self.label = label
         self.self_check = self_check
+        self.checks = checks
         self.lenses = dict(lenses or {})
         self.approaches = dict(approaches or {})
         self.panel_models = panel_models
@@ -207,7 +213,7 @@ class _Panel:
         self.shared_prefix = prompt.shared_prefix
         self.task_type = task_type
         self.system_prompt = get_system_prompt(task_type)
-        self.schema = panel_answer_schema()
+        self.schema = panel_answer_schema(checks=checks)
         needed = min_successful or config.min_successful_responses
         self.min_success = min(needed, max(len(panel_models), 1))
         self._slots: dict[str, asyncio.Semaphore] = {}
@@ -252,7 +258,7 @@ class _Panel:
             self._lens_text(lens) if lens is not None else ""
         ) + (approach_instruction(approach) if approach is not None else "") + (
             self_check_instruction() if self.self_check else ""
-        )
+        ) + (checks_instruction() if self.checks else "")
         metadata = {"task_type": self.task_type.value, "role": "panel", "personality": persona}
         if lens is not None:
             metadata["lens"] = lens.name

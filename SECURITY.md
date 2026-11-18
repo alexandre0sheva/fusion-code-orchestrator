@@ -195,17 +195,29 @@ Every string a tool returns, and the stored-run resource, passes `fusion.securit
 Benchmark mode can run code: the hidden tests of the `coding`, `frontend` and `performance`
 datasets applied to a model's patch (`src/fusion/bench/sandbox.py`, scored by
 `bench/scoring/coding.py` and `bench/scoring/artifact.py`), the evaluators that lint, compile and time
-that code and read the page it builds (`bench/evaluators/`), and the `best-of-n-verified` strategy's
-visible-test check. That code is written by models and was never reviewed by anyone.
+that code and read the page it builds (`bench/evaluators/`), the `best-of-n-verified` strategy's
+visible-test check, and the `verified-synth` strategy's cross-check, which runs check scripts the
+panel models wrote against their patches (`src/fusion/verify/`). That code is written by models and
+was never reviewed by anyone.
 
 | Control | Behavior |
 |---------|----------|
-| Where it runs | Only inside `fusion bench`, on a dataset you named. The MCP server and every real-mode path never call it, and the pipeline refuses the `verified` aggregator outside benchmark mode |
+| Where it runs | Only inside `fusion bench`, on a dataset you named. The MCP server and every real-mode path never call it, and the pipeline refuses the `verified` and `verified-synth` aggregators outside benchmark mode |
 | Working directory | A fresh temporary directory per run, deleted afterwards. Absolute paths, `..`, `.git` and symlinks that leave it are rejected for patch files and when collecting results |
 | Environment | Allow-list only: `PATH` and locale pass; `HOME` and `TMPDIR` point inside the sandbox. API keys, tokens and every other variable are not passed |
 | Limits | A wall-clock timeout that kills the whole process group, CPU time, file size, no core dumps, memory on Linux, and capped output |
 | Network and writes | Blocked where available: `sandbox-exec` on macOS (no network, no writes outside the sandbox), `unshare --net` on Linux (no network). `score.details["isolation"]` records what applied |
 | Policy | `FUSION_SANDBOX_ISOLATION=auto` (default) runs with the limits alone and says so when isolation is missing; `require` refuses to run without it; `off` disables it |
+
+**Model-written checks** (`verified-synth`) pass two gates. Before anything runs, `validate_check`
+drops a check that does not compile, imports or names the network (network modules, dynamic
+imports, `curl`, `/dev/tcp` ...), writes to an absolute, `~` or `..` path, or is over 8 KB; these
+are heuristics, and a check that hides what it does is still only run in the sandbox. Each check
+then runs in **its own fresh copy** of the task's files (read once into memory; the source is never
+written), as a script placed beside the copy, with a 10-second limit: a check that loops is killed
+and scored `timeout`, one that opens a socket or writes outside the copy fails where isolation
+applies, and none of these ever counts as a pass. Tests hash the source tree before and after a
+cross-check and run a socket and an escape attempt under `require`.
 
 **Evaluators and the agentic judge** run only in benchmark mode, on tasks from a dataset you named,
 and are never reachable through MCP or `fusion ask`. Every evaluator that executes anything

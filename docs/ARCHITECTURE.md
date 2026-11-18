@@ -395,6 +395,50 @@ patch) the answers are rivals, and one is picked instead of a synthesizer rewrit
   with their roles, so the 0.3.0 study can compare them. Forecasts add `APPROACH_PROMPT_TOKENS` to
   each member of a select panel.
 
+### Verified generation: checks and the cross-check
+
+`aggregator: verified-synth` (strategy `verified-synth`, **benchmark only** until the sandboxed
+tool of Task 11) picks a patch by running code instead of asking a model (`src/fusion/verify/`).
+
+- **What members write** (`verify/synthesis.py`). It is a select aggregator, so members get the
+  `patch` approaches (minimal fix, root-cause fix) and each answers with a complete patch. The
+  fan-out adds `checks_instruction` and asks for `panel_answer_schema(checks=True)`: one to three
+  `CheckScript`s (`python` or `shell`; `repro` and `property` fail on the code as it is and pass
+  once fixed, `invariant` passes before and after) and up to five prose `guardrails`.
+  `PanelAnswer.checks` and `.guardrails` hold them; other runs' schemas leave both fields out.
+  A strategy with `rounds` > 1 is refused, because refinement would rewrite answers without checks.
+- **Validation before anything runs** (`verify/validate.py`). `validate_check` drops a check that is
+  too big (8 KB, 200 lines), has an unsafe name, does not compile (Python compiled in memory;
+  shell through `bash -n`), names the network (network modules, `__import__`/`importlib`/`exec`,
+  `curl`/`wget`/`nc`, `/dev/tcp`) or writes to an absolute, `~` or `..` path. These are heuristics;
+  the sandbox is the boundary.
+- **The cross-check** (`verify/crosscheck.py`, `crosscheck(candidates, CheckEnv)`). The source is
+  read once into memory and every run gets a fresh `SandboxCopy` (a `bench.sandbox.Sandbox` holding
+  the copy, the patch applied, deleted on exit); check scripts go beside the copy
+  (`Sandbox.write_aux`), not in it. Each valid check first runs on the unpatched copy: a `repro` or
+  `property` check that passes is discarded (`not_discriminating`), an `invariant` that does not
+  pass is discarded (`broken`). Candidates whose patches produce the same files form one group and
+  run once; each group's patch runs against every kept check plus the task's own checks
+  (`CheckEnv.task_checks`: the visible tests, trusted, never discarded). A cell is `pass`, `fail`,
+  `error` (patch did not apply, could not start, killed by a signal) or `timeout`.
+- **The pick** (`pick(Matrix)`). A candidate scores 1 for each check it passes that another group or
+  the task wrote, and `OWN_WEIGHT` = 0.5 for each check its own group wrote (CodeT's dual
+  agreement, with authorship kept apart): two members agreeing on a wrong patch cannot outvote a
+  patch that passes everyone's checks. A candidate whose patch did not apply cannot win. The best
+  score wins (`AggregateStage._verified_synth` returns its answer as written, with no model
+  call); a tie between groups goes to the `select` call among the tied candidates only.
+- **The record.** `CrossCheckReport.record()` (winner or tie, reason, scores, shares, groups, every
+  check with its status, reasons and baseline, the matrix, guardrails, isolation) is stored as
+  `disagreement.crosscheck` and as `BenchItem.verification`; `disagreement.verified` holds each
+  candidate's share of kept checks passed, which the escalation ladder's `patches_fail` trigger
+  reads. Orchestration never imports the sandbox: the bench passes `PipelineContext.crosscheck`
+  (`bench.scoring.coding.coding_crosschecker`), as it passes `verifier` to `verified`.
+- **Evidence boundary.** Hidden tests, the reference solution and its flaws, and rubrics never enter
+  a prompt that proposes an answer: `synthesis.grader_material` lists their telling lines and
+  `assert_no_grader_material` fails on a prompt that contains one (a test runs a simulated bench and
+  checks every panel prompt). Check results go to no model except, on a tie, the selector, which
+  sees only the tied candidates' answers.
+
 ### Difficulty routing and the escalation ladder
 
 `strategy: auto` (the default, `budget: medium`) is a `kind: auto` strategy with no members of
@@ -660,11 +704,11 @@ uv run fusion runs export --format jsonl
 | `stats.py` | the statistics: task-clustered bootstrap intervals, paired comparisons (sign test, effect size), cost per solved task, the Pareto frontiers and the verdict engine; pure Python, see [BENCHMARKING.md](BENCHMARKING.md#statistics-reports-and-how-to-read-them) |
 | `meta.py`, `report/` | `meta.json` (the facts of a run's start, for the methodology footer) and the reports: `data` assembles a `Report` (stats, caveats, evidence examples, call timelines), `markdown` and `html` (inline SVG from `charts`, no external asset) render it, `compare` diffs two runs, `results` writes `docs/BENCHMARK_RESULTS.md` |
 | `calibrate.py`, `metrics.py`, `summary.py` | running a judge calibration with the spend cap; `BenchMetrics` built from a run's ledger; per-arm summary rows |
-| `sandbox.py`, `patch.py` | the `Sandbox` context manager (limits, scrubbed environment, isolation) and patch extraction and application; used only by benchmark scorers and the verifier, never by MCP, see [SECURITY.md](../SECURITY.md#benchmark-sandbox) |
+| `sandbox.py`, `patch.py` | the `Sandbox` context manager (limits, scrubbed environment, isolation) and patch extraction and application; used only by benchmark scorers, the verifier and the cross-check (`fusion.verify`, see [Verified generation](#verified-generation-checks-and-the-cross-check)), never by MCP, see [SECURITY.md](../SECURITY.md#benchmark-sandbox) |
 | `virtual.py` | an event loop with a virtual clock, used for simulated runs, and `offload` for blocking work |
 | `cli.py` | the `fusion bench` commands |
 
-`providers/simulated.py` holds the simulated models, `providers/simulated_judge.py` the way they play a judge (including the agentic tool protocol) and `providers/simulated_coding.py` the patches they write for coding tasks. The runner builds an ordinary `BasePipeline`
+`providers/simulated.py` holds the simulated models, `providers/simulated_judge.py` the way they play a judge (including the agentic tool protocol) and `providers/simulated_coding.py` the patches (and, for `verified-synth`, the checks) they write for coding tasks. The runner builds an ordinary `BasePipeline`
 over a strategy book extended with the study's arms and calls `run(..., mode=Mode.BENCHMARK)` with a
 `RunLedger` of its own, so a failed run's spending is still known; nothing in the pipeline knows it
 is being benchmarked beyond the mode.

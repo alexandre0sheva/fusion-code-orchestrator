@@ -26,6 +26,13 @@
 #                         choice that is not an id falls back to a vote, with a warning
 #                select+patch  select, plus up to 3 short points other candidates cover and the
 #                         chosen one lacks, appended after it (a cheap union without a rewrite)
+#                verified-synth  benchmark only, coding tasks: every member writes a complete
+#                         patch (from its approach) plus 1-3 check scripts and guardrails; each
+#                         check is validated, run on the unpatched copy (one that already passes
+#                         is dropped), then every patch runs against every check in a sandbox
+#                         copy. Checks by OTHER members (and the task's visible tests) count in
+#                         full, a member's own count half; the best score wins, a tie goes to one
+#                         selector call (aggregator_model). Refused outside `fusion bench`
 #                auto     the default: settled per task. code_review and debugging -> union (with
 #                         lenses); implementation_plan, architecture_decision, asks and patches
 #                         -> select+patch (with approaches)
@@ -358,6 +365,20 @@ strategies:
       - model: gpt-luna
       - model: gemini-flash
     aggregator: verified
+
+  verified-synth:
+    kind: panel
+    description: >-
+      Benchmark only. The nano panel each write a complete patch (minimal fix, root-cause fix) and
+      the checks that should judge any fix; every patch is run against every check in a sandbox
+      copy and the one that passes the most checks the others wrote wins. A tie goes to one cheap
+      Haiku call. Refused outside `fusion bench`, because it runs code.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: verified-synth
+    aggregator_model: claude-haiku
 
   panel-cascade:
     kind: cascade

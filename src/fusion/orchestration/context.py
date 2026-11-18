@@ -51,6 +51,8 @@ if TYPE_CHECKING:
     from fusion.orchestration.escalate import Climb
     from fusion.orchestration.output import ResultPresenter
     from fusion.orchestration.result import PanelResult, PipelineResult
+    from fusion.verify.crosscheck import CrossCheckReport
+    from fusion.verify.synthesis import Candidate
 
 
 @dataclass
@@ -75,6 +77,9 @@ class PipelineContext:
     # Benchmark only: scores a patch by running the task's visible tests (the ``verified``
     # aggregator). 1.0 = all pass, -1.0 = the patch does not apply, None = cannot be verified.
     verifier: Callable[[str], Awaitable[float | None]] | None = None
+    # Benchmark only: cross-checks candidate patches against the panel's own checks in sandbox
+    # copies (the ``verified-synth`` aggregator; ``fusion.verify.crosscheck``).
+    crosscheck: Callable[[list[Candidate]], Awaitable[CrossCheckReport]] | None = None
     # What the tool read from the user's project for this run (files, a git diff) and what it
     # refused; stored with the run's input. None when the caller pasted everything.
     workspace: WorkspaceReport | None = None
@@ -273,10 +278,11 @@ class RunState:
             if strategy.max_cost_usd is not None:
                 cap = min(cap, strategy.max_cost_usd)
             strategy = strategy.model_copy(update={"max_cost_usd": cap})
-        if strategy.aggregator == "verified" and mode is not Mode.BENCHMARK:
+        if strategy.runs_code and mode is not Mode.BENCHMARK:
             msg = (
-                f"Strategy '{strategy.name}' uses the 'verified' aggregator, which runs code to "
-                "choose among answers. It is available only in benchmark mode (`fusion bench`): "
+                f"Strategy '{strategy.name}' uses the '{strategy.aggregator}' aggregator, which "
+                "runs code to choose among answers. It is available only in benchmark mode "
+                "(`fusion bench`): "
                 "Fusion's tools never run code, so Claude Code stays the only executor."
             )
             raise BenchmarkOnlyError(msg)

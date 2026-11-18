@@ -52,6 +52,7 @@ Aggregator = Literal[
     "union+check",
     "select",
     "select+patch",
+    "verified-synth",
 ]
 
 # Task types whose answer is a list of findings that add together; every other answer is one

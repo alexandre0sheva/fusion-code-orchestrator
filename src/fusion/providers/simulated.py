@@ -35,7 +35,7 @@ from fusion.providers.base import (
     speed_metrics,
 )
 from fusion.providers.mock import MockProvider
-from fusion.providers.simulated_coding import coding_patch
+from fusion.providers.simulated_coding import coding_checks, coding_patch
 from fusion.providers.simulated_judge import JUDGE_ROLE, judge_reply
 
 if TYPE_CHECKING:
@@ -367,7 +367,9 @@ class SimulatedProvider(ModelProvider):
                     shared=0.55,
                 )
             ]
-            return _panel_json(points, decoys, self._patch(request, task, [*points, *decoys]))
+            patch = self._patch(request, task, [*points, *decoys])
+            extra = self._checks(request, spec, task, patch) if _wants_checks(request) else None
+            return _panel_json(points, decoys, patch, extra)
         seen = prompt.replace(task.prompt, "").lower()
         if role == "refine":
             return self._refine(request, spec, task, seen)
@@ -439,6 +441,27 @@ class SimulatedProvider(ModelProvider):
             seed=request.seed,
         )
 
+    def _checks(
+        self, request: ModelRequest, spec: SimModel, task: BenchTask, patch: str | None
+    ) -> dict[str, Any]:
+        """verified-synth: the checks and guardrails a model writes with its patch."""
+        if not patch:
+            return {"checks": [], "guardrails": []}
+        understood = self.world.hit(
+            spec.skill + _DIFFICULTY_SHIFT[task.difficulty],
+            model=request.model_id,
+            spec=spec,
+            task=task,
+            item="checks",
+            request_seed=request.seed,
+            tag="checks",
+        )
+        truth = self.world.coding_truth(task)
+        return {
+            "checks": coding_checks(task, truth, patch, understood=understood),
+            "guardrails": ["The tests the task ships with are not edited"],
+        }
+
     def _canned(self, request: ModelRequest) -> str:
         """The offline mock's answer for roles (and unknown tasks) the simulation does not model."""
         personality = self._fallback._resolve_personality(request)
@@ -449,8 +472,17 @@ def _says(text: str, point: TruthPoint) -> bool:
     return any(k.lower() in text for k in point.keywords)
 
 
+def _wants_checks(request: ModelRequest) -> bool:
+    """Does the request's answer schema ask for checks (``verified-synth``)?"""
+    properties = (request.response_schema or {}).get("properties") or {}
+    return "checks" in properties
+
+
 def _panel_json(
-    points: list[TruthPoint], decoys: list[TruthPoint], patch: str | None = None
+    points: list[TruthPoint],
+    decoys: list[TruthPoint],
+    patch: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     claims = [_claim(p, i) for i, p in enumerate([*points, *decoys], 1)]
     claims.append(
@@ -472,6 +504,7 @@ def _panel_json(
     }
     if patch is not None:
         answer["patch"] = patch or None
+    answer.update(extra or {})
     return json.dumps(answer)
 
 

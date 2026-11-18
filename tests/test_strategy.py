@@ -219,6 +219,7 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-cascade",
         "panel-local",
         "best-of-n-verified",
+        "verified-synth",
     }
     for name, alias in SOLO_PER_ALIAS.items():
         assert [m.model for m in book.get(name).members] == [alias], name

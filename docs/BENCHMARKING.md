@@ -352,10 +352,27 @@ the wrong fixes. It runs code, so the pipeline **refuses it outside benchmark mo
 executor. Verification time counts toward the arm's wall time in live studies; with `--mock` it
 takes no virtual time, so simulated timings leave it out.
 
+**`verified-synth`** (a strategy, not in the `default` six) generalises it: the visible tests are
+no longer needed. Each of the three cheap models writes a complete patch (from a `patch` approach:
+minimal fix, root-cause fix) **and** one to three check scripts that should fail on the code as it
+is and pass once it is fixed, plus guardrails. The checks are validated, run on the unpatched copy
+(a check that already passes is dropped: it cannot discriminate), then every patch is run against
+every check in its own sandbox copy; the task's visible tests, when it has any, join as a trusted
+check. A patch scores 1 per check another model (or the task) wrote that it passes and 0.5 per check
+its own author wrote, so two models that agree on a wrong fix cannot outvote one that passes
+everyone's checks; a tie goes to one `select` call among the tied patches. The matrix, every check's
+fate and the reason for the pick are kept in each item's `verification` field of `results.jsonl`
+(how it works: [ARCHITECTURE.md](ARCHITECTURE.md#verified-generation-checks-and-the-cross-check)).
+Like `best-of-n-verified` it runs code, so it is refused outside benchmark mode. Hidden tests are
+never used to pick: they grade the result afterwards, and a test checks that no panel prompt
+contains them. Simulated models write checks that compare file hashes against their own patch and,
+when the model "understood" the task (a draw on its skill), against the reference fix: they are
+oracles, so a `--mock` run of this arm is an upper bound on what real checks achieve.
+
 ```bash
 uv run fusion bench dataset validate evals/datasets/v1/coding         # runs every task's solution, flaws and tests
 uv run fusion bench plan --dataset coding --arms solo-opus,panel-nano,best-of-n-verified --mock
-uv run fusion bench run  --dataset coding --arms solo-opus,panel-nano,best-of-n-verified --mock
+uv run fusion bench run  --dataset coding --arms solo-opus,panel-nano,best-of-n-verified,verified-synth --mock
 ```
 
 **Caveats.** The tasks are small, self-contained Python and standard library only (the sandbox runs

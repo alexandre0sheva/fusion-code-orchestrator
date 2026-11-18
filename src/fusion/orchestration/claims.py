@@ -20,6 +20,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from fusion.providers.base import inline_schema_refs
+from fusion.verify.synthesis import CheckScript, parse_checks, parse_guardrails
 
 ClaimKind = Literal["finding", "hypothesis", "recommendation", "risk", "test"]
 Severity = Literal["low", "med", "high", "critical"]
@@ -111,6 +112,19 @@ class PanelAnswer(BaseModel):
             "`claims` is then empty. A valid, complete answer: never invent a claim to fill it."
         ),
     )
+    # verified-synth only (asked for by ``panel_answer_schema(checks=True)``): scripts that judge
+    # any fix of the task, and invariants in prose a correct fix keeps. See ``fusion.verify``.
+    checks: list[CheckScript] = Field(
+        default_factory=list,
+        description=(
+            "One to three scripts that judge ANY fix of the task: repro/property checks fail on "
+            "the current code and pass once it is fixed; invariants pass before and after."
+        ),
+    )
+    guardrails: list[str] = Field(
+        default_factory=list,
+        description="Up to five short invariants a correct fix keeps.",
+    )
 
 
 class ClusterMember(BaseModel):
@@ -165,9 +179,19 @@ class AgreementReport(BaseModel):
 # --------------------------------------------------------------------------------------- schema
 
 
-def panel_answer_schema() -> dict[str, Any]:
-    """JSON Schema for ``PanelAnswer`` in the form providers' strict structured output accepts."""
+_CHECK_FIELDS = ("checks", "guardrails")
+
+
+def panel_answer_schema(*, checks: bool = False) -> dict[str, Any]:
+    """JSON Schema for ``PanelAnswer`` in the form providers' strict structured output accepts.
+
+    ``checks`` adds the ``checks`` and ``guardrails`` fields (``verified-synth`` asks for them);
+    without it they are left out, so no other run pays for them.
+    """
     schema = inline_schema_refs(PanelAnswer.model_json_schema())
+    if not checks:
+        for name in _CHECK_FIELDS:
+            schema["properties"].pop(name, None)
 
     def strict(node: Any) -> Any:
         if isinstance(node, list):
@@ -272,6 +296,8 @@ def parse_panel_answer(
             confidence=_unit(data.get("confidence"), 0.5) or 0.0,
             score=_unit(data.get("score"), None),
             none_found=nothing and not any(c.kind in FINDING_KINDS for c in claims),
+            checks=parse_checks(data.get("checks")),
+            guardrails=parse_guardrails(data.get("guardrails")),
         )
         return answer, True
     return _answer_from_prose(text, default_kind), False

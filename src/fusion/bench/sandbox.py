@@ -278,6 +278,18 @@ class Sandbox:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
 
+    def write_aux(self, rel: str, data: str | bytes) -> Path:
+        """Write a file beside the work directory, not in it, and return its absolute path.
+
+        For scripts the sandbox runs against the work directory (a generated check): a command
+        can run it, but it is not part of the copy, so the code under test cannot import it or
+        find it in a listing. Same path rules as ``write``.
+        """
+        target = self.root / "aux" / safe_relative_path(rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
+        return target
+
     def copy_in(self, files: Mapping[str, str | bytes] | Path, *, dest: str = "") -> None:
         """Put ``files`` (path -> content, or a directory's contents) under ``dest``."""
         if isinstance(files, Path):
