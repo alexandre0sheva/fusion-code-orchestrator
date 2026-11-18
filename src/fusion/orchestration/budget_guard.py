@@ -25,6 +25,7 @@ from fusion.orchestration.strategy import Strategy
 from fusion.routing.budget import (
     ANSWER_OUTPUT_TOKENS,
     JUDGE_OUTPUT_TOKENS,
+    LENS_PROMPT_TOKENS,
     PROMPT_OVERHEAD_TOKENS,
     SYNTHESIS_OUTPUT_TOKENS,
     PlannedCall,
@@ -108,6 +109,14 @@ def synthesis_calls(
     return [PlannedCall("synthesis", model, read, SYNTHESIS_OUTPUT_TOKENS)]
 
 
+def union_check_calls(model: str, prompt_tokens: int) -> list[PlannedCall]:
+    """The union+check call: the input plus a short list of findings, a short list of verdicts.
+
+    Planned at its largest (it is skipped when every finding was already checked by string match).
+    """
+    return [PlannedCall("synthesis", model, _call_input(prompt_tokens) + 400, 400)]
+
+
 def _answer_sizes(count: int) -> list[int]:
     return [ANSWER_OUTPUT_TOKENS] * count
 
@@ -128,15 +137,26 @@ def plan_calls(
     cascade = strategy.cascade if strategy.kind == "cascade" else None
     if cascade is not None and not include_escalation:
         return panel_calls(aliases[: cascade.first], prompt_tokens)
-    calls = panel_calls(aliases, prompt_tokens)
+    # Members of a lensed panel also read their lens (planned for every task type: the forecast
+    # does not know the task's lenses, so it stays on the safe side).
+    member_prompt = prompt_tokens + (LENS_PROMPT_TOKENS if strategy.lenses == "auto" else 0)
+    calls = panel_calls(aliases, member_prompt)
     answers = _answer_sizes(len(aliases))
     for _ in range(strategy.rounds - 1):
-        calls += refine_round_calls(aliases, prompt_tokens, answers)
+        calls += refine_round_calls(aliases, member_prompt, answers)
     if strategy.judge != "off":
         calls += judge_calls(judge_model, prompt_tokens, answers, full=strategy.judge == "full")
-    if strategy.kind != "solo" and strategy.aggregator == "llm" and strategy.aggregator_model:
-        calls += synthesis_calls(strategy.aggregator_model, prompt_tokens, answers)
-    return calls
+    return calls + _aggregation_calls(strategy, prompt_tokens, answers)
+
+
+def _aggregation_calls(
+    strategy: Strategy, prompt_tokens: int, answers: Sequence[int]
+) -> list[PlannedCall]:
+    if not strategy.calls_aggregator_model or not strategy.aggregator_model:
+        return []
+    if strategy.aggregator == "union+check":
+        return union_check_calls(strategy.aggregator_model, prompt_tokens)
+    return synthesis_calls(strategy.aggregator_model, prompt_tokens, answers)
 
 
 def escalation_calls(
@@ -147,9 +167,7 @@ def escalation_calls(
     rest = [m.model for m in strategy.members][strategy.cascade.first :]
     calls = panel_calls(rest, prompt_tokens)
     answers = [*first_wave, *_answer_sizes(len(rest))]
-    if strategy.aggregator == "llm" and strategy.aggregator_model:
-        calls += synthesis_calls(strategy.aggregator_model, prompt_tokens, answers)
-    return calls
+    return calls + _aggregation_calls(strategy, prompt_tokens, answers)
 
 
 # ------------------------------------------------------------------------------- down-shifting

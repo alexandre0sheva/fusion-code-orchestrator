@@ -27,7 +27,8 @@ Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
    ConcurrentStages  at the same time:
      JudgeStage        safety checks and claim-derived scores per answer; LLM judge if on
      AggregateStage    final answer (solo: the answer itself; llm: one synthesizer call;
-                       digest, vote, best_of: built from the claims, no call)
+                       digest, vote, best_of, union: built from the claims, no call;
+                       union+check: union plus one checker call)
    FinalEvalStage    final eval, structured output, budget warnings
    ShadowStage       collect the baseline answer and judge it blind against Fusion's
    PersistStage      build the result from the ledger, store the run (always runs)
@@ -220,7 +221,8 @@ strategy into:
 - panel models (the strategy's enabled members; if none is enabled, the catalog's panel-role models
   with a warning);
 - the judge model (the task policy's `judge_model`, else a JSON-capable model with the judge role);
-- the aggregator model (an `llm` aggregator only; empty for solo, digest, vote and best_of);
+- the aggregator model (`llm` and `union+check` only; empty for solo, digest, vote, best_of and
+  union);
 - the resolved strategy name, an estimated cost tier and routing warnings.
 
 `RoutingDecision.strategy` reports the strategy that ran. Model metadata and prices live in the
@@ -279,7 +281,8 @@ t0 ─┬─ panel member A ──────────┐
     priced at the catalog's cached rate, and summed per stage and in `TaskMetrics`.
 - **Refinement**: each member's revision needs every peer's round-1 answer, so a round starts when
   the slowest member is in, and then all revisions run together. A round is skipped when the
-  panel's agreement already reaches `refinement.skip_above_agreement`.
+  panel's agreement already reaches `refinement.skip_above_agreement` (never on a lensed run, see
+  [Lenses and the union](#lenses-and-the-union)).
 - **Judge and synthesis**: per-answer judge calls run together, and the whole judge stage runs
   alongside synthesis (`ConcurrentStages`) unless the strategy sets `judge_feeds_synthesis`, in
   which case synthesis waits and receives the judge's scores. If one stage fails, the other is
@@ -303,6 +306,47 @@ Config keys and failure semantics are in [CONFIGURATION.md](CONFIGURATION.md#fan
 that is still pending when the global timeout hits is attributed to its own model. The MCP request
 is still a normal blocking request from Claude Code's perspective.
 
+### Lenses and the union
+
+Panel diversity comes from **lenses** (`lenses.py`, config in `lenses.yaml`), not from sampling
+temperature, which current models reject. The idea is Harness²'s orthogonal dimensions: on a task
+whose answer is a list of findings, each member covers one area and leaves the rest to the others,
+so the answers are pieces of one result.
+
+- **Seats** (`RouteStage._seats`): a model listed more than once becomes `alias`, `alias#2`, ...
+  (`lenses.seated`); `ModelRegistry.add_seat` registers each copy as a roleless clone of the
+  catalog entry, so pricing (by model ID), spares (never the same model under another alias), the
+  ledger and fan-out need no change. A model gets at most as many seats as the task type has
+  lenses.
+- **Assignment** (`PanelStage._assign`, after `BudgetStage` may have shifted the panel down):
+  `assign_lenses(task_type, members)` returns `{member: Lens}`; a member holding several lenses gets
+  one merged `Lens` (`a+b`), and a seat that would repeat its model's lens is dropped from the run.
+  A cascade and a solo run get no lenses (rejected at load).
+- **Fan-out** (`fanout.py`): each member's prompt is the shared prompt (unchanged, so the provider
+  prompt cache still works) plus its role and `prompts.lens_instruction`: its area, what it
+  ignores, the other members' areas, and that `none_found` is a complete answer. A lens replaces
+  the catalog persona. A hedge or same-tier fallback asked for a member gets the member's lens;
+  `FanoutResult.answered_for` maps each answering model to its member, so `RunState.answer_lenses`
+  knows every answer's lens. A lensed fan-out has early return switched off (`PanelStage.
+  _fanout_config`): members are not interchangeable.
+- **Agreement** (`claims.agreement_score(..., lenses=)`): a single-model cluster whose model is the
+  only holder of its lens is `lens_exclusive`: left out of `score` and of `outliers`. Refinement
+  prompts keep a lensed member in its area, and a round is never skipped for agreement on a lensed
+  run (agreement there covers only the overlap). `aggregate.aggregator_for(..., lensed=True)` and
+  `AggregateStage._skip` turn a `vote` or `best_of` into `union`; an `llm` synthesizer is told the
+  responses are pieces (`build_synthesis_prompt(lensed=True)`).
+- **Union** (`union.py`, no model call): `merge_findings` reuses the run's claim clusters as the
+  duplicate merge, then `check_claim` judges each member claim against `Material` (the redacted
+  input, indexed: normalised text, and per file the line numbers shown by diff hunks, snippets and
+  stack-trace frames). A cluster is `backed` if any member's quote is in the input or its
+  `file:line` is shown, `unbacked` (dropped) if every member's quote or file is absent, else
+  `unchecked`. Recommendations and tests are kept apart as advice. `union+check` sends the
+  unchecked findings to one cheap call (`check_unchecked`, stage `synthesis`, 400 output tokens)
+  whose confirmations must carry a quote that passes the same match. `FinalEvalStage` builds the
+  structured fields from `UnionResult.kept_clusters()`, so dropped points do not come back, and
+  the run's `disagreement` holds `lenses`, `lens_exclusive`, `none_found` and the union's counts.
+- **Forecasts** add `LENS_PROMPT_TOKENS` to each lensed panel and refinement call.
+
 ### Cascade, aggregators and caps
 
 Three mechanisms cut what a run spends without a model call of their own. All of them read the
@@ -319,8 +363,9 @@ claim clusters and the ledger, never an answer's wording.
   run continues as a panel. A wave-one call that fails counts as "fewer than two answered", so a
   flaky cheap model escalates rather than answering alone. `CascadeOutcome` (reason, agreement,
   threshold, risk, who ran) is stored with the run.
-- **Aggregators** (`aggregate.py`). `aggregator_for(strategy, cascade_exited_early)` picks one;
-  `digest`, `vote` and `best_of` are pure functions of the clusters and answers. `vote` keeps the
+- **Aggregators** (`aggregate.py`). `aggregator_for(strategy, cascade_exited_early, lensed)` picks
+  one; `digest`, `vote` and `best_of` are pure functions of the clusters and answers (`union` is in
+  [Lenses and the union](#lenses-and-the-union)). `vote` keeps the
   `consensus` clusters, `best_of` scores each model by the mean share of the other models backing
   its clusters (halved when disputed) and returns that model's answer as written, and `digest`
   lists consensus, disputed and single-model clusters ahead of every answer for Claude Code to

@@ -10,6 +10,7 @@ from fusion.security.untrusted import UNTRUSTED_RULES, wrap_untrusted
 
 if TYPE_CHECKING:
     from fusion.orchestration.claims import ClaimCluster
+    from fusion.orchestration.lenses import Lens
 
 _STRUCTURED_OUTPUT_RULES = f"""
 Rules for your response:
@@ -37,10 +38,13 @@ statement; do not bundle several points into one claim.
 - `severity`: low, med, high or critical for findings, hypotheses and risks; null otherwise.
 - `file` and `line`: where it applies, copied from the input; null when you do not know. Never
   invent a path or line number.
-- `evidence`: a short quote or observation from the input that supports the claim; null if none.
+- `evidence`: a short exact quote, copied character for character from the input, that supports
+  the claim; null if there is none. Never paraphrase it: it is checked against the input.
 - `confidence`: how sure you are of the whole answer, 0 to 1.
-Include at least one `test` claim for coding tasks. Put every point in `claims`, not only in
-`summary`.
+- `none_found`: true when there is nothing to report; `claims` is then empty. That is a valid,
+  complete answer: never invent a claim to fill the list.
+Unless `none_found` is true, include at least one `test` claim for coding tasks. Put every point
+in `claims`, not only in `summary`.
 """
 
 _ROLE_PROMPTS: dict[str, str] = {
@@ -254,6 +258,32 @@ def role_instruction(role: str) -> str:
     return f"\n\n## Your Role\n{_ROLE_PROMPTS.get(role, _ROLE_PROMPTS['coding_reviewer'])}"
 
 
+def lens_instruction(lens: Lens, others: list[Lens] | None = None) -> str:
+    """A panel member's lens, appended after the shared prompt like a role.
+
+    ``others`` are the lenses the rest of the panel holds, named so the member knows what to
+    leave to them (the ownership boundary).
+    """
+    lines = [
+        f"\n\n## Your Lens: {lens.name}",
+        "The panel splits this task by area: you cover one, other panelists cover the rest. You "
+        "see the whole input, but report only what falls in your area.",
+        lens.instruction.strip(),
+        "Your area:",
+        *(f"- {area}" for area in lens.owns),
+    ]
+    other_areas = [o for o in others or [] if o.name != lens.name]
+    leave = [*lens.ignores, *(f"{', '.join(o.owns)} ({o.name} lens)" for o in other_areas)]
+    if leave:
+        lines.append("Leave to others, do not report:")
+        lines.extend(f"- {item}" for item in leave)
+    lines.append(
+        "If nothing in your area needs reporting, set `none_found` to true and return an empty "
+        "`claims` list. That is a complete answer: never invent a finding to fill the list."
+    )
+    return "\n".join(lines)
+
+
 _PATCH_FIELD = (
     "string — ONE patch for the whole change: a unified diff, or the complete new content of each "
     "changed file under `=== path ===` lines. Build it from the patches in the responses (take the "
@@ -269,11 +299,14 @@ def build_synthesis_prompt(
     original_task: str = "",
     clusters: list[ClaimCluster] | None = None,
     patch: bool = False,
+    lensed: bool = False,
 ) -> str:
     """Build prompt for synthesizing panel responses into structured JSON.
 
     ``clusters`` (the panel's claims grouped across models) tell the synthesizer which points are
     shared, which stand alone and which are disputed; the full answers follow for detail.
+    ``lensed``: each response covered one area (its lens), so a point from one response is not
+    suspect for that reason alone.
     """
     key = canonical_task_key(task_type)
     schema = _SYNTHESIS_SCHEMAS.get(key, {"summary": "string", "confidence": "float 0-1"})
@@ -289,11 +322,19 @@ def build_synthesis_prompt(
         parts.append(f"\n## Response from {model_name}\n{wrap_untrusted(content)}")
     parts.append(f"\n## Required JSON Schema\n{json.dumps(schema, indent=2)}")
     parts.append(_STRUCTURED_OUTPUT_RULES)
-    parts.append(
-        "\nFavor claims several models share; keep a point only one model raised when it is "
-        "specific and supported, and say so; state disputed points as disputed. "
-        "Return ONLY valid JSON matching the schema above."
-    )
+    if lensed:
+        parts.append(
+            "\nEach response covered one area (its lens, named in its heading), so most points "
+            "come from one response by design: add them together. Drop a point only when it is "
+            "not supported by the original task or another response contradicts it; state "
+            "disputed points as disputed. Return ONLY valid JSON matching the schema above."
+        )
+    else:
+        parts.append(
+            "\nFavor claims several models share; keep a point only one model raised when it is "
+            "specific and supported, and say so; state disputed points as disputed. "
+            "Return ONLY valid JSON matching the schema above."
+        )
     return "\n".join(parts)
 
 
@@ -315,11 +356,12 @@ def build_refinement_prompt(
     original_task: str,
     own_answer: str,
     peer_answers: list[tuple[str, str]],
+    lens: Lens | None = None,
 ) -> str:
     """Build the mixture-of-agents refinement prompt for one panel model.
 
     Peer answers are anonymized as "Response A", "Response B", ... so the model
-    judges content, not reputation.
+    judges content, not reputation. A model with a ``lens`` revises within its area only.
     """
     key = canonical_task_key(task_type)
     parts = [
@@ -332,6 +374,13 @@ def build_refinement_prompt(
     ]
     for label, content in peer_answers:
         parts.append(f"\n## Response {label}\n{wrap_untrusted(content)}")
+    if lens is not None:
+        parts.append(
+            f"\n## Your Lens: {lens.name}\nYou cover only this area: {'; '.join(lens.owns)}. "
+            "Use the other responses to check and sharpen your points in this area; leave the "
+            "other areas to them. If nothing in your area needs reporting, set `none_found` to "
+            "true and return an empty `claims` list."
+        )
     parts.append(
         "\n## Refinement Instructions\n"
         "- Keep everything correct from your answer; integrate insights you missed.\n"
@@ -342,6 +391,54 @@ def build_refinement_prompt(
     )
     parts.append(_STRUCTURED_OUTPUT_RULES)
     return "\n".join(parts)
+
+
+UNION_CHECK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdicts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "verdict": {"type": "string", "enum": ["confirmed", "rejected", "unsure"]},
+                    "quote": {"type": ["string", "null"]},
+                },
+                "required": ["id", "verdict", "quote"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["verdicts"],
+    "additionalProperties": False,
+}
+
+
+def build_union_check_prompt(
+    *, task_type: TaskType, material: str, findings: list[tuple[str, str]]
+) -> str:
+    """Ask one cheap model whether each finding is supported by the input.
+
+    ``findings`` are ``(id, line)`` pairs for the findings that cited no quote the union could
+    check. A confirmation counts only with an exact quote, which is checked again by string match.
+    """
+    key = canonical_task_key(task_type)
+    listing = "\n".join(f"- [{fid}] {line}" for fid, line in findings)
+    return "\n".join(
+        [
+            f"Panelists reviewing a {key} task reported the findings below without quoting the "
+            "input. Check each one against the input only.",
+            UNTRUSTED_RULES,
+            f"\n## Input\n{wrap_untrusted(material)}",
+            f"\n## Findings to check\n{wrap_untrusted(listing)}",
+            "\n## Output\nReturn JSON: {\"verdicts\": [{\"id\", \"verdict\", \"quote\"}]}, one per "
+            "finding. `confirmed`: the input shows the problem; `quote` is the exact text, copied "
+            "character for character, that shows it. `rejected`: the input contradicts it or it "
+            "is about something the input does not contain. `unsure`: the input cannot settle "
+            "it. Keep it short; do not explain.",
+        ]
+    )
 
 
 def build_judge_prompt(

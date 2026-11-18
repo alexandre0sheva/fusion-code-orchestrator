@@ -22,8 +22,14 @@ import yaml
 from fusion.config import paths
 
 _PACKAGED_DIR = Path(__file__).parent
-# Packaged defaults are split over four files for readability; top-level keys are disjoint.
-_PACKAGED_FILES = ("catalog.yaml", "routing_policies.yaml", "strategies.yaml", "baseline.yaml")
+# Packaged defaults are split over several files for readability; top-level keys are disjoint.
+_PACKAGED_FILES = (
+    "catalog.yaml",
+    "routing_policies.yaml",
+    "strategies.yaml",
+    "lenses.yaml",
+    "baseline.yaml",
+)
 # Top-level sections users may set. Add new sections here when a new config area appears.
 SECTIONS = frozenset(
     {
@@ -39,6 +45,7 @@ SECTIONS = frozenset(
         "strategies",
         "budget_strategies",
         "strategy_aliases",
+        "lenses",
         "baselines",
     }
 )

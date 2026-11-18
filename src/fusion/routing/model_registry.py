@@ -38,6 +38,24 @@ class ModelRegistry:
             raise KeyError(msg)
         return self._config.models[name]
 
+    def add_seat(self, seat: str, base: str) -> None:
+        """Register ``seat`` (``gpt-luna#2``) as another copy of ``base`` in one panel.
+
+        The copy has no roles, so it is never picked by role or as a spare, and it keeps the
+        base model's alias for pricing. Adding the same seat again changes nothing.
+        """
+        if seat == base or seat in self._config.models:
+            return
+        entry = self.get(base)
+        number = seat.rsplit("#", 1)[-1]
+        self._config.models[seat] = entry.model_copy(
+            update={
+                "alias": entry.alias or base,
+                "display_name": f"{entry.display_name or base} (seat {number})",
+                "roles": [],
+            }
+        )
+
     def is_enabled(self, name: str) -> bool:
         return name in self._config.models and self._config.models[name].enabled
 

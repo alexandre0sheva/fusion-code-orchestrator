@@ -1,0 +1,143 @@
+# Panel lenses: each panel member covers one area of a task whose answer is a list of findings
+# (code review, debugging), so the panel's answers are pieces of one result, not rival answers.
+# Every member still sees the whole input; its lens says what it reports and what it leaves to the
+# others. The `union` aggregator adds the pieces together (strategies.yaml).
+#
+# A lens:
+#   task_types   the task types it serves (code_review, debugging, implementation_plan,
+#                architecture_decision); the order of the lenses below is the order they are given
+#                out in for a task type
+#   instruction  what the member does, in one or two sentences
+#   owns         the areas the member reports on
+#   ignores      what the member must not report (the other lenses' areas are named to it too)
+#
+# How lenses are given out: a member that names a `lens` keeps it; the others take the task
+# type's remaining lenses in order. With fewer members than lenses a member holds several (so the
+# panel still covers every area); with more, lenses repeat. A model listed more than once in a
+# strategy (a self-mixture) gets a different lens each time; a copy that would repeat a lens is
+# dropped. Strategies switch lenses off with `lenses: off`.
+#
+# "No finding" is a valid answer: every lens prompt says so and the answer records `none_found`.
+
+lenses:
+  # -- code review ----------------------------------------------------------------------------
+  correctness:
+    task_types: [code_review]
+    instruction: >-
+      Check that the changed code does what it intends: trace the logic through normal and edge
+      inputs and report where it gives a wrong result, fails, or leaves state inconsistent.
+    owns:
+      - logic errors and wrong results
+      - edge cases (empty, null, boundaries, off-by-one, unusual types)
+      - error handling, exceptions and cleanup of resources
+      - state changes that leave data inconsistent
+    ignores:
+      - style, naming and formatting nits
+      - rewriting code that works
+
+  security:
+    task_types: [code_review]
+    instruction: >-
+      Read the change as an attacker and as a data-protection reviewer: report what lets
+      untrusted input do harm or lets data leak.
+    owns:
+      - injection (SQL, shell, template, path traversal)
+      - authentication, authorization and access checks
+      - secrets, tokens and credentials in code, logs or errors
+      - validation of untrusted input at trust boundaries
+      - personal or sensitive data handling, retention and logging
+    ignores:
+      - style, naming and formatting nits
+      - hardening that the change does not touch
+
+  performance:
+    task_types: [code_review]
+    instruction: >-
+      Check how the change behaves under concurrency and load: report races, blocking, and work
+      that grows faster than it should.
+    owns:
+      - races, deadlocks and shared mutable state
+      - blocking calls in async code, missing timeouts and retries
+      - repeated queries or calls in loops (N+1), needless work, memory growth
+      - behaviour at scale (large inputs, many users)
+    ignores:
+      - style, naming and formatting nits
+      - micro-optimisations without a measurable effect
+
+  contract:
+    task_types: [code_review]
+    instruction: >-
+      Check what the change promises to its callers and how it is tested: report breaking
+      changes and behaviour that no test pins down.
+    owns:
+      - public API, signatures, schemas, config and CLI changes
+      - backward compatibility and migration of callers
+      - missing, weak or misleading tests for the changed behaviour
+      - documentation that the change makes wrong
+    ignores:
+      - style, naming and formatting nits
+      - tests for code the change does not touch
+
+  # -- debugging ------------------------------------------------------------------------------
+  hypotheses:
+    task_types: [debugging]
+    instruction: >-
+      Generate the plausible causes of the failure, ranked, including the non-obvious ones, and
+      say for each what observation would confirm or rule it out.
+    owns:
+      - candidate causes, ranked by likelihood
+      - for each cause, the observation that would confirm or refute it
+    ignores:
+      - writing the fix
+      - a step-by-step reproduction
+
+  evidence:
+    task_types: [debugging]
+    instruction: >-
+      Work from what the input actually shows: read the error, trace and code for facts, say
+      which causes they support or rule out, and how to reproduce the failure minimally.
+    owns:
+      - what the error message, stack trace and code show as fact
+      - which causes the evidence supports or rules out
+      - a minimal reproduction and the data still missing
+    ignores:
+      - causes the input gives no evidence for
+      - writing the fix
+
+  root_cause:
+    task_types: [debugging]
+    instruction: >-
+      Name the most likely root cause as a chain from trigger to symptom, then the smallest fix
+      at the cause (not at the symptom) and the test that would catch a regression.
+    owns:
+      - the root cause, from trigger to symptom
+      - the minimal fix at the cause
+      - the regression test for that fix
+    ignores:
+      - long lists of alternative causes
+      - workarounds that hide the symptom
+
+  # -- plans and architecture -----------------------------------------------------------------
+  procedure:
+    task_types: [implementation_plan, architecture_decision]
+    instruction: >-
+      Cover how the work gets done: the steps, their order and dependencies, and how each step
+      is verified and rolled back.
+    owns:
+      - steps, their order and the dependencies between them
+      - verification after each step
+      - rollback and reversibility
+    ignores:
+      - background the request already states
+
+  domain:
+    task_types: [implementation_plan, architecture_decision]
+    instruction: >-
+      Cover what a practitioner of this domain knows: the constraints, the failure modes and what
+      it takes to operate the result.
+    owns:
+      - constraints of the problem domain and the existing system
+      - failure modes and their consequences
+      - operations (deployment, monitoring, data migration, limits, cost)
+    ignores:
+      - background the request already states

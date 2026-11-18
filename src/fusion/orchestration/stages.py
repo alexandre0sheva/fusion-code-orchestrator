@@ -35,6 +35,7 @@ from fusion.orchestration.budget_guard import (
     preflight,
     refine_round_calls,
     synthesis_calls,
+    union_check_calls,
 )
 from fusion.orchestration.cascade import (
     CascadeOutcome,
@@ -57,6 +58,7 @@ from fusion.orchestration.disagreement import analyze_disagreement
 from fusion.orchestration.fanout import FanoutResult, fanout_to_panel
 from fusion.orchestration.judge import judge_panel_responses
 from fusion.orchestration.ledger import CallRecord
+from fusion.orchestration.lenses import Lens, assign_lenses, base_alias, seated
 from fusion.orchestration.output import step_name
 from fusion.orchestration.output_parser import parse_structured_output
 from fusion.orchestration.progress import report as report_progress
@@ -65,6 +67,13 @@ from fusion.orchestration.refine import RefinementResult, refine_panel_responses
 from fusion.orchestration.result import PanelResult, PipelineResult, build_usage_summary
 from fusion.orchestration.strategy import PanelMember, Strategy
 from fusion.orchestration.synthesize import synthesize_responses
+from fusion.orchestration.union import (
+    Material,
+    UnionResult,
+    build_union,
+    check_unchecked,
+    merge_findings,
+)
 from fusion.providers.base import ModelResponse
 from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, PlannedCall, estimate_tokens
 from fusion.routing.classifier import canonical_task_key
@@ -178,9 +187,9 @@ class RouteStage(_Stage):
         state.routing = decision
         state.warnings.extend(decision.warnings)
 
-        state.panel_models = self._available(decision.selected_panel, "panel", state.warnings)
-        configured = {m.model: m for m in strategy.members}
-        state.members = [configured.get(a, PanelMember(model=a)) for a in state.panel_models]
+        available = self._available(decision.selected_panel, "panel", state.warnings)
+        state.members = self._seats(state, strategy, available)
+        state.panel_models = [m.model for m in state.members]
         state.judge_model = self._available([decision.judge_model], "judge", state.warnings)[0]
         if decision.synthesizer_model:
             state.synthesizer_model = self._available(
@@ -189,6 +198,41 @@ class RouteStage(_Stage):
         if state.trace is not None:
             state.trace.panel_models = state.panel_models
         return state
+
+    def _seats(self, state: RunState, strategy: Strategy, aliases: list[str]) -> list[PanelMember]:
+        """The run's members in order, a model listed twice taking a seat per copy.
+
+        Copies of one model exist to cover different areas, so a model gets at most as many seats
+        as the task type has lenses (one when it has none or the strategy has lenses off).
+        """
+        pending: dict[str, list[PanelMember]] = {}
+        for member in strategy.members:
+            pending.setdefault(member.model, []).append(member)
+        lenses = (
+            self.deps.routing.strategies.lenses.for_task(state.task_type)
+            if strategy.lenses == "auto"
+            else []
+        )
+        limit = max(len(lenses), 1)
+        members: list[PanelMember] = []
+        dropped: dict[str, int] = {}
+        for alias in aliases:
+            queue = pending.get(alias)
+            member = queue.pop(0) if queue else PanelMember(model=alias)
+            if sum(m.model == alias for m in members) >= limit:
+                dropped[alias] = dropped.get(alias, 0) + 1
+                continue
+            members.append(member)
+        for alias, count in dropped.items():
+            assert state.routing is not None
+            state.routing.reasons.append(
+                f"{alias} runs {limit} time(s), not {limit + count}: "
+                f"{canonical_task_key(state.task_type)} has {len(lenses)} lens(es) to split it by"
+            )
+        seats = seated(members)
+        for member in seats:
+            self.deps.registry.add_seat(member.model, base_alias(member.model))
+        return seats
 
     def _provider_available(self, alias: str) -> bool:
         entry = self.deps.registry.get(alias)
@@ -315,7 +359,7 @@ class BudgetStage(_Stage):
         state.strategy = shifted
         state.members = list(shifted.members)
         state.panel_models = [m.model for m in shifted.members]
-        if shifted.kind == "solo" or shifted.aggregator != "llm":
+        if not shifted.calls_aggregator_model:
             state.synthesizer_model = ""
         if state.routing is not None:
             state.routing.selected_panel = state.panel_models
@@ -382,7 +426,27 @@ class PanelStage(_Stage):
                 f"Cascade needs more than {strategy.cascade.first} available models to have "
                 "anyone to escalate to; ran them as one panel"
             )
+        if strategy.lenses == "auto":
+            state.lenses = self._assign(state)
         return self._accept(state, await self._fan(state, state.panel_models))
+
+    def _assign(self, state: RunState) -> dict[str, Lens]:
+        """Each member's lens; a seat that would repeat its model's lens is not asked."""
+        lenses = assign_lenses(
+            state.task_type, state.members, self.deps.routing.strategies.lenses
+        )
+        if not lenses:
+            return {}
+        idle = [m.model for m in state.members if m.model not in lenses]
+        if idle:
+            state.members = [m for m in state.members if m.model in lenses]
+            state.panel_models = [m.model for m in state.members]
+            if state.trace is not None:
+                state.trace.panel_models = state.panel_models
+        if state.routing is not None:
+            shown = ", ".join(f"{alias}: {lens.name}" for alias, lens in lenses.items())
+            state.routing.reasons.append(f"Lenses: {shown}")
+        return lenses
 
     async def _fan(
         self,
@@ -409,18 +473,32 @@ class PanelStage(_Stage):
             min_successful=min_successful,
             label=label,
             avoid=state.panel_models,
+            lenses=state.lenses,
         )
 
     def _fanout_config(self, state: RunState) -> FanoutConfig:
-        """The routing policy's fan-out settings with the strategy's own latency controls on top."""
+        """The routing policy's fan-out settings with the strategy's own latency controls on top.
+
+        A lensed panel waits for every member: each covers an area no other member reports on,
+        so returning at a quorum would drop an area. Hedging and fallback still apply, and a
+        model asked in a member's place keeps the member's lens.
+        """
         config = self.deps.routing.budgets.fanout
         override = state.strategy.fanout if state.strategy else None
-        return config if override is None else override.applied_to(config)
+        config = config if override is None else override.applied_to(config)
+        if state.lenses and config.early_return is not None:
+            config = config.model_copy(update={"early_return": None})
+        return config
 
     def _accept(self, state: RunState, fanout: FanoutResult) -> RunState:
         state.fanout = fanout
         state.warnings.extend(fanout.warnings)
         state.successful = fanout.successful
+        state.answer_lenses = {
+            model: state.lenses[member].name
+            for model, member in fanout.answered_for.items()
+            if member in state.lenses
+        }
         if not fanout.quorum_met:
             self._halt_without_quorum(state)
         return state
@@ -556,6 +634,7 @@ class RefineStage(_Stage):
                     config=config,
                     gateway=state.gateway,
                     members=members,
+                    lenses=_lens_by_answer(state),
                 )
             finally:
                 state.guard.release("refinement")
@@ -580,7 +659,9 @@ class RefineStage(_Stage):
 
     @staticmethod
     def _already_agrees(state: RunState, threshold: float | None) -> bool:
-        if threshold is None or len(state.successful) < 2:
+        # On a lensed run agreement covers only the points two lenses share, so it says nothing
+        # about whether the rest needs another look.
+        if threshold is None or len(state.successful) < 2 or state.lensed:
             return False
         report = measure_claims(state).report
         if report.score < threshold:
@@ -626,8 +707,20 @@ def measure_claims(
         len(answers),
         n_requested=len(state.panel_models) if n_requested is None else n_requested,
         n_structured=sum(structured.values()),
+        lenses={m: lens for m, lens in state.answer_lenses.items() if m in answers},
     )
     return Measured(answers, structured, clusters, report)
+
+
+def _lens_by_answer(state: RunState) -> dict[str, Lens]:
+    """Each answering model's lens (a hedge or fallback answers with its member's lens)."""
+    if state.fanout is None:
+        return {}
+    return {
+        model: state.lenses[member]
+        for model, member in state.fanout.answered_for.items()
+        if member in state.lenses
+    }
 
 
 class ClaimsStage(_Stage):
@@ -640,6 +733,12 @@ class ClaimsStage(_Stage):
         state.disagreement = analyze_disagreement(
             state.clusters, measured.report, known_files=state.ctx.changed_files or None
         )
+        if state.answer_lenses:
+            state.disagreement["lenses"] = dict(state.answer_lenses)
+            state.disagreement["lens_exclusive"] = len(measured.report.lens_exclusive)
+            state.disagreement["none_found"] = sorted(
+                m for m, a in state.answers.items() if a.none_found
+            )
         state.warnings.extend(_claims_warnings(state))
         return state
 
@@ -768,10 +867,14 @@ class AggregateStage(_Stage):
     async def run(self, state: RunState) -> RunState:
         assert state.strategy is not None and state.agreement is not None
         readable = _readable_answers(state)
-        kind = aggregator_for(state.strategy, cascade_exited_early=state.cascade_exited_early)
+        kind = aggregator_for(
+            state.strategy, cascade_exited_early=state.cascade_exited_early, lensed=state.lensed
+        )
         if kind == "llm":
             kind = self._skip(state) or kind
-        if kind == "solo":
+        if kind in {"union", "union+check"}:
+            state.synth_response = await self._union(state, check=kind == "union+check")
+        elif kind == "solo":
             response = state.successful[0][1]
             state.synth_response = response.model_copy(update={"text": readable[0][1]})
         elif kind == "digest":
@@ -787,8 +890,11 @@ class AggregateStage(_Stage):
         return state
 
     @staticmethod
-    def _skip(state: RunState) -> Literal["vote", "best_of"] | None:
-        """The no-call aggregator to use instead of synthesis, when the panel already agrees."""
+    def _skip(state: RunState) -> Literal["vote", "best_of", "union"] | None:
+        """The no-call aggregator to use instead of synthesis, when the panel already agrees.
+
+        On a lensed run that is the union: a vote would drop what only one lens could see.
+        """
         skip = state.strategy.skip_aggregator if state.strategy else None
         report = state.agreement
         if skip is None or report is None or state.routing is None:
@@ -802,13 +908,64 @@ class AggregateStage(_Stage):
         if not enough:
             state.routing.reasons.append(f"Synthesis ran: {why_not}")
             return None
+        use = "union" if state.lensed else skip.use
         state.routing.reasons.append(
             f"Synthesis skipped: the {report.n_models} answers agree ({report.score:.2f}, "
-            f"threshold {skip.agreement_threshold:.2f}); {skip.use} built the answer with no "
+            f"threshold {skip.agreement_threshold:.2f}); {use} built the answer with no "
             "model call"
         )
         state.synthesizer_model = state.routing.synthesizer_model = ""
-        return skip.use
+        return use
+
+    async def _union(self, state: RunState, *, check: bool) -> ModelResponse:
+        """Every lens's findings merged and checked against the input (see ``union.py``)."""
+        material = Material.from_inputs(
+            primary=state.sanitized_primary,
+            context=state.sanitized_context,
+            snippets=state.sanitized_snippets,
+            changed_files=state.ctx.changed_files or [],
+        )
+        union = merge_findings(
+            state.answers, material, lenses=state.answer_lenses, clusters=state.clusters
+        )
+        if check and union.unchecked:
+            await self._check(state, union, material)
+        state.union = union
+        state.disagreement["union"] = union.summary()
+        if state.routing is not None:
+            state.routing.reasons.append(
+                f"union kept {len(union.backed)} finding(s) backed by the input, "
+                f"{len(union.unchecked)} unchecked and {len(union.advice)} suggestion(s); "
+                f"dropped {len(union.dropped)} the input does not back"
+            )
+        return build_union(union)
+
+    async def _check(self, state: RunState, union: UnionResult, material: Material) -> None:
+        """union+check: one cheap call about the findings the string match could not settle."""
+        model = state.synthesizer_model
+        if not model:
+            state.warnings.append("union+check: no checker model is available; left unchecked")
+            return
+        reason = state.guard.check("synthesis", union_check_calls(model, state.prompt_tokens))
+        if reason:
+            state.warnings.append(f"{reason}; the unquoted findings were left unchecked")
+            return
+        try:
+            response = await check_unchecked(
+                union,
+                material,
+                checker_model=model,
+                registry_models=self.deps.registry.models,
+                task_type=state.task_type,
+                gateway=state.gateway,
+            )
+        finally:
+            state.guard.release("synthesis")
+        if response is not None and response.error:
+            state.warnings.append(
+                f"union+check: {model} failed ({response.error}); the unquoted findings were "
+                "left unchecked"
+            )
 
     @staticmethod
     def _vote(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
@@ -884,15 +1041,24 @@ class AggregateStage(_Stage):
                 registry_models=self.deps.registry.models,
                 providers=self.deps.providers,
                 task_type=state.task_type,
-                panel_responses=readable,
+                panel_responses=_labelled(state, readable),
                 disagreement_analysis=_agreement_summary(state),
                 original_task=state.sanitized_primary,
                 gateway=state.gateway,
                 clusters=state.clusters,
                 patch=state.ctx.expects_patch,
+                lensed=state.lensed,
             )
         finally:
             state.guard.release("synthesis")
+
+
+def _labelled(state: RunState, readable: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Answer names with the lens each covered, so the synthesizer reads them as pieces."""
+    return [
+        (f"{m} ({state.answer_lenses[m]} lens)" if m in state.answer_lenses else m, text)
+        for m, text in readable
+    ]
 
 
 def _readable_answers(state: RunState) -> list[tuple[str, str]]:
@@ -941,7 +1107,8 @@ class FinalEvalStage(_Stage):
             synth.content,
             disagreement=state.disagreement,
             confidence=state.final_eval.confidence,
-            clusters=state.clusters,
+            # the union's own selection: the points it dropped must not come back in the fields
+            clusters=state.union.kept_clusters() if state.union else state.clusters,
             summary=_headline(state),
             score=_mean_score(state),
         )

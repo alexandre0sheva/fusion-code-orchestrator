@@ -56,6 +56,9 @@ class BudgetTracker:
 
 CHARS_PER_TOKEN = 3.0  # same conservative ratio the context-window trimming uses
 PROMPT_OVERHEAD_TOKENS = 900  # system prompt, claim schema and formatting around the task
+# A lens's instructions and the other lenses' areas, added to each lensed panel and refinement
+# call (the longest packaged lens prompt is about 590 tokens; tests keep this above it).
+LENS_PROMPT_TOKENS = 600
 ANSWER_OUTPUT_TOKENS = 1_500  # one panel or refinement answer
 SYNTHESIS_OUTPUT_TOKENS = 1_500
 JUDGE_OUTPUT_TOKENS = 400

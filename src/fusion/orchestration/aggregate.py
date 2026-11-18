@@ -26,17 +26,27 @@ from fusion.providers.base import ModelResponse
 
 __all__ = ["Aggregator", "Picked", "aggregator_for", "build_best_of", "build_digest", "build_vote"]
 
-Aggregator = Literal["solo", "llm", "vote", "best_of", "digest", "verified"]
+Aggregator = Literal[
+    "solo", "llm", "vote", "best_of", "digest", "verified", "union", "union+check"
+]
 
 
-def aggregator_for(strategy: Strategy, *, cascade_exited_early: bool = False) -> Aggregator:
-    """Which aggregator produces the final answer for a run of ``strategy``."""
+def aggregator_for(
+    strategy: Strategy, *, cascade_exited_early: bool = False, lensed: bool = False
+) -> Aggregator:
+    """Which aggregator produces the final answer for a run of ``strategy``.
+
+    On a ``lensed`` run (members covered different areas) vote and best_of become union: they
+    keep only what several answers share, or one whole answer, so they would drop the findings
+    only one lens could see.
+    """
     if strategy.kind == "solo":
         return "solo"
+    kind: Aggregator = strategy.aggregator
     if strategy.kind == "cascade" and cascade_exited_early:
         assert strategy.cascade is not None
-        return strategy.cascade.early_aggregator
-    return strategy.aggregator
+        kind = strategy.cascade.early_aggregator
+    return "union" if lensed and kind in {"vote", "best_of"} else kind
 
 
 def _response(model: str, text: str) -> ModelResponse:
@@ -64,10 +74,12 @@ def build_digest(
         lines.append("\nOnly one answer arrived, so there is no agreement to measure.")
     else:
         lines.append(f"\nAgreement {report.score:.2f} across {report.n_models} models.")
+    exclusive = set(report.lens_exclusive)
     sections = (
         ("Shared by most models", report.consensus),
         ("Severity disputed", report.contradicted),
-        ("Raised by one model", report.unique),
+        ("Raised by one model", [i for i in report.unique if i not in exclusive]),
+        ("Raised by the one model covering that area (lens)", report.lens_exclusive),
     )
     by_id = _by_id(clusters)
     for title, ids in sections:

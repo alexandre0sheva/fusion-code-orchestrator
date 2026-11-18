@@ -7,8 +7,8 @@ refinement. Cost and pricing methodology lives in [COSTS.md](COSTS.md).
 
 Settings come from five layers; a later layer overrides an earlier one:
 
-1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml`, `strategies.yaml` and
-   `baseline.yaml` inside the package (`src/fusion/config/`). Do not edit these in an installed copy.
+1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml`, `strategies.yaml`, `lenses.yaml`
+   and `baseline.yaml` inside the package (`src/fusion/config/`). Do not edit these in an installed copy.
 2. **User config**: `config.yaml` in the platform config directory (`fusion config paths` prints it;
    `fusion init` creates a commented starter).
 3. **Project config**: `.fusion/config.yaml` in the working directory (or `FUSION_PROJECT_DIR`).
@@ -36,6 +36,7 @@ Validation errors name the key, the offending value, the layer that set it and t
 | `src/fusion/config/catalog.yaml` | Model catalog: aliases, provider model IDs, capabilities, enable flags, verified prices (with long-context rows) and the `tiering:` rule that turns prices into tiers. |
 | `src/fusion/config/routing_policies.yaml` | Per-task judge model and context threshold; fan-out and refinement settings. |
 | `src/fusion/config/strategies.yaml` | Strategies (which models answer, rounds, aggregation, judging), the budget-to-strategy table and `strategy_aliases` (old strategy names). |
+| `src/fusion/config/lenses.yaml` | Panel lenses: the area each member of a review, debugging, plan or architecture panel covers (see [Lenses](#lenses)). |
 | `src/fusion/config/baseline.yaml` | Frontier baseline(s), as catalog aliases, that Fusion's cost is compared against. |
 
 ## Run database
@@ -293,8 +294,9 @@ A **strategy** says who answers a task and how the answers are combined. Every t
 optional `strategy` (a name from `strategies.yaml`); `fusion strategies list` prints them. Without
 one, the legacy `budget` argument picks the strategy through `budget_strategies`, and the response's
 `routing.strategy` reports which one ran. Switching strategy is a config or argument change, never a
-code change. A strategy lists each model alias once. (The 0.2.0 temperature-sample aliases
-`claude-haiku-s2` and friends are gone: Claude's API no longer accepts sampling parameters.)
+code change. A strategy lists each model alias once unless it uses [lenses](#lenses), which is
+how a self-mixture is built now: the 0.2.0 temperature-sample aliases `claude-haiku-s2` and friends
+are gone, since Claude's API no longer accepts sampling parameters.
 
 Strategies renamed in 0.3.0 keep their old names as aliases for one release (`strategy_aliases`
 in `strategies.yaml`): `panel-cheap` runs `panel-nano`, `solo-cheap` runs `solo-haiku` and
@@ -311,9 +313,12 @@ strategies:
         role: security_reviewer  # "auto" (default) = the catalog persona, else the task prompt
         temperature: 0.2         # optional; sent only if the catalog sets supports_sampling_params
         reasoning_effort: low    # optional per member
+        lens: security           # optional: this member's lens (see Lenses); a+b holds two
+    lenses: auto                 # auto | off; unset = auto for llm, digest, union, union+check
     rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
-    aggregator: llm              # llm | digest | vote | best_of | verified (benchmark only)
-    aggregator_model: claude-sonnet   # llm only; omit for the catalog's synthesizer role
+    aggregator: llm              # llm | digest | vote | best_of | union | union+check
+                                 # | verified (benchmark only)
+    aggregator_model: claude-sonnet   # llm and union+check; omit for the catalog's synthesizer
     judge: off                   # off | light | full
     judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
     max_cost_usd: 0.05           # optional hard cap, see "Cost and latency caps"
@@ -323,7 +328,7 @@ strategies:
       hedge_after_ms: off
     skip_aggregator:             # optional, llm aggregator only: no synthesis call when they agree
       agreement_threshold: 0.6   # the answers must agree at least this much
-      use: vote                  # vote | best_of builds the answer instead
+      use: vote                  # vote | best_of | union builds the answer instead
       escalate_on_high_risk: true  # a high-risk task is always synthesized
     speed: balanced              # balanced | fast (rank members by measured speed)
   my-cascade:
@@ -332,7 +337,7 @@ strategies:
     cascade:
       first: 2                   # how many of the cheapest members answer first (at least 2)
       agreement_threshold: 0.7   # stop there when their agreement is at least this
-      early_aggregator: vote     # vote | best_of: how that early answer is made (no model call)
+      early_aggregator: vote     # vote | best_of | union: how that early answer is made (no call)
       escalate_on_high_risk: true  # a high-risk task always asks the whole panel
     aggregator: llm              # what merges the answers once it has escalated
     aggregator_model: claude-sonnet
@@ -352,6 +357,8 @@ budget_strategies:
 | `panel-refine` | the `panel-nano` models plus one refinement round, merged by Haiku 5.5 | 3 + 3 + 1 |
 | `panel-digest` | the `panel-nano` models, no synthesis: the answers come back for Claude Code to merge | 3 |
 | `panel-vote` | the `panel-nano` models, no synthesis: only the points a majority of models backed come back | 3 |
+| `panel-nano-union` | the `panel-nano` models with lenses, merged by `union`: every lens's findings that the input backs, no synthesis | 3 |
+| `panel-luna-lenses`, `panel-haiku-lenses` | one model asked once per lens (up to three copies), merged by `union`: a self-mixture whose diversity comes from lenses; a 0.3.0 ablation candidate, not a default | up to 3 |
 | `panel-cascade` | the two cheapest of the `panel-nano` models first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
 | `best-of-n-verified` | **benchmark only** (refused elsewhere, it runs code): the `panel-nano` models each write a patch and the task's visible tests pick one, no synthesis; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 |
 | `panel-local` | Ollama and LM Studio models; falls back to the cloud panel with a warning when none are enabled | 2 + 1 |
@@ -374,8 +381,10 @@ How the fields behave:
   what several models agree on and check the rest against the code); `vote` returns only the points
   a majority of the models backed (and says so when there are none); `best_of` returns the one
   answer that the other models' claims back most, as written (ties go to the answer with more
-  evidence, then to the earlier member). `verified` (benchmark mode only, for coding tasks) runs the
-  task's visible tests on each panelist's patch and returns the best. `vote`, `best_of`, `digest`
+  evidence, then to the earlier member). `union` adds every member's findings together for a
+  lensed panel (see [Lenses](#lenses)); `union+check` also makes one cheap call about the findings
+  the union could not check. `verified` (benchmark mode only, for coding tasks) runs the task's
+  visible tests on each panelist's patch and returns the best. `vote`, `best_of`, `digest`, `union`
   and `verified` take no `aggregator_model`. When the task's answer is a code patch, `vote` returns
   the patch most models gave (see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox)).
 - **`judge`**: `off` runs only the deterministic checks and makes no judge call (the default, so a
@@ -399,15 +408,76 @@ How the fields behave:
 - **`skip_aggregator`** (an `llm` aggregator only) applies the cascade's test to the whole panel:
   when at least two answered, their agreement is at least `agreement_threshold`, nothing is
   disputed and the task is not high risk (unless `escalate_on_high_risk: false`), `use` (`vote` or
-  `best_of`) builds the answer and the synthesizer is not called. `routing.reasons` says
+  `best_of`; `union` on a lensed run, see [Lenses](#lenses)) builds the answer and the synthesizer
+  is not called. `routing.reasons` says
   "Synthesis skipped: ..." or "Synthesis ran: ..." and why. The default `panel-duo` sets 0.6,
   between the 0.2.0 ablation's cascade at 0.5 (not worse than one model) and at 0.7
   (inconclusive); the 0.3.0 study calibrates it.
 - **`speed`**: `balanced` (default) keeps the configured member order, and a cascade's first wave is
   its cheapest members. `fast` ranks members by measured speed for a typical answer (catalog
   `observed_*`): a cascade's first wave and a panel cut by `max_models` are then the fastest.
-- A model may appear only once in a strategy.
+- A model may appear only once in a strategy, unless the strategy uses lenses (see below).
 - `max_cost_usd` and `max_latency_s` are caps; see [Cost and latency caps](#cost-and-latency-caps).
+
+### Lenses
+
+A **lens** gives a panel member one area of the task to report on, for tasks whose answer is a
+list of findings that add up: code review and debugging (plans and architecture decisions have
+lenses too, for strategies that synthesize them). Each member still reads the whole input, but its
+prompt names its area, what it must leave alone, and the other members' areas, and says that "no
+finding" is a complete answer (the answer records `none_found` instead of inventing a point). The
+answers are pieces of one result rather than rival answers, which is where a panel of cheap models
+gets its diversity now that sampling temperature is gone.
+
+The lenses are in `lenses.yaml` (a config section, `lenses`, so a user config can change one or add
+one); the order within a task type is the order they are given out:
+
+| Task type | Lenses |
+|-----------|--------|
+| `code_review` | `correctness` · `security` (and data handling) · `performance` (concurrency and performance) · `contract` (API contract and tests) |
+| `debugging` | `hypotheses` (generation) · `evidence` (reproduction and evidence) · `root_cause` (root cause and minimal fix) |
+| `implementation_plan`, `architecture_decision` | `procedure` (steps, order, verification) · `domain` (constraints, failure modes, operations) |
+
+```yaml
+lenses:
+  migrations:                     # a new lens
+    task_types: [code_review]
+    instruction: Check schema and data migrations for safety and reversibility.
+    owns: [schema changes, data backfills, lock-taking DDL]
+    ignores: [style, naming and formatting nits]
+```
+
+How lenses are used:
+
+- **`lenses: auto`** (the default for a panel whose aggregator keeps every piece: `llm`, `digest`,
+  `union`, `union+check`) gives lenses on a task type that has them; `lenses: off` makes every
+  member answer the whole task. `vote`, `best_of` and `verified` keep only what several answers
+  share, or one answer, so a strategy that combines them with `lenses: auto` is rejected at load, as
+  are a solo strategy and a cascade with lenses.
+- **Assignment:** a member that names a `lens` of the task type keeps it; the others take the
+  remaining lenses in order. With fewer members than lenses a member holds several (`panel-duo`
+  reviews as `correctness+performance` and `security+contract`), so the panel still covers every
+  area; with more members than lenses they repeat. One member alone gets no lens.
+- **Self-mixtures:** a model listed more than once (only allowed with lenses) is asked once per
+  copy, each copy with a different lens: `panel-luna-lenses` asks GPT-6 Luna three times on a
+  review. Copies run as seats `gpt-luna`, `gpt-luna#2`, `gpt-luna#3` in the run record, priced as
+  the model they copy. A task type with fewer lenses asks the model fewer times (once on a task with
+  none), and `routing.reasons` says so.
+- **What changes in a lensed run:** the panel waits for every member (early return would drop a
+  whole area; hedging and fallback still apply, and a model asked in a member's place keeps the
+  member's lens); a refinement round keeps each member inside its area and is not skipped for
+  agreement; agreement leaves out the points only one lens could see (`lens_exclusive` in the
+  agreement report) instead of counting them against the panel; and a `vote` or `best_of` that would
+  build the answer (`skip_aggregator`, a cascade's early exit) becomes `union`. `routing.reasons`
+  lists the lenses, and the run's `disagreement` records them with the members that found nothing.
+- **`union`** (no model call) merges duplicate findings and checks each against the input by string
+  match: a finding whose exact quote is in the input, or whose `file:line` falls in a diff hunk, a
+  file snippet or a stack-trace frame, is kept; one whose quote is not in the input, or that names a
+  file the input never mentions, is dropped and counted; one that quotes nothing checkable (a
+  missing test, say) is kept under "not checked". Suggestions and tests are kept unless invented.
+  Findings are ranked by severity. **`union+check`** sends only the "not checked" findings to one
+  cheap model (`aggregator_model`, at most 400 output tokens); a confirmation counts only with a
+  quote that passes the same string match, and a rejection drops the finding.
 
 ### Cost and latency caps
 
@@ -527,7 +597,8 @@ do not. The latency controls are on by default (a policy file that leaves one ou
   for the next one only if that is within `max_grace_ms`; it does not wait for a straggler that is
   overdue or due later. With no measured straggler, `auto` waits `max_grace_ms`. The run warns
   which models were dropped. A cancelled call may still be billed, so its cost is recorded as
-  unknown.
+  unknown. A lensed panel does not return early: each member covers an area no other one does
+  (see [Lenses](#lenses)).
 - `hedge_after_ms`: when a member has not answered after this long, also ask a spare: an enabled
   `panel`-role model of the same price tier that is not in the strategy, another vendor first,
   then the fastest by measured speed. Whichever of the two answers first is used, attributed to

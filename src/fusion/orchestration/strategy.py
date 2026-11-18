@@ -31,9 +31,12 @@ from fusion.config.loader import EarlyReturn, FanoutConfig
 from fusion.routing.budget import BudgetLevel
 
 if TYPE_CHECKING:
+    from fusion.orchestration.lenses import LensBook
     from fusion.routing.model_registry import ModelRegistry
 
 __all__ = [
+    "LENS_AGGREGATORS",
+    "MODEL_AGGREGATORS",
     "MODE_SETTINGS",
     "BenchmarkOnlyError",
     "CascadeSpec",
@@ -51,8 +54,14 @@ __all__ = [
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 _STRATEGY_KEYS = ("strategies", "budget_strategies", "strategy_aliases")
+AggregatorName = Literal["llm", "vote", "best_of", "digest", "verified", "union", "union+check"]
 # Aggregators that make no model call, so they take no aggregator_model.
-NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest", "verified"})
+NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest", "verified", "union"})
+# Aggregators that call a model (aggregator_model, else the catalog's synthesizer).
+MODEL_AGGREGATORS = frozenset({"llm", "union+check"})
+# Aggregators that keep what each lens found. vote, best_of and verified keep only what several
+# answers share, or one whole answer, so they would throw away every lens's own findings.
+LENS_AGGREGATORS = frozenset({"llm", "digest", "union", "union+check"})
 
 
 class BenchmarkOnlyError(ConfigError):
@@ -112,6 +121,9 @@ class PanelMember(BaseModel):
     role: str = "auto"  # "auto": the catalog persona, else the task's own prompt; or a role name
     reasoning_effort: ReasoningEffort | None = None
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    # The member's lens (config/lenses.yaml) when the task type has it; None: one is given out.
+    # A merged lens is written a+b. Checked against the configured lenses when strategies load.
+    lens: str | None = None
 
     @model_validator(mode="after")
     def _known_role(self) -> PanelMember:
@@ -137,7 +149,8 @@ class CascadeSpec(BaseModel):
     first: int = Field(default=2, ge=2)  # agreement needs two answers, so never fewer
     # Provisional default; the benchmark study tunes it (roadmap task 19).
     agreement_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    early_aggregator: Literal["vote", "best_of"] = "vote"
+    # On a run with lenses, vote and best_of become union (they would drop each lens's findings).
+    early_aggregator: Literal["vote", "best_of", "union"] = "vote"
     escalate_on_high_risk: bool = True
 
 
@@ -179,7 +192,8 @@ class SkipAggregator(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agreement_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    use: Literal["vote", "best_of"] = "vote"
+    # On a run with lenses, vote and best_of become union (they would drop each lens's findings).
+    use: Literal["vote", "best_of", "union"] = "vote"
     escalate_on_high_risk: bool = True
 
 
@@ -193,8 +207,9 @@ class Strategy(BaseModel):
     description: str = ""
     members: list[PanelMember] = Field(min_length=1)  # solo = exactly one member
     rounds: int = Field(default=1, ge=1, le=4)  # > 1 adds peer-refinement rounds
-    aggregator: Literal["llm", "vote", "best_of", "digest", "verified"] = "llm"
-    aggregator_model: str | None = None  # llm aggregator; None = the catalog's synthesizer role
+    aggregator: AggregatorName = "llm"
+    # The model of an llm or union+check aggregator; None = the catalog's synthesizer role.
+    aggregator_model: str | None = None
     judge: Literal["off", "light", "full"] = "off"
     # The synthesizer reads the judge's scores, so synthesis waits for the judge. Otherwise the
     # two run at the same time.
@@ -208,10 +223,38 @@ class Strategy(BaseModel):
     # panel cut by max_models are the fastest models; balanced: the configured order (a cascade
     # still goes cheapest first).
     speed: Literal["fast", "balanced"] = "balanced"
+    # auto: members of a task type that has lenses (config/lenses.yaml) each cover one area;
+    # off: every member answers the whole task. Unset: auto for a panel whose aggregator keeps
+    # each lens's findings (LENS_AGGREGATORS), off otherwise.
+    lenses: Literal["auto", "off"] | None = None
+
+    @field_validator("lenses", mode="before")
+    @classmethod
+    def _bool_lenses(cls, value: Any) -> Any:
+        if isinstance(value, bool):  # YAML reads `off` as False and `on` as True
+            return "auto" if value else "off"
+        return value
 
     @model_validator(mode="after")
     def _consistent(self) -> Strategy:
         problems: list[str] = []
+        if self.lenses is None:
+            lensable = self.kind == "panel" and self.aggregator in LENS_AGGREGATORS
+            self.lenses = "auto" if lensable else "off"
+        elif self.lenses == "auto":
+            if self.kind == "solo":
+                problems.append("a solo strategy has one member, so it takes no lenses")
+            if self.kind == "cascade":
+                problems.append(
+                    "a cascade stops when its first wave agrees, and lensed answers cover "
+                    "different areas instead of agreeing; set lenses: off"
+                )
+            if self.aggregator not in LENS_AGGREGATORS:
+                problems.append(
+                    f"lenses split the task by area, and a {self.aggregator} aggregator keeps "
+                    "only what several answers share (or one whole answer); use union, "
+                    "union+check, llm or digest, or set lenses: off"
+                )
         if self.kind == "cascade":
             if self.cascade is None:
                 self.cascade = CascadeSpec()
@@ -223,8 +266,14 @@ class Strategy(BaseModel):
         elif self.cascade is not None:
             problems.append("'cascade' is only valid for kind 'cascade'")
         aliases = [m.model for m in self.members]
-        if len(set(aliases)) != len(aliases):
-            problems.append("a model may appear only once in members")
+        if len(set(aliases)) != len(aliases) and self.lenses != "auto":
+            problems.append(
+                "a model may appear more than once in members only with lenses (each copy then "
+                "covers another area); without lenses the copies would give the same answer"
+            )
+        named = [(m.model, m.lens) for m in self.members if m.lens]
+        if len(set(named)) != len(named):
+            problems.append("two copies of one model name the same lens")
         if self.kind == "solo":
             if len(self.members) != 1:
                 problems.append("a solo strategy has exactly one member")
@@ -238,6 +287,9 @@ class Strategy(BaseModel):
             problems.append("judge_feeds_synthesis needs an llm aggregator")
         if self.skip_aggregator is not None and (self.kind == "solo" or self.aggregator != "llm"):
             problems.append("skip_aggregator needs an llm aggregator to skip")
+        skip = self.skip_aggregator
+        if skip is not None and skip.use == "union" and self.lenses != "auto":
+            problems.append("skip_aggregator.use: union needs lenses")
         if self.aggregator in NO_MODEL_AGGREGATORS and self.aggregator_model is not None:
             problems.append(
                 f"a {self.aggregator} aggregator calls no model, so aggregator_model must be unset"
@@ -245,6 +297,11 @@ class Strategy(BaseModel):
         if problems:
             raise ValueError("; ".join(problems))
         return self
+
+    @property
+    def calls_aggregator_model(self) -> bool:
+        """Whether aggregation makes a model call (llm or union+check, not for a solo run)."""
+        return self.kind != "solo" and self.aggregator in MODEL_AGGREGATORS
 
     @property
     def models(self) -> list[str]:
@@ -273,8 +330,10 @@ class StrategyBook:
         strategies: Mapping[str, Strategy],
         budget_map: Mapping[str, str],
         aliases: Mapping[str, str] | None = None,
+        lenses: LensBook | None = None,
     ) -> None:
         self.strategies = dict(strategies)
+        self._lenses = lenses
         self.budget_map = dict(budget_map)
         # An alias is a strategy's previous name, kept working for one release.
         self.aliases = {
@@ -298,6 +357,15 @@ class StrategyBook:
 
     def names(self) -> list[str]:
         return sorted(self.strategies)
+
+    @property
+    def lenses(self) -> LensBook:
+        """The configured lenses (loaded on first use when the book was built without them)."""
+        if self._lenses is None:
+            from fusion.orchestration.lenses import load_lens_book
+
+            self._lenses = load_lens_book()
+        return self._lenses
 
     def get(self, name: str) -> Strategy:
         if name in self.strategies:
@@ -376,22 +444,41 @@ def load_strategy_book(path: Path | None = None) -> StrategyBook:
         config = _StrategyConfig.model_validate(raw)
     except ValidationError as exc:
         raise format_validation_error(exc, section_prefix="", resolved=resolved) from exc
-    return StrategyBook(config.strategies, config.budget_strategies, config.strategy_aliases)
+    book = StrategyBook(config.strategies, config.budget_strategies, config.strategy_aliases)
+    _check_lenses(book)
+    return book
+
+
+def _check_lenses(book: StrategyBook) -> None:
+    """Every lens a member names is a configured lens."""
+    for name, strategy in book.strategies.items():
+        for member in strategy.members:
+            if member.lens is None:
+                continue
+            try:
+                book.lenses.get(member.lens)
+            except ConfigError as exc:
+                msg = f"strategies.{name}: member {member.model}: {exc}"
+                raise ConfigError(msg) from exc
 
 
 def mock_strategy_book(book: StrategyBook, registry: ModelRegistry) -> StrategyBook:
     """Keep every strategy's shape but run it on the registry's mock models (offline mode).
 
-    Offline mode is a different configuration, not a different code path: each member becomes the
-    next mock panel model, and an llm aggregator becomes the mock synthesizer.
+    Offline mode is a different configuration, not a different code path: each model becomes the
+    next mock panel model (a model listed twice becomes the same mock twice, so self-mixtures stay
+    self-mixtures), and an llm aggregator becomes the mock synthesizer.
     """
     panel = registry.by_role("panel")
     synthesizer = (registry.by_role("synthesizer") or registry.by_role("judge") or panel)[0]
     mapped: dict[str, Strategy] = {}
     for name, strategy in book.strategies.items():
+        distinct = list(dict.fromkeys(m.model for m in strategy.members))
+        mock_of = dict(zip(distinct, panel, strict=False))
         members = [
-            member.model_copy(update={"model": alias})
-            for member, alias in zip(strategy.members, panel, strict=False)
+            member.model_copy(update={"model": mock_of[member.model]})
+            for member in strategy.members
+            if member.model in mock_of
         ]
         mapped[name] = strategy.model_copy(
             update={
@@ -399,4 +486,4 @@ def mock_strategy_book(book: StrategyBook, registry: ModelRegistry) -> StrategyB
                 "aggregator_model": synthesizer if strategy.aggregator_model else None,
             }
         )
-    return StrategyBook(mapped, book.budget_map, book.aliases)
+    return StrategyBook(mapped, book.budget_map, book.aliases, book.lenses)

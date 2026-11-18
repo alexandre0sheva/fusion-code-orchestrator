@@ -1,20 +1,27 @@
 {
   "agreement": {
-    "confidence": 0.3646,
+    "confidence": 0.5833,
     "consensus": [
       "C1"
     ],
     "contradicted": [],
     "coverage": 1.0,
     "evidence_rate": 0.444444,
+    "lens_exclusive": [
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8"
+    ],
     "low_information": false,
     "n_clusters": 8,
     "n_models": 3,
     "n_requested": 3,
-    "outliers": [
-      "mock-weak"
-    ],
-    "score": 0.0625,
+    "outliers": [],
+    "score": 0.5,
     "structured_share": 1.0,
     "unique": [
       "C2",
@@ -249,13 +256,13 @@
       "text": "Looks fine to me"
     }
   ],
-  "confidence": 0.3646,
+  "confidence": 0.5833,
   "consensus": [
     "Add error handling"
   ],
   "cost_comparison": {
     "baseline_cost_known": true,
-    "baseline_estimated_cost_usd": 0.012456,
+    "baseline_estimated_cost_usd": 0.015948,
     "baseline_model_id": "claude-opus-5-5",
     "baseline_name": "Opus 5.5",
     "comparison_notes": [
@@ -266,7 +273,7 @@
     "fusion_is_cheaper": true,
     "fusion_total_cost_usd": 0.0,
     "savings_percent": 100.0,
-    "savings_usd": 0.012456
+    "savings_usd": 0.015948
   },
   "cost_latency": {
     "steps": [
@@ -274,7 +281,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 333,
+        "input_tokens": 662,
         "model_name": "mock-fast",
         "output_tokens": 95,
         "provider": "mock",
@@ -284,7 +291,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 353,
+        "input_tokens": 618,
         "model_name": "mock-security",
         "output_tokens": 90,
         "provider": "mock",
@@ -294,7 +301,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 358,
+        "input_tokens": 613,
         "model_name": "mock-weak",
         "output_tokens": 26,
         "provider": "mock",
@@ -304,7 +311,7 @@
         "cost_is_estimate": true,
         "cost_known": true,
         "cost_usd": 0.0,
-        "input_tokens": 630,
+        "input_tokens": 654,
         "model_name": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
@@ -313,7 +320,7 @@
     ],
     "total_cost_known": true,
     "total_cost_usd": 0.0,
-    "total_input_tokens": 1674,
+    "total_input_tokens": 2547,
     "total_output_tokens": 288,
     "warnings": [
       "Claude Code / Opus usage is billed separately and is not visible to Fusion MCP."
@@ -326,9 +333,9 @@
   "disagreements": [
     "Severity of null pointer risk"
   ],
-  "display_markdown": "## Fusion Review\n\n### Answer\nPanel consensus on code quality (mock:<id>)\n\n### Key claims\n- [critical] SQL injection through a string-formatted query (app/db.py:20), finding, mock-security (1/3, unique)\n- [high] Missing error handling around the database call (app/db.py:11), finding, mock-fast, mock-security (2/3, consensus)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- [low] The function lacks type hints on its return value (app/db.py:30), finding, mock-fast (1/3, unique)\n- [low] Looks fine to me, finding, mock-weak (1/3, unique)\n- 3 more (detail: full)\n\n### Confidence\n0.36 (agreement 0.06 across 3 of 3 models, evidence 44%)\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 <t> \u00b7 panel-nano, 4 calls",
+  "display_markdown": "## Fusion Review\n\n### Answer\nPanel consensus on code quality (mock:<id>)\n\n### Key claims\n- [critical] SQL injection through a string-formatted query (app/db.py:20), finding, mock-security (1/3, unique)\n- [high] Missing error handling around the database call (app/db.py:11), finding, mock-fast, mock-security (2/3, consensus)\n- [med] Secrets may be logged in debug output, risk, mock-security (1/3, unique)\n- [low] The function lacks type hints on its return value (app/db.py:30), finding, mock-fast (1/3, unique)\n- [low] Looks fine to me, finding, mock-weak (1/3, unique)\n- 3 more (detail: full)\n\n### Confidence\n0.58 (agreement 0.50 across 3 of 3 models, evidence 44%)\n\n### Cost\n$0.0000 estimated \u00b7 100% below the Opus 5.5 baseline estimate \u00b7 <t> \u00b7 panel-nano, 4 calls",
   "evals": {
-    "aggregate_score": 0.357292,
+    "aggregate_score": 0.466665,
     "context": {
       "missing_items": [
         "No file snippets provided"
@@ -339,29 +346,27 @@
     },
     "dimension_scores": {
       "aggregate_answer_quality": 0.305556,
-      "aggregate_consensus_strength": 0.0625,
+      "aggregate_consensus_strength": 0.5,
       "aggregate_context_sufficiency": 0.7,
-      "aggregate_final_quality": 0.473614,
+      "aggregate_final_quality": 0.561104,
       "aggregate_high_risk_penalty": 0.09,
       "aggregate_provider_success_rate": 1.0,
       "aggregate_unsupported_claim_penalty": 0.0,
-      "confidence": 0.3646,
+      "confidence": 0.5833,
       "context_sufficiency": 0.7,
-      "final_quality": 0.473614,
+      "final_quality": 0.561104,
       "mock-fast_overall": 0.5,
       "mock-security_overall": 0.416667,
       "mock-weak_overall": 0.0
     },
     "disagreement": {
-      "agreement_score": 0.0625,
-      "consensus": false,
+      "agreement_score": 0.5,
+      "consensus": true,
       "consensus_items": [
         "Missing error handling around the database call"
       ],
-      "contradictions": [
-        "Outlier model: mock-weak"
-      ],
-      "disagreement_score": 0.9375,
+      "contradictions": [],
+      "disagreement_score": 0.5,
       "grouped_findings": [
         {
           "models": [
@@ -425,10 +430,15 @@
         "mock-fast, mock-security: Missing error handling around the database call",
         "mock-security: SQL injection through a string-formatted query"
       ],
+      "lens_exclusive": 7,
+      "lenses": {
+        "mock-fast": "correctness+contract",
+        "mock-security": "security",
+        "mock-weak": "performance"
+      },
       "low_information": false,
-      "outlier_models": [
-        "mock-weak"
-      ],
+      "none_found": [],
+      "outlier_models": [],
       "unique_insights": [
         "The function lacks type hints on its return value",
         "Add a guard clause for empty input",
@@ -442,13 +452,13 @@
     },
     "final": {
       "claude_code_usefulness": 0.375,
-      "confidence": 0.3646,
+      "confidence": 0.5833,
       "deterministic_issues": [],
       "deterministic_passed": true,
-      "final_answer_quality": 0.253472,
+      "final_answer_quality": 0.472222,
       "implementation_readiness": 0.375,
-      "notes": "Measured from 8 claim clusters across 3 model(s): agreement 0.06, evidence 0.44",
-      "overall_score": 0.473614,
+      "notes": "Measured from 8 claim clusters across 3 model(s): agreement 0.50, evidence 0.44",
+      "overall_score": 0.561104,
       "residual_risk": 0.9,
       "test_plan_quality": 1.0
     },
@@ -521,7 +531,7 @@
     "Add unit test for edge case"
   ],
   "result": {
-    "confidence": 0.3646,
+    "confidence": 0.5833,
     "consensus": [
       "Add error handling"
     ],
@@ -554,7 +564,8 @@
     "estimated_cost_tier": "nano",
     "judge_model": "mock-judge",
     "reasons": [
-      "Applied strategy panel-nano"
+      "Applied strategy panel-nano",
+      "Lenses: mock-fast: correctness+contract, mock-security: security, mock-weak: performance"
     ],
     "risk": "low",
     "selected_panel": [
@@ -587,14 +598,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 333,
+        "input_tokens": 662,
         "model_alias": "mock-fast",
         "output_tokens": 95,
         "provider": "mock",
         "provider_model_id": "mock-fast",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 428
+        "total_tokens": 757
       },
       {
         "actual_cost_usd": null,
@@ -605,14 +616,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 353,
+        "input_tokens": 618,
         "model_alias": "mock-security",
         "output_tokens": 90,
         "provider": "mock",
         "provider_model_id": "mock-security",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 443
+        "total_tokens": 708
       },
       {
         "actual_cost_usd": null,
@@ -623,14 +634,14 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 358,
+        "input_tokens": 613,
         "model_alias": "mock-weak",
         "output_tokens": 26,
         "provider": "mock",
         "provider_model_id": "mock-weak",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 384
+        "total_tokens": 639
       },
       {
         "actual_cost_usd": null,
@@ -641,20 +652,20 @@
         "error": null,
         "error_type": null,
         "estimated_cost_usd": 0.0,
-        "input_tokens": 630,
+        "input_tokens": 654,
         "model_alias": "mock-judge",
         "output_tokens": 77,
         "provider": "mock",
         "provider_model_id": "mock-judge",
         "reasoning_tokens": null,
         "success": true,
-        "total_tokens": 707
+        "total_tokens": 731
       }
     ],
     "successful_model_calls": 4,
-    "total_input_tokens": 1674,
+    "total_input_tokens": 2547,
     "total_output_tokens": 288,
-    "total_tokens": 1962
+    "total_tokens": 2835
   },
   "warnings": []
 }

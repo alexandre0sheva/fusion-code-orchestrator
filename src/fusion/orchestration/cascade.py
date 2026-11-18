@@ -157,5 +157,6 @@ def merge_fanouts(
         grace_ms=second.grace_ms if second.grace_ms is not None else first.grace_ms,
         hedged={**first.hedged, **second.hedged},
         fallbacks={**first.fallbacks, **second.fallbacks},
+        answered_for={**first.answered_for, **second.answered_for},
         warnings=warnings,
     )

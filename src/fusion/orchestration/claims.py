@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
@@ -24,6 +25,8 @@ ClaimKind = Literal["finding", "hypothesis", "recommendation", "risk", "test"]
 Severity = Literal["low", "med", "high", "critical"]
 
 CLAIM_KINDS: tuple[str, ...] = ("finding", "hypothesis", "recommendation", "risk", "test")
+# Kinds that report something about the input (as opposed to advice: recommendation, test).
+FINDING_KINDS = frozenset({"finding", "hypothesis", "risk"})
 _SEVERITY_LEVEL: dict[str, int] = {"low": 0, "med": 1, "high": 2, "critical": 3}
 _SEVERITY_ALIASES = {"medium": "med", "moderate": "med", "minor": "low", "severe": "critical"}
 _KIND_ALIASES = {
@@ -101,6 +104,13 @@ class PanelAnswer(BaseModel):
     )
     confidence: float = 0.5  # the model's own estimate; reported, never used for confidence
     score: float | None = None  # answer_eval only: 0-1 quality of the answer under evaluation
+    none_found: bool = Field(
+        default=False,
+        description=(
+            "True when there is nothing to report (in your lens's area, if you have one); "
+            "`claims` is then empty. A valid, complete answer: never invent a claim to fill it."
+        ),
+    )
 
 
 class ClusterMember(BaseModel):
@@ -140,6 +150,9 @@ class AgreementReport(BaseModel):
     score: float = 0.0  # 0 = nothing shared, 1 = every claim backed by every model
     consensus: list[str] = Field(default_factory=list)  # cluster ids backed by a majority
     unique: list[str] = Field(default_factory=list)  # backed by one model
+    # unique clusters only one lens could see (its model was the only one holding that lens);
+    # left out of ``score`` and never counted against the panel
+    lens_exclusive: list[str] = Field(default_factory=list)
     contradicted: list[str] = Field(default_factory=list)  # backed, but severities split
     outliers: list[str] = Field(default_factory=list)  # models sharing nothing with the others
     evidence_rate: float = 0.0  # share of claims with evidence or a file and line
@@ -249,12 +262,16 @@ def parse_panel_answer(
     if isinstance(data, dict) and isinstance(data.get("claims"), list):
         claims = [c for c in (_clean_claim(r, default_kind) for r in data["claims"]) if c]
         patch = data.get("patch")
+        # "Nothing to report" counts when the model says so or returns no claims, unless it also
+        # reports a finding (then the finding wins).
+        nothing = data.get("none_found") is True or not claims
         answer = PanelAnswer(
             summary=str(data.get("summary") or "").strip(),
             claims=_number(claims),
             patch=patch if isinstance(patch, str) and patch.strip() else None,
             confidence=_unit(data.get("confidence"), 0.5) or 0.0,
             score=_unit(data.get("score"), None),
+            none_found=nothing and not any(c.kind in FINDING_KINDS for c in claims),
         )
         return answer, True
     return _answer_from_prose(text, default_kind), False
@@ -263,6 +280,8 @@ def parse_panel_answer(
 def render_panel_answer(answer: PanelAnswer) -> str:
     """A panelist's answer as Markdown, for display and for peers to read."""
     lines = [answer.summary.strip()] if answer.summary.strip() else []
+    if answer.none_found and not answer.claims:
+        lines.append("No finding.")
     if lines and answer.claims:
         lines.append("")
     for claim in answer.claims:
@@ -378,22 +397,37 @@ def agreement_score(
     *,
     n_requested: int | None = None,
     n_structured: int | None = None,
+    lenses: Mapping[str, str] | None = None,
 ) -> AgreementReport:
     """Consensus, unique and contradicted sets, and a 0-1 agreement score for the clusters.
 
     ``score`` averages, over clusters, the share of the other models that back each one
     (``(support - 1) / (n - 1)``), halved for a cluster whose severities are split by two levels
     or more. It is 0 for fewer than two models: one model cannot agree with anyone.
+
+    ``lenses`` maps each answering model to its lens. When the panel used two or more lenses, a
+    point raised by the only model holding its lens is *lens-exclusive*: the others were told to
+    leave that area alone, so it is left out of ``score`` (and of the outliers) instead of
+    counting as a point nobody else backed.
     """
     requested = max(n_requested if n_requested is not None else n_models, n_models)
     structured = n_models if n_structured is None else n_structured
     majority = max(2, math.ceil(n_models / 2))
-    consensus, unique, contradicted = [], [], []
+    lens_of = dict(lenses or {})
+    holders = Counter(lens_of.values())
+    lensed = len(holders) >= 2
+
+    def sole_lens(model: str) -> bool:
+        return lensed and model in lens_of and holders[lens_of[model]] == 1
+
+    consensus, unique, contradicted, exclusive = [], [], [], []
     credit = 0.0
     for cluster in clusters:
         if cluster.support < 2:
             cluster.status = "unique"
             unique.append(cluster.id)
+            if sole_lens(cluster.models[0]):
+                exclusive.append(cluster.id)
             continue
         if cluster.severity_spread >= 2:
             cluster.status = "contradicted"
@@ -408,15 +442,17 @@ def agreement_score(
         credit += (cluster.support - 1) / max(n_models - 1, 1)
     low_information = n_models < 2
     claims = [m.claim for c in clusters for m in c.members]
+    scored = len(clusters) - len(exclusive)
     report = AgreementReport(
         n_models=n_models,
         n_requested=requested,
         n_clusters=len(clusters),
-        score=0.0 if low_information or not clusters else credit / len(clusters),
+        score=0.0 if low_information or not scored else credit / scored,
         consensus=consensus,
         unique=unique,
+        lens_exclusive=exclusive,
         contradicted=contradicted,
-        outliers=_outliers(clusters, n_models),
+        outliers=[m for m in _outliers(clusters, n_models) if not sole_lens(m)],
         evidence_rate=sum(c.has_evidence for c in claims) / len(claims) if claims else 0.0,
         coverage=n_models / requested if requested else 0.0,
         structured_share=structured / n_models if n_models else 0.0,

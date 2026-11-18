@@ -54,8 +54,9 @@ def test_ablation_expands_to_the_arms_the_roadmap_lists() -> None:
     assert {"size-1", "size-2", "size-3", "size-5"} <= set(arms)  # panel size 1 / 2 / 3 / 5
     assert {"refine-on", "synth-strong"} <= set(arms)  # refinement, cheap vs strong synthesizer
     assert {"cascade-0.5", "cascade-0.7"} <= set(arms)  # the threshold sweep
-    # Self-mixtures by temperature are gone (Claude takes no sampling parameters; Task 7 lenses).
-    assert not [arm for arm in arms if arm.startswith("self-")]
+    # Lenses and union (Task 7): on/off, union with and without the check call, and the
+    # self-mixtures, whose diversity now comes from lenses (Claude takes no sampling parameters).
+    assert {"lenses-off", "union", "union-check", "self-luna", "self-haiku"} <= set(arms)
     assert len(arms) == len(set(arms))
 
 
@@ -318,7 +319,7 @@ def test_the_plan_budget_is_what_is_left_below_the_stop_line(fusion_home: Path) 
 def _stage(base: FanoutConfig, strategy: Any) -> PanelStage:
     stage = object.__new__(PanelStage)
     stage.deps = SimpleNamespace(routing=SimpleNamespace(budgets=SimpleNamespace(fanout=base)))  # type: ignore[attr-defined]
-    stage._state = SimpleNamespace(strategy=strategy)  # type: ignore[attr-defined]
+    stage._state = SimpleNamespace(strategy=strategy, lenses={})  # type: ignore[attr-defined]
     return stage
 
 
@@ -331,7 +332,7 @@ def test_a_strategys_fanout_controls_sit_on_top_of_the_routing_policy() -> None:
     )
     stage = _stage(base, plain)
     assert stage._fanout_config(stage._state) is base  # type: ignore[attr-defined]
-    merged = _stage(base, early)._fanout_config(SimpleNamespace(strategy=early))  # type: ignore[arg-type]
+    merged = _stage(base, early)._fanout_config(SimpleNamespace(strategy=early, lenses={}))  # type: ignore[arg-type]
     assert merged.early_return == EarlyReturn(quorum=3, grace_ms=250)
     assert merged.max_concurrency == 3 and merged.hedge_after_ms == 9000  # untouched fields stay
     assert base.early_return is None  # the shared policy was not changed

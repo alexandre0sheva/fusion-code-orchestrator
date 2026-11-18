@@ -22,6 +22,7 @@ from fusion.orchestration.cascade import CascadeOutcome
 from fusion.orchestration.claims import AgreementReport, ClaimCluster, PanelAnswer
 from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import CallGateway, RunLedger
+from fusion.orchestration.lenses import Lens
 from fusion.orchestration.refine import RefinementResult
 from fusion.orchestration.schemas import PipelineEvals
 from fusion.orchestration.strategy import (
@@ -32,6 +33,7 @@ from fusion.orchestration.strategy import (
     PanelMember,
     Strategy,
 )
+from fusion.orchestration.union import UnionResult
 from fusion.providers.base import ModelProvider, ModelResponse
 from fusion.routing.budget import BudgetLevel, BudgetTracker
 from fusion.routing.classifier import TaskType
@@ -126,6 +128,8 @@ class RunState:
     routing: RoutingDecision | None = None
     members: list[PanelMember] = field(default_factory=list)
     panel_models: list[str] = field(default_factory=list)
+    lenses: dict[str, Lens] = field(default_factory=dict)  # member -> the area it covers
+    answer_lenses: dict[str, str] = field(default_factory=dict)  # answering model -> lens name
     judge_model: str = ""
     synthesizer_model: str = ""
     context_eval: ContextEvalResult | None = None
@@ -145,6 +149,7 @@ class RunState:
 
     disagreement: dict[str, Any] = field(default_factory=dict)
     synth_response: ModelResponse | None = None
+    union: UnionResult | None = None  # the union aggregator's sorted findings
     final_answer: str = ""
     structured: dict[str, Any] = field(default_factory=dict)
     final_eval: FinalEvalResult | None = None
@@ -174,6 +179,11 @@ class RunState:
     @property
     def halted(self) -> bool:
         return self.halt is not None
+
+    @property
+    def lensed(self) -> bool:
+        """The answers cover different areas (two or more lenses answered)."""
+        return len(set(self.answer_lenses.values())) >= 2
 
     @property
     def cascade_exited_early(self) -> bool:

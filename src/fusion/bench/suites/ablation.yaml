@@ -43,5 +43,14 @@ arms:
   # --- the cascade's agreement threshold (default 0.7); add 0.6, 0.8, 0.9 if budget remains ---
   - {name: cascade-0.5, strategy: panel-cascade, overrides: {cascade: {agreement_threshold: 0.5}}}
   - {name: cascade-0.7, strategy: panel-cascade}
-  # Self-mixtures of one model (temperature samples) were removed in 0.3.0: Claude no longer
-  # accepts sampling parameters, and panel diversity comes from lenses instead (roadmap Task 7).
+  # --- lenses and the union aggregator (roadmap Task 7) ---
+  # size-3 runs with lenses (the default for a panel); lenses-off is the same panel without them.
+  - {name: lenses-off, strategy: panel-nano, overrides: {lenses: off}}
+  - {name: union, strategy: panel-nano-union}          # lenses, no synthesis call
+  - name: union-check                                    # lenses, one cheap check call
+    strategy: panel-nano
+    overrides: {aggregator: union+check}
+  # Self-mixtures: one model, its diversity from lenses (temperature samples were removed in
+  # 0.3.0: current models reject sampling parameters).
+  - {name: self-luna, strategy: panel-luna-lenses}
+  - {name: self-haiku, strategy: panel-haiku-lenses}

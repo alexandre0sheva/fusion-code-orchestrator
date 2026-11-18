@@ -75,6 +75,12 @@ def _ctx(**kw: Any) -> PipelineContext:
     return PipelineContext(task_type=TaskType.CODE_REVIEW, primary_content=LONG, **kw)
 
 
+def _plain_ctx(**kw: Any) -> PipelineContext:
+    """A task type with no lenses: every member answers the whole task, so members are
+    interchangeable (early return and agreement-based skips apply)."""
+    return PipelineContext(task_type=TaskType.DEFAULT, primary_content=LONG, **kw)
+
+
 def _spans(result: Any, stage: str) -> list[dict[str, Any]]:
     return [s for s in result.ledger.timeline() if s["stage"] == stage]
 
@@ -208,7 +214,7 @@ async def test_early_return_cancels_stragglers_and_records_them(
     _early(monkeypatch, quorum=2, grace_ms=20)
     delays = {"mock-fast": 0.05, "mock-security": 0.06, "mock-weak": 30.0}
     started = time.perf_counter()
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_plain_ctx(strategy="panel-nano"))
     assert time.perf_counter() - started < 15.0  # did not wait for the 30 s straggler
     assert result.fanout.early_return and result.fanout.success_count == 2
     straggler = next(c for c in result.fanout.calls if c.model_name == "mock-weak")
@@ -225,7 +231,7 @@ async def test_stragglers_inside_the_grace_window_still_count(
 ) -> None:
     _early(monkeypatch, quorum=2, grace_ms=600)
     delays = {"mock-fast": 0.03, "mock-security": 0.04, "mock-weak": 0.15}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_plain_ctx(strategy="panel-nano"))
     assert result.fanout.success_count == 3 and not result.fanout.early_return
 
 
@@ -234,7 +240,7 @@ async def test_early_return_never_stops_before_the_minimum_successful_responses(
 ) -> None:
     _early(monkeypatch, quorum=1, grace_ms=0)  # asks for 1, but min_successful_responses is 2
     delays = {"mock-fast": 0.02, "mock-security": 0.12, "mock-weak": 30.0}
-    result = await _pipe(tmp_path, Scripted(delays)).run(_ctx(strategy="panel-nano"))
+    result = await _pipe(tmp_path, Scripted(delays)).run(_plain_ctx(strategy="panel-nano"))
     assert {p.model_name for p in result.panel_results} == {"mock-fast", "mock-security"}
 
 
@@ -516,7 +522,7 @@ class Agreeing(Scripted):
 
 
 async def test_refinement_is_skipped_when_the_panel_already_agrees(tmp_path: Path) -> None:
-    result = await _pipe(tmp_path, Agreeing(0.0)).run(_ctx(strategy="panel-refine"))
+    result = await _pipe(tmp_path, Agreeing(0.0)).run(_plain_ctx(strategy="panel-refine"))
     assert result.agreement is not None and result.agreement.score == pytest.approx(1.0)
     assert not [r for r in result.ledger.records if r.stage == "refine"]
     assert any(
@@ -527,17 +533,17 @@ async def test_refinement_is_skipped_when_the_panel_already_agrees(tmp_path: Pat
 
 async def test_the_skip_can_be_turned_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FUSION__REFINEMENT__SKIP_ABOVE_AGREEMENT", "null")
-    result = await _pipe(tmp_path, Agreeing(0.0)).run(_ctx(strategy="panel-refine"))
+    result = await _pipe(tmp_path, Agreeing(0.0)).run(_plain_ctx(strategy="panel-refine"))
     assert len([r for r in result.ledger.records if r.stage == "refine"]) == 3
 
 
 async def test_the_skip_threshold_is_configurable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    result = await _pipe(tmp_path, Scripted(0.0)).run(_ctx(strategy="panel-refine"))
+    result = await _pipe(tmp_path, Scripted(0.0)).run(_plain_ctx(strategy="panel-refine"))
     assert len([r for r in result.ledger.records if r.stage == "refine"]) == 3  # mock panel differs
     monkeypatch.setenv("FUSION__REFINEMENT__SKIP_ABOVE_AGREEMENT", "0.0")
-    skipped = await _pipe(tmp_path, Scripted(0.0)).run(_ctx(strategy="panel-refine"))
+    skipped = await _pipe(tmp_path, Scripted(0.0)).run(_plain_ctx(strategy="panel-refine"))
     assert not [r for r in skipped.ledger.records if r.stage == "refine"]
 
 

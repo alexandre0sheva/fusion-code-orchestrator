@@ -68,6 +68,9 @@ __all__ = ["BenchEnv", "BenchProgress", "BenchRun", "Job", "build_env", "job_key
 
 SPEND_TASK = "bench"  # the ``task`` field of spend-ledger entries written by studies
 _EPSILON = 1e-9
+# A job is reserved at its planned cost times this: planned token counts are typical answer sizes,
+# not maxima, and a job that costs more than its reservation could take a run past its cap.
+RESERVE_MARGIN = 1.25
 
 
 @dataclass
@@ -478,7 +481,7 @@ def _worst_case(
         pricing=env.pricing,
         scorer=get_scorer(task.category),
         judge_models=judge_models,
-    ).worst_usd
+    ).worst_usd * RESERVE_MARGIN
 
 
 async def _execute(

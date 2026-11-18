@@ -94,7 +94,8 @@ does not pass unless `--yes` is given.
 Two caps hold a live study:
 
 - **`--max-usd`** limits the run. Before a job starts, its worst case (a cascade escalating, every
-  call at the assumed size) is reserved against what is left; when it will not fit, the run stops
+  call at the assumed size, plus a 25% margin because real answers run longer than the assumed
+  size) is reserved against what is left; when it will not fit, the run stops
   cleanly with status `stopped` and can be resumed with more money. Estimates are not
   measurements, so a run can pass the cap by at most the excess of the jobs in flight.
 - **The live-spend ledger** limits everything run live under one roadmap's budget: **$15 for v0.3.0**

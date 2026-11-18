@@ -158,8 +158,8 @@ class Router:
         return chosen[0] if chosen else policy.judge_model
 
     def _select_synthesizer(self, strategy: Strategy, judge_model: str) -> str:
-        """The llm aggregator's model; empty when the strategy makes no aggregator call."""
-        if strategy.kind == "solo" or strategy.aggregator != "llm":
+        """The llm or union+check aggregator's model; empty when aggregation calls no model."""
+        if not strategy.calls_aggregator_model:
             return ""
         if strategy.aggregator_model and self._registry.is_enabled(strategy.aggregator_model):
             return strategy.aggregator_model

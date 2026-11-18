@@ -82,7 +82,10 @@ def _member(alias: str = "claude-haiku", **kw: Any) -> dict[str, Any]:
             {"kind": "solo", "members": [_member()], "aggregator_model": "claude-sonnet"},
             "no aggregator_model",
         ),
-        ({"kind": "panel", "members": [_member(), _member()]}, "only once"),
+        (
+            {"kind": "panel", "members": [_member(), _member()], "lenses": "off"},
+            "more than once in members only with lenses",
+        ),
         ({"kind": "panel", "members": [_member(), _member("gpt-luna")], "rounds": 0}, "rounds"),
         (
             {"kind": "panel", "members": [_member(), _member("gpt-luna")], "judge": "heavy"},
@@ -204,6 +207,9 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-refine",
         "panel-digest",
         "panel-vote",
+        "panel-nano-union",
+        "panel-luna-lenses",
+        "panel-haiku-lenses",
         "panel-cascade",
         "panel-local",
         "best-of-n-verified",
@@ -215,6 +221,10 @@ def test_packaged_strategies_are_the_documented_set() -> None:
     assert book.get("panel-refine").rounds == 2
     assert book.get("panel-digest").aggregator == "digest"
     assert book.get("panel-vote").aggregator == "vote"
+    assert book.get("panel-nano-union").aggregator == "union"
+    for name, alias in (("panel-luna-lenses", "gpt-luna"), ("panel-haiku-lenses", "claude-haiku")):
+        lensed = book.get(name)
+        assert [m.model for m in lensed.members] == [alias] * 3 and lensed.lenses == "auto", name
     cascade = book.get("panel-cascade")
     assert cascade.kind == "cascade" and cascade.cascade is not None
     assert (cascade.cascade.first, cascade.cascade.early_aggregator) == (2, "vote")

@@ -11,6 +11,23 @@
 #                verified benchmark only, coding tasks: no call; run each panelist's patch against
 #                         the task's visible tests and return the best one. It runs code, so it
 #                         is refused outside `fusion bench` (the MCP tools never run code)
+#                union    no call; every member's findings added together, duplicates merged, and
+#                         each checked against the input by string match: a finding whose quote
+#                         or cited line is in the input is kept, one whose quote or file is not
+#                         is dropped, one that quotes nothing is kept as "not checked". For lenses
+#                union+check  union, plus one cheap call (aggregator_model) that rules on the
+#                         "not checked" findings; a confirmation counts only with a quote that
+#                         passes the same string match
+# lenses       auto | off. auto: on a task type that has lenses (lenses.yaml: code review,
+#              debugging, plans, architecture) each member covers one area and reports only on
+#              it, so the answers are pieces of one result. Unset means auto for a panel whose
+#              aggregator keeps every piece (llm, digest, union, union+check), off otherwise
+#              (vote, best_of and verified keep only what several answers share, or one answer).
+#              On a lensed run the panel waits for every member (no early return: each covers
+#              an area nobody else does), agreement leaves out the points only one lens could
+#              see, and a vote or best_of fallback becomes union. A member may name its `lens`;
+#              a model may be listed more than once only with lenses (each copy takes another
+#              lens; a copy with no lens left for the task type is not asked)
 # kind: cascade  the `cascade.first` cheapest members answer first; if they agree (agreement >=
 #              `cascade.agreement_threshold`, nothing disputed, task not high risk) the run ends
 #              there with `cascade.early_aggregator` (vote | best_of) and no synthesis call;
@@ -191,6 +208,41 @@ strategies:
     rounds: 2
     aggregator: llm
     aggregator_model: claude-haiku
+
+  panel-nano-union:
+    kind: panel
+    description: >-
+      The nano panel with lenses, merged by `union` with no model call: every lens's findings,
+      duplicates merged, findings the input does not back dropped. For review and debugging.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: union
+
+  panel-luna-lenses:
+    kind: panel
+    description: >-
+      GPT-6 Luna asked once per lens (three copies, each covering another area), merged by
+      `union` with no model call. A self-mixture whose diversity comes from lenses, not
+      temperature. For review and debugging; where a task type has fewer lenses Luna is asked
+      fewer times.
+    members:
+      - model: gpt-luna
+      - model: gpt-luna
+      - model: gpt-luna
+    aggregator: union
+
+  panel-haiku-lenses:
+    kind: panel
+    description: >-
+      Claude Haiku 5.5 asked once per lens (three copies, each covering another area), merged by
+      `union` with no model call. The Anthropic counterpart of panel-luna-lenses.
+    members:
+      - model: claude-haiku
+      - model: claude-haiku
+      - model: claude-haiku
+    aggregator: union
 
   panel-digest:
     kind: panel

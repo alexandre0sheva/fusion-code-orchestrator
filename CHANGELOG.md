@@ -26,6 +26,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Strategy field `speed: fast | balanced`: `fast` ranks members by measured speed, so a cascade's first wave and a panel cut by `max_models` are the fastest models.
 - Catalog fields `observed_ttft_ms`, `observed_decode_tps` and `observed_on`: measured speeds (seeded from the 0.2.0 study) that time the early-return grace and rank models for `speed: fast`, hedges and fallbacks.
 - `fanout.prompt_cache` (`auto`, `always`, `off`): Anthropic cache breakpoints after the files a panel call reads, also for Anthropic models reached through OpenRouter; cached input tokens are summed per stage and per task in the run ledger.
+- Panel lenses (`lenses.yaml`): on code review, debugging, plans and architecture decisions each panel member covers one area (review: correctness, security, performance, API contract and tests; debugging: hypotheses, evidence, root cause and fix; plans: procedure, domain) and may answer "no finding" (`none_found`); strategy field `lenses: auto | off` and member field `lens`. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#lenses).
+- Aggregators `union` (no model call: every lens's findings merged, each checked against the input by string match; a finding whose quote or file is not in the input is dropped, ranked by severity) and `union+check` (plus one cheap call about the findings with nothing to check); strategy `panel-nano-union`.
+- Self-mixtures through lenses: a model may be listed more than once in a lensed strategy and is asked once per lens (`panel-luna-lenses`, `panel-haiku-lenses`); ablation arms `lenses-off`, `union`, `union-check`, `self-luna` and `self-haiku`.
 
 ### Changed
 
@@ -36,6 +39,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Faster by default: early return (`quorum: 2`, `grace_ms: auto`, waiting for a straggler only if its measured speed says it will finish within 1 s) and hedging after 15 s are on; `false` switches either off in config, and `off` per strategy or benchmark arm. Hedges ask a model of the same price tier (was: any panel model).
 - The default `panel-duo` skips its synthesis call when Haiku 5.5 and Luna agree (agreement ≥ 0.6) and returns their vote; on the simulated latency suite its median time per task is now below Opus 5.5's (live check in the 0.3.0 study).
 - Panel prompts put the file snippets first and the request after them, and every member gets the task's system prompt (a member's role is appended at the end), so calls about the same files share a cacheable prefix. The synthesis call is streamed, so its time to first token is recorded.
+- Panels run with lenses by default on review, debugging, plan and architecture tasks (`panel-duo` reviews as correctness+performance and security+contract); a lensed panel waits for every member instead of returning at a quorum, does not skip refinement for agreement, and leaves points only one lens could see out of the agreement score; a vote that would replace synthesis becomes a union.
+- Panel answers quote evidence exactly from the input (it is checked), and the panel answer schema has a `none_found` field.
+- `fusion bench` reserves each job at its planned worst case plus 25%, so a job whose answers run long no longer takes a run past `--max-usd`.
 - The `latency` benchmark suite compares Opus 5.5 alone, the default as shipped, the default with every latency control off, `panel-nano` and Luna at reasoning effort `none`.
 - The live-spend ledger is scoped by budget: 0.3.0 has its own $15 (`v0.3.0`) and 0.2.0's $15.66 no longer counts against it (entries without a `budget` field count as `v0.2.0`; new entries record theirs). `fusion bench spend` shows each budget's total and remaining, and the packaged suites stop at $14.50 instead of $18.
 
