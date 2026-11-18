@@ -272,7 +272,8 @@ t0 ─┬─ panel member A ──────────┐
     file part travels as `ModelRequest.shared_prefix_chars`, so a later call about the same files
     starts with the same text. OpenAI and Google cache such prefixes by themselves; for Anthropic
     the fan-out sets `cache_prefix` (`fanout.prompt_cache: auto`, only when files were given) and
-    the adapter puts a `cache_control` breakpoint after the file part. Calls that run at the same
+    the adapter puts a `cache_control` breakpoint after the file part; the OpenRouter adapter does
+    the same for `anthropic/` models, which cache only at breakpoints there too. Calls that run at the same
     time cannot share a cache entry (it exists once the first response starts), so the reuse is
     across calls, not across members of one fan-out. Cache reads are `CallRecord.cached_tokens`,
     priced at the catalog's cached rate, and summed per stage and in `TaskMetrics`.

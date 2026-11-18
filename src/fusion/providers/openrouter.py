@@ -6,6 +6,11 @@ records instead of the catalog estimate, and carries the data policy from the ca
 on them are fine), ``require_parameters: true`` and an ``ignore`` list of providers that may train
 on prompts. The account-level "no training" setting is the other half of that rule (see
 ``docs/CONFIGURATION.md``). Only a generic ``X-Title`` is sent, never anything about the user.
+
+Anthropic models cache a prompt only at explicit breakpoints, also through OpenRouter, so a request
+with ``cache_prefix`` for an ``anthropic/`` model marks the system prompt and the shared part of
+the user prompt (``shared_prefix_chars``) with ``cache_control``, as the Anthropic adapter does.
+Other models cache identical prefixes by themselves and are sent plain text.
 """
 
 from __future__ import annotations
@@ -26,6 +31,36 @@ from fusion.providers.openai import OpenAICompatibleProvider
 BASE_URL = "https://openrouter.ai/api/v1"
 KEY_ENV = "OPENROUTER_API_KEY"
 APP_TITLE = "fusion-code-orchestrator"
+_CACHE = {"type": "ephemeral"}
+# OpenRouter IDs of models that cache only at explicit breakpoints.
+_EXPLICIT_CACHE_PREFIXES = ("anthropic/",)
+
+
+def _cached_text(content: str | list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """``content`` as parts with a breakpoint on its (last) text part."""
+    if isinstance(content, str):
+        return [{"type": "text", "text": content, "cache_control": _CACHE}]
+    parts = [dict(part) for part in content]
+    for part in reversed(parts):
+        if part.get("type") == "text":
+            part["cache_control"] = _CACHE
+            break
+    return parts
+
+
+def _split_text(
+    content: str | list[dict[str, Any]], split: int | None
+) -> str | list[dict[str, Any]]:
+    """The final user message with a breakpoint after its first ``split`` characters of text;
+    unchanged when there is no usable split. The text the model reads is the same."""
+    parts = [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
+    index = next((i for i in range(len(parts) - 1, -1, -1) if parts[i].get("type") == "text"), -1)
+    text = str(parts[index].get("text", "")) if index >= 0 else ""
+    if split is None or not 0 < split < len(text):
+        return content
+    head = {"type": "text", "text": text[:split], "cache_control": _CACHE}
+    tail = {"type": "text", "text": text[split:]}
+    return [*parts[:index], head, tail, *parts[index + 1 :]]
 
 
 class OpenRouterProvider(OpenAICompatibleProvider):
@@ -89,7 +124,21 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         if ignored:
             routing["ignore"] = list(ignored)
         payload["provider"] = routing
+        if request.cache_prefix and request.model_id.startswith(_EXPLICIT_CACHE_PREFIXES):
+            self._mark_cache(payload["messages"], request.shared_prefix_chars)
         return payload
+
+    @staticmethod
+    def _mark_cache(messages: list[dict[str, Any]], split: int | None) -> None:
+        """Breakpoints on the system prompt, the message before the last (a conversation's
+        reusable history) and the shared part of a final user message."""
+        if messages and messages[0]["role"] == "system":
+            messages[0]["content"] = _cached_text(messages[0]["content"])
+        turns = [m for m in messages if m["role"] != "system"]
+        if len(turns) >= 2:
+            turns[-2]["content"] = _cached_text(turns[-2]["content"])
+        if turns and turns[-1]["role"] == "user":
+            turns[-1]["content"] = _split_text(turns[-1]["content"], split)
 
     @staticmethod
     def _apply_usage(parsed: Parsed, usage: dict[str, Any]) -> None:

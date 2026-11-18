@@ -25,7 +25,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Strategy field `skip_aggregator` (`agreement_threshold`, `use: vote | best_of`): no synthesis call when the panel already agrees, nothing is disputed and the task is not high risk; `routing.reasons` says whether synthesis was skipped or ran and why.
 - Strategy field `speed: fast | balanced`: `fast` ranks members by measured speed, so a cascade's first wave and a panel cut by `max_models` are the fastest models.
 - Catalog fields `observed_ttft_ms`, `observed_decode_tps` and `observed_on`: measured speeds (seeded from the 0.2.0 study) that time the early-return grace and rank models for `speed: fast`, hedges and fallbacks.
-- `fanout.prompt_cache` (`auto`, `always`, `off`): Anthropic cache breakpoints after the files a panel call reads; cached input tokens are summed per stage and per task in the run ledger.
+- `fanout.prompt_cache` (`auto`, `always`, `off`): Anthropic cache breakpoints after the files a panel call reads, also for Anthropic models reached through OpenRouter; cached input tokens are summed per stage and per task in the run ledger.
 
 ### Changed
 

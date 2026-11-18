@@ -541,8 +541,8 @@ do not. The latency controls are on by default (a policy file that leaves one ou
 - `prompt_cache`: every panel member gets the same system prompt and a user prompt that starts
   with the file snippets (the request, context and member role come after), so a later call about
   the same files starts with the same text. OpenAI and Google cache that by themselves. For
-  Anthropic, `auto` adds a cache breakpoint after the files when files were given, `always` on
-  every panel call, `off` never; a cache write costs more than plain input (Haiku 5.5: $0.125
+  Anthropic models (called directly or through OpenRouter), `auto` adds a cache breakpoint after
+  the files when files were given, `always` on every panel call, `off` never; a cache write costs more than plain input (Haiku 5.5: $0.125
   against $0.10 per 1M tokens) and a read much less ($0.01). Cached input tokens are recorded per
   call and priced at the cached rate.
 

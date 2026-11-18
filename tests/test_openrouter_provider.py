@@ -221,3 +221,93 @@ async def test_a_streamed_call_reads_the_billed_cost_from_the_last_chunk() -> No
     assert response.text == "hello"
     assert response.actual_cost_usd == pytest.approx(1e-5)
     assert body(seen[0])["usage"] == {"include": True}
+
+
+# ------------------------------------------------------------------------- prompt caching
+
+_CACHE = {"type": "ephemeral"}
+_FILES = "## Task: default\n\n## File Snippets\n<untrusted>\nfiles\n</untrusted>\n"
+
+
+def _cached(model_id: str, **kw: Any) -> ModelRequest:
+    return ModelRequest(
+        model_id=model_id,
+        system_prompt="rules",
+        user_prompt=_FILES + "\n## Request\nwhy?",
+        cache_prefix=True,
+        shared_prefix_chars=len(_FILES),
+        **kw,
+    )
+
+
+async def test_an_anthropic_model_gets_cache_breakpoints_after_the_system_and_the_files() -> None:
+    transport, seen = always(ok())
+    await provider(transport).safe_complete(_cached("anthropic/claude-haiku-5.5"))
+    messages = body(seen[0])["messages"]
+    assert messages[0] == {
+        "role": "system",
+        "content": [{"type": "text", "text": "rules", "cache_control": _CACHE}],
+    }
+    assert messages[1]["content"] == [
+        {"type": "text", "text": _FILES, "cache_control": _CACHE},
+        {"type": "text", "text": "\n## Request\nwhy?"},
+    ]
+
+
+async def test_cache_breakpoints_keep_attached_images_first() -> None:
+    from fusion.providers.base import ImagePart
+
+    transport, seen = always(ok())
+    image = ImagePart(media_type="image/png", data=b"\x89PNG")
+    await provider(transport).safe_complete(_cached("anthropic/claude-haiku-5.5", images=[image]))
+    content = body(seen[0])["messages"][1]["content"]
+    assert [part["type"] for part in content] == ["image_url", "text", "text"]
+    assert content[1]["cache_control"] == _CACHE and "cache_control" not in content[2]
+
+
+@pytest.mark.parametrize(
+    ("model_id", "cache_prefix"),
+    [
+        ("z-ai/glm-5.3", True),  # other models cache identical prefixes by themselves
+        ("anthropic/claude-haiku-5.5", False),  # nobody asked for a breakpoint
+    ],
+)
+async def test_no_breakpoints_unless_an_anthropic_model_is_asked_for_them(
+    model_id: str, cache_prefix: bool
+) -> None:
+    transport, seen = always(ok())
+    request = _cached(model_id).model_copy(update={"cache_prefix": cache_prefix})
+    await provider(transport).safe_complete(request)
+    messages = body(seen[0])["messages"]
+    assert messages[0]["content"] == "rules" and isinstance(messages[1]["content"], str)
+
+
+async def test_cached_tokens_reported_by_openrouter_reach_the_response() -> None:
+    usage = {
+        "prompt_tokens": 5000,
+        "completion_tokens": 100,
+        "prompt_tokens_details": {"cached_tokens": 4000},
+        "cost": 0.0002,
+    }
+    transport, _ = always(ok(usage=usage))
+    response = await provider(transport).safe_complete(_cached("anthropic/claude-haiku-5.5"))
+    assert response.cached_input_tokens == 4000 and response.actual_cost_usd == 0.0002
+
+
+async def test_a_conversation_caches_everything_before_its_last_message() -> None:
+    from fusion.providers.base import Message
+
+    transport, seen = always(ok())
+    request = ModelRequest(
+        model_id="anthropic/claude-haiku-5.5",
+        cache_prefix=True,
+        messages=[
+            Message(role="user", content="shared task"),
+            Message(role="assistant", content="draft"),
+            Message(role="user", content="critique"),
+        ],
+    )
+    await provider(transport).safe_complete(request)
+    messages = body(seen[0])["messages"]
+    assert messages[1]["content"] == [{"type": "text", "text": "draft", "cache_control": _CACHE}]
+    assert messages[2]["content"] == "critique"  # no shared prefix given: left as it was
