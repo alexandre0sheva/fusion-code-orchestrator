@@ -57,3 +57,18 @@ async def test_a_study_with_neutral_judges_refuses_a_conflicted_judge(tmp_path: 
     ok = cfg.model_copy(update={"judge_models": ["mimo-flash"]})
     run = await run_bench(ok, env=env)
     assert run.items and all(i.status == "completed" for i in run.items)
+
+
+def test_models_the_router_picks_at_run_time_count_as_the_arms(tmp_path: Path) -> None:
+    """A selector or synthesizer the strategy does not name is the catalog's synthesizer, and an
+    in-run judge is each task type's judge: both shape the answer, so both count."""
+    _, env, strategies, routing = _setup(tmp_path, "panel-luna-approaches,panel-open")
+    unnamed = strategies["panel-luna-approaches"].model_copy(update={"aggregator_model": None})
+    assert "claude-haiku" in arm_aliases(unnamed, routing)  # the catalog's first synthesizer
+    found = judge_conflicts(
+        ["claude-sonnet"], {"luna-select": unnamed}, routing, env.registry.models
+    )
+    assert found == ["claude-sonnet (anthropic) shares its vendor with luna-select"]
+    judged = strategies["panel-open"].model_copy(update={"judge": "light"})
+    assert "gemini-flash" in arm_aliases(judged, routing)  # the task types' judge
+    assert "gemini-flash" not in arm_aliases(strategies["panel-open"], routing)

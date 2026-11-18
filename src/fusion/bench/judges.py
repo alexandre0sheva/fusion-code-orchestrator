@@ -7,9 +7,11 @@ the study when any named judge shares a vendor with any arm, so every task of ev
 by the same impartial judges. The vendor is ``ModelEntry.vendor``: the maker, not the API that
 serves the model (Claude through OpenRouter is still Anthropic).
 
-An arm's vendors are those of every model its strategy can call: members and aggregator, on every
-rung of ``strategy: auto``'s ladder. A same-tier spare that stands in for a failed member is not
-known in advance and is not checked; the bench records which model answered.
+An arm's vendors are those of every model its strategy can call to write or shape an answer:
+members, aggregator (named, or the catalog's synthesizer the router picks when none is named) and
+an in-run judge, on every rung of ``strategy: auto``'s ladder. A same-tier spare that stands in
+for a failed member is not known in advance and is not checked; the bench records which model
+answered.
 """
 
 from __future__ import annotations
@@ -25,14 +27,41 @@ __all__ = ["arm_aliases", "check_neutral_judges", "judge_conflicts"]
 
 
 def arm_aliases(strategy: Strategy, routing: RoutingPolicy) -> list[str]:
-    """Every catalog alias a run of ``strategy`` may call: for ``kind: auto`` every climbable
-    rung, whichever rung a request starts on (a hard one starts above rung 0)."""
+    """Every catalog alias a run of ``strategy`` may call to write or shape its answer: for
+    ``kind: auto`` every climbable rung, whichever rung a request starts on (a hard one starts
+    above rung 0).
+
+    Besides the members and a named ``aggregator_model`` this includes the models the router
+    picks at run time: the catalog's synthesizer for a strategy whose aggregator calls a model
+    but names none (``select``, ``auto`` and ``llm`` panels), and every task type's judge for a
+    strategy with an in-run judge. The difficulty classifier of ``strategy: auto`` only picks a
+    rung and never sees an answer, so it is not listed.
+    """
     if strategy.kind != "auto":
         used = [strategy]
     else:
         policy = routing.escalation_for(strategy)
         used = [routing.strategies.get(policy.rungs[i].strategy) for i in policy.climbable()]
-    return list(dict.fromkeys(a for s in used for a in s.models))
+    found: list[str] = []
+    for item in used:
+        found += item.models
+        found += _runtime_aliases(item, routing)
+    return list(dict.fromkeys(found))
+
+
+def _runtime_aliases(strategy: Strategy, routing: RoutingPolicy) -> list[str]:
+    """The synthesizer and judges the router would pick for ``strategy`` (see ``arm_aliases``)."""
+    picks_synthesizer = strategy.calls_aggregator_model and not strategy.aggregator_model
+    if not picks_synthesizer and strategy.judge == "off":
+        return []
+    found: list[str] = []
+    for task_key in routing.budgets.policies:
+        decision = routing.router.route(strategy=strategy, explicit_type=task_key)
+        if picks_synthesizer and decision.synthesizer_model:
+            found.append(decision.synthesizer_model)
+        if strategy.judge != "off" and decision.judge_model:
+            found.append(decision.judge_model)
+    return found
 
 
 def judge_conflicts(

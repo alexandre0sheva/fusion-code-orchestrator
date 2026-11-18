@@ -427,8 +427,15 @@ async def test_perf_is_measured_in_the_sandbox_with_real_timing_and_memory(tmp_p
         }
     )
     ev = PerfEvaluator()
-    good = await ev.run(put(tmp_path / "g", {"unique.py": fast_code}), task)
-    bad = await ev.run(put(tmp_path / "b", {"unique.py": slow_code}), task)
+    # A machine busy with other tests (pytest -n auto) can make a timing too noisy to score;
+    # the evaluator then says "unstable" on purpose. This test is about a quiet measurement.
+    for _ in range(4):
+        good = await ev.run(put(tmp_path / "g", {"unique.py": fast_code}), task)
+        bad = await ev.run(put(tmp_path / "b", {"unique.py": slow_code}), task)
+        if good.status != "unstable" and bad.status != "unstable":
+            break
+    else:
+        pytest.skip("the timing stayed too noisy to measure in 4 attempts on this machine")
     assert good.status == "measured" and good.ok is True, good.summary
     assert bad.ok is False and bad.metrics["ratio_vs_reference"] > 4
     assert bad.metrics["peak_rss_mb"] > 1  # the harness reports memory too

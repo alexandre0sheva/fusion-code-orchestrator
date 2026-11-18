@@ -231,8 +231,9 @@ the comparison refuses. The vendor is the model's maker, whichever API serves it
 open-weight panel excludes only its own makers' judges. Cost is the scorer's, never the arms'.
 
 **Neutral judges.** `neutral_judges: true` in a study (the `*-v3` suites set it) refuses to plan or
-run it unless every judge's vendor is on no arm: not among the members and aggregators of any arm,
-on every rung `strategy: auto` may climb (`fusion.bench.judges`). Then every task of every arm is
+run it unless every judge's vendor is on no arm: not among the members and aggregators of any arm
+(including the catalog synthesizer the router picks for an aggregator the strategy does not name,
+and an in-run judge), on every rung `strategy: auto` may climb (`fusion.bench.judges`). Then every task of every arm is
 judged by the same impartial judges, instead of the cross-family rule dropping a judge per arm. A
 same-tier spare that stands in for a failed member is not known in advance and is not checked.
 

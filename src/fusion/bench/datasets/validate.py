@@ -426,6 +426,9 @@ def _check_artifact_variants(
             continue  # a gate catches it
         elif not performance and got.completion <= right.completion - rules.flaw_margin:
             continue  # measurably worse
+        elif performance and _timing_unstable(got):
+            # the benchmark gate was not applied, so nothing is known about this flaw's speed
+            found.append(("warning", f"flaw {n}'s timing was too noisy to verify"))
         else:
             found.append(
                 (
@@ -437,6 +440,12 @@ def _check_artifact_variants(
     if visible_pass_fraction(task, None) is None:
         found.append(("warning", "no visible tests: the verified arm cannot check this task"))
     return found
+
+
+def _timing_unstable(assessment: Any) -> bool:
+    """Whether a performance task's perf evidence was too noisy to score (gate unverified)."""
+    perf = next((e for e in assessment.evidence if e.kind == "perf"), None)
+    return perf is not None and perf.status == "unstable"
 
 
 def _is_slow(assessment: Any) -> bool:

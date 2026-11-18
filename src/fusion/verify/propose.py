@@ -251,7 +251,8 @@ def host_crosschecker(files: Mapping[str, bytes], *, seen: Verification) -> Cros
 
     async def check(candidates: list[Candidate]) -> CrossCheckReport:
         seen.candidates = list(candidates)
-        seen.report = host_report(candidates, files)
+        # Normalising reads (and git-checks) the files each patch touches: off the event loop.
+        seen.report = await asyncio.to_thread(host_report, candidates, files)
         return seen.report
 
     return check

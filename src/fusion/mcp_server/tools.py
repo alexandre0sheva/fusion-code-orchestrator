@@ -527,7 +527,7 @@ class FusionTools:
         self, input: FusionAskInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Answer a general coding task using Fusion as a model-like panel."""
-        got = gather_workspace(input, root)
+        got = await asyncio.to_thread(gather_workspace, input, root)
         lessons = await self._lessons(TaskType.DEFAULT, f"{input.prompt}\n{input.context}", root)
         result = await self._ask.ask(
             PipelineFusionAskInput(
@@ -552,7 +552,7 @@ class FusionTools:
         self, input: ReviewDiffInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Review a code diff using multi-model orchestration."""
-        got = gather_workspace(input, root)
+        got = await asyncio.to_thread(gather_workspace, input, root)
         diff = _joined(input.diff, got.diff)
         if not diff.strip():
             msg = f"git diff {input.diff_ref} has no changes under the project root to review"
@@ -583,7 +583,7 @@ class FusionTools:
         self, input: DebugErrorInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Debug an error using multi-model orchestration."""
-        got = gather_workspace(input, root)
+        got = await asyncio.to_thread(gather_workspace, input, root)
         error = input.error_message
         if input.stack_trace:
             error += f"\n\nStack trace:\n{input.stack_trace}"
@@ -611,7 +611,7 @@ class FusionTools:
         self, input: DecideArchitectureInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Make an architecture decision using multi-model orchestration."""
-        got = gather_workspace(input, root)
+        got = await asyncio.to_thread(gather_workspace, input, root)
         query = "\n".join([input.question, input.constraints, *input.options, input.context])
         lessons = await self._lessons(TaskType.ARCHITECTURE_DECISION, query, root)
         result = await self._architecture.decide(
@@ -636,7 +636,7 @@ class FusionTools:
         self, input: PlanFeatureInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Create an implementation plan using multi-model orchestration."""
-        got = gather_workspace(input, root)
+        got = await asyncio.to_thread(gather_workspace, input, root)
         query = f"{input.feature_description}\n{input.constraints}\n{input.context}"
         lessons = await self._lessons(TaskType.IMPLEMENTATION_PLAN, query, root)
         result = await self._plan.plan(
@@ -661,7 +661,7 @@ class FusionTools:
         self, input: DigestInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Cheap models read large material from the project and return a short answer."""
-        got = gather_workspace(input, root)
+        got = await asyncio.to_thread(gather_workspace, input, root)
         if not got.snippets and not got.diff.strip():
             skipped = got.report.skipped_warning() if got.report else None
             msg = f"Nothing to digest: nothing could be read. {skipped or ''}"
@@ -693,7 +693,7 @@ class FusionTools:
         not at all), and the best one returned as a unified diff. Never applied."""
         base = root or default_root()
         config = load_verify_config()
-        got = gather_workspace(input, base)
+        got = await asyncio.to_thread(gather_workspace, input, base)
         reader = WorkspaceReader(base)
         mode, notes = choose_mode(input.verify, config)
         # Host and none modes only normalise patches: they read the files a patch touches. The

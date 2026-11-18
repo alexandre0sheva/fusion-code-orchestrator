@@ -6,6 +6,7 @@ from __future__ import annotations
 import shutil
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -21,6 +22,23 @@ FRONTEND, PERFORMANCE = V1 / "frontend", V1 / "performance"
 def messages(path: Path, **rules: object) -> list[str]:
     report = validate_dataset(path, Rules(**rules))  # type: ignore[arg-type]
     return [f"{i.level}: {i.where}: {i.message}" for i in report.issues]
+
+
+NOISY = "timing was too noisy to verify"
+
+
+def settled_messages(path: Path, attempts: int = 4) -> list[str]:
+    """``messages``, validated again while a timing was too noisy to decide.
+
+    The validator reports a noisy timing as a warning and decides nothing from it, on purpose: on
+    a machine busy with other tests (``pytest -n auto``) a performance task's verdict is then
+    unknown. These tests are about the verdicts, so they need a quiet measurement.
+    """
+    for _ in range(attempts):
+        found = messages(path)
+        if not any(NOISY in m for m in found):
+            return found
+    pytest.skip(f"the timing stayed too noisy to measure in {attempts} attempts on this machine")
 
 
 def edit_task(root: Path, task_id: str, relative: str, old: str, new: str) -> None:
@@ -168,7 +186,7 @@ def test_an_ill_formed_artifact_spec_makes_the_dataset_fail_to_load(truth: dict)
 
 def test_a_sound_performance_task_and_a_sound_page_validate(tmp_path: Path) -> None:
     root = dataset_of(tmp_path, "perf-unique-order", "fe-faq-accordion")
-    assert messages(root) == []
+    assert settled_messages(root) == []
 
 
 ANOTHER_FAST = (
@@ -181,18 +199,55 @@ ANOTHER_FAST = (
 def test_a_performance_task_whose_starting_code_is_already_fast_is_an_error(tmp_path: Path) -> None:
     root = dataset_of(tmp_path, "perf-unique-order")
     (root / "perf-unique-order/repo/unique.py").write_text(ANOTHER_FAST)
-    assert any("already meets the benchmark" in m for m in messages(root))
+    assert any("already meets the benchmark" in m for m in settled_messages(root))
 
 
 def test_a_performance_flaw_that_is_both_correct_and_fast_is_an_error(tmp_path: Path) -> None:
     root = dataset_of(tmp_path, "perf-unique-order")
     fast = (root / "perf-unique-order/reference/solution/unique.py").read_text()
     (root / "perf-unique-order/reference/flaw-1/unique.py").write_text(fast)
-    problems = messages(root)
+    problems = settled_messages(root)
     assert any("flaw 1 passes every gate" in m for m in problems)
     assert not any(
         "flaw 2" in m for m in problems
     )  # the wrong-but-fast one is still caught by a test
+
+
+def test_a_flaw_whose_timing_was_too_noisy_is_a_warning_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A noisy timing leaves the benchmark gate unverified: nothing is known about the flaw's
+    speed, so the validator must not call it "not wrong" (a busy CI runner hit exactly this)."""
+    from fusion.bench.datasets import validate as validate_module
+    from fusion.bench.evaluators.base import Evidence
+    from fusion.bench.scoring.completion import GateResult
+
+    def assessment(perf: Evidence, gate: bool | None, completion: float) -> object:
+        tests = Evidence(kind="tests", ok=True, metrics={"applied": 1.0})
+        gates = [
+            GateResult(id="tests-pass", passed=True),
+            GateResult(id="fast-enough", passed=gate),
+        ]
+        return SimpleNamespace(evidence=[tests, perf], gates=gates, completion=completion)
+
+    fast = Evidence(kind="perf", ok=True)
+    slow = Evidence(kind="perf", ok=False)
+    noisy = Evidence(kind="perf", status="unstable")
+    # solution, unpatched code, flaw 1 (noisy), flaw 2 (caught by its gate)
+    queue = [
+        assessment(fast, True, 1.0),
+        assessment(slow, False, 0.0),
+        assessment(noisy, None, 1.0),
+        assessment(slow, False, 0.0),
+    ]
+
+    async def fake_assess(*_: object) -> object:
+        return queue.pop(0)
+
+    monkeypatch.setattr(validate_module, "assess", fake_assess)
+    found = messages(dataset_of(tmp_path, "perf-unique-order"))
+    assert "warning: perf-unique-order: flaw 1's timing was too noisy to verify" in found
+    assert not any(m.startswith("error:") for m in found), found
 
 
 def test_a_reference_that_is_no_faster_than_the_starter_cannot_tell_fast_from_slow(
@@ -204,7 +259,7 @@ def test_a_reference_that_is_no_faster_than_the_starter_cannot_tell_fast_from_sl
     (root / "perf-unique-order/reference/solution/unique.py").write_text(
         slow.replace("result", "found")
     )
-    assert any("already meets the benchmark" in m for m in messages(root))
+    assert any("already meets the benchmark" in m for m in settled_messages(root))
 
 
 def test_a_page_flaw_that_is_as_good_as_the_solution_is_an_error(tmp_path: Path) -> None:
