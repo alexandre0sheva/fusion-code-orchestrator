@@ -555,6 +555,74 @@ cheapest (`gpt-luna`) for the rubric items the keywords cannot settle, and the a
 frontend and performance tasks, which needs a judge from no arm's vendor, is skipped for panels
 (those tasks keep their measured scores). Say so whenever quoting a score.
 
+### Tuning the prompts (`fusion tune`)
+
+`fusion tune` improves Fusion's own prompts, the **prompt pack** (`src/fusion/config/prompts/*.md`,
+described in [CONFIGURATION.md](CONFIGURATION.md#prompt-pack)), by Harness²'s Propose–Probe–Compose,
+on the **dev split only**: the test split is never loaded for probing, so the headline study stays
+untouched by tuning.
+
+```bash
+fusion tune --mock                                   # free, simulated: shows the procedure
+fusion tune --arm auto --limit 24 --max-usd 2        # live: probes are ordinary capped bench runs
+fusion tune --mode deep --k 4 --axes inv --max-usd 1
+```
+
+1. **Slices.** `--limit` dev tasks (spread over categories) are split, per category and seeded,
+   into tuning tasks and a held-out slice (`--holdout`, default 25%).
+2. **Probe the base.** The arm (`--arm`, default `auto`) runs on the tuning tasks with the pack in
+   use. A probe is an ordinary bench run (`run_bench` with the pack active), so the response
+   cache, the run's cap and the live-spend ledger apply to it.
+3. **Propose (wide, the default).** For each axis, K proposers (`--k`, default 3) each suggest one
+   edit to one prompt of that axis: **INV** (procedure: output shape and verification steps:
+   `rules`, `claims`, `select`, `self_check`, the judge and synthesizer roles) or **DOM** (coding
+   knowledge per task type: the reviewer, debugger, architect and planner roles, `task.default`).
+   A proposer sees the axis's prompts, the base's mean quality and solved share per task type and
+   the edits proposed before it; never a task.
+4. **Validate, then probe each edit alone.** An edit must name a prompt of its axis, keep every
+   `{{placeholder}}` (the untrusted-input rules among them), keep each prompt under 4,000
+   characters and the pack's growth under 1,500, and contain no line of grader material (truth
+   points, decoys, hidden tests, reference solutions, rubrics, from every split). An invalid edit
+   is recorded and never probed; one that leaks is not even shown again.
+5. **Compare.** On the tasks both probes scored: the mean per-task quality difference with a
+   task-clustered 95% bootstrap interval. The **noise band** is the larger of half that interval
+   and `--min-gain` (0.02). Verdict: `helped` (the difference clears the band), `hurt` (it falls
+   below minus the band), `no_effect`, or `confounded` (it clearly helped one task type and hurt
+   another, or jobs failed so the probes rest on different tasks). Only a task type with at least
+   `--min-category-tasks` (2) compared tasks counts here: one task moving either way is noise, and
+   the verdict's reason names such task types instead.
+6. **Compose.** K composers build finals from the measured edits (the behavioural contrasts):
+   composer 1 merges every edit that helped (appends by gain; the best `replace` of a prompt wins),
+   the others are model calls that may narrow a `confounded` edit to the task types it helped.
+   Finals are validated and probed like proposals.
+7. **Keep and confirm.** The best final is kept only if it beats the base by more than the noise
+   band; it is then probed once on the held-out slice, with the base, and adopted when it holds up
+   there (a positive mean effect that is neither `hurt` nor `confounded`; the slice is too small to
+   ask for the band again).
+
+**Deep mode** (`--mode deep`) runs K rounds instead, alternating axes: each round proposes one
+edit to the best pack so far and keeps it only if it beats that pack; the result is confirmed on
+the held-out slice the same way.
+
+**Output** (`bench-results/tune/<id>/`): `evidence.md` (each edit, its effect with interval and
+band, by task type, and its verdict), `pack.diff` (the adopted pack against the base; empty when
+nothing was adopted), `pack/` (the adopted pack, for `FUSION_PROMPT_PACK`) and `tune.json`. Nothing
+changes in use until you point `FUSION_PROMPT_PACK` at that directory (or copy files into
+`config/prompts/`).
+
+**Money.** A live run needs `--max-usd`; it is shared by every probe and every proposer and
+composer call, each checked against what is left and against the live-spend ledger (stopping at
+$14.50 of the $15 cap). When either would be passed, the run stops cleanly and still writes what
+it measured. A run makes at most `1 + axes × K + K + 2` probes (wide) or `K + 3` (deep), and prints
+the planner's estimate of one probe before it starts. The proposer and composer default to a
+judge-role model (`--tuner-model` names another).
+
+**Simulated runs** cannot learn anything about wording, since a simulated model ignores it. For
+`--mock`, the simulator plants effects instead: the simulated proposer appends one of a few fixed
+sentences (`providers/simulated_tune.py`) and a panel call whose prompt contains one gets a skill
+change on the task types listed with it, so a mock run shows every verdict. **These effects are
+made up**: a mock run tests the procedure, never that an edit helps a real model.
+
 ### Statistics, reports and how to read them
 
 `fusion bench report RUN` turns a run's items into statistics, verdicts and a report: `--format md`

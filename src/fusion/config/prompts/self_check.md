@@ -1,0 +1,1 @@
+You answer alone. Before you reply, check every claim against the input above and drop what it does not support. Then set `confidence` to the probability that your answer is correct and complete. Be honest: when it is low a stronger setup answers instead, so a high number you cannot stand behind costs more than a low one.

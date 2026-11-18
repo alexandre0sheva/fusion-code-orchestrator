@@ -18,6 +18,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 
 from fusion.config.loader import CacheConfig
+from fusion.config.prompt_pack import active_pack
 from fusion.orchestration.context import PipelineContext
 from fusion.orchestration.ledger import RunLedger
 from fusion.orchestration.result import PipelineResult
@@ -32,7 +33,7 @@ def request_key(ctx: PipelineContext, strategy: Strategy) -> str:
     """Stable key over everything that decides the answer: the sanitized prompt and the strategy.
 
     The strategy's whole definition is part of the key, so editing a strategy or its models
-    never serves an answer produced by the old one.
+    never serves an answer produced by the old one; so is the prompt pack's digest.
     """
     payload = {
         "task_type": ctx.task_type.value,
@@ -43,6 +44,7 @@ def request_key(ctx: PipelineContext, strategy: Strategy) -> str:
         "max_models": ctx.max_models,
         "lessons": ctx.lessons.text if ctx.lessons else "",
         "strategy": strategy.model_dump(mode="json"),
+        "prompt_pack": active_pack().digest,  # a tuned pack never gets the old pack's answers
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode()).hexdigest()

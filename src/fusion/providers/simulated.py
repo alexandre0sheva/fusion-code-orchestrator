@@ -21,7 +21,7 @@ import hashlib
 import json
 import math
 import random
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from statistics import NormalDist
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -37,6 +37,7 @@ from fusion.providers.base import (
 from fusion.providers.mock import MockProvider
 from fusion.providers.simulated_coding import coding_checks, coding_patch
 from fusion.providers.simulated_judge import JUDGE_ROLE, judge_reply
+from fusion.providers.simulated_tune import TUNE_COMPOSER_ROLE, TUNE_PROPOSER_ROLE, tune_reply
 
 if TYPE_CHECKING:
     from fusion.bench.spec import BenchTask, CodingTruth, TruthPoint
@@ -127,6 +128,7 @@ class SimWorld:
         seed: int = 0,
         shared_difficulty: float = 0.45,  # share of a point's difficulty common to all models
         family_difficulty: float = 0.20,  # share common to models of one family
+        prompt_effects: Mapping[str, Mapping[str, float]] | None = None,
     ) -> None:
         if shared_difficulty + family_difficulty >= 1.0:
             msg = "shared_difficulty + family_difficulty must leave room for a model's own luck"
@@ -137,6 +139,17 @@ class SimWorld:
         self.seed = seed
         self.shared = shared_difficulty
         self.family = family_difficulty
+        # marker text -> {category or "*": skill change} for panel calls whose prompt has it
+        # (``fusion tune --mock``; see ``simulated_tune``). Empty: wording changes nothing.
+        self.prompt_effects = {m: dict(e) for m, e in (prompt_effects or {}).items()}
+
+    def prompt_bonus(self, text: str, category: str) -> float:
+        """The skill change the planted prompt effects give a call whose prompt is ``text``."""
+        bonus = 0.0
+        for marker, effect in self.prompt_effects.items():
+            if marker in text:
+                bonus += effect.get(category, effect.get("*", 0.0))
+        return bonus
 
     def task_for(self, text: str) -> BenchTask | None:
         """The task whose prompt appears in ``text`` (the longest match wins)."""
@@ -325,6 +338,9 @@ class SimulatedProvider(ModelProvider):
     def _answer(
         self, request: ModelRequest, spec: SimModel, role: str, prompt: str, task: BenchTask | None
     ) -> str:
+        if role in (TUNE_PROPOSER_ROLE, TUNE_COMPOSER_ROLE):
+            reply = tune_reply(role, request.metadata.get("tune"))
+            return reply if reply is not None else self._canned(request)
         if role == JUDGE_ROLE:
             reply = judge_reply(
                 request.metadata.get("judge"),
@@ -340,11 +356,14 @@ class SimulatedProvider(ModelProvider):
         shift = _DIFFICULTY_SHIFT[task.difficulty]
         model = request.model_id
         if role == "panel":
+            skill = spec.skill + self.world.prompt_bonus(
+                request.system_text() + "\n" + prompt, task.category
+            )
             points = [
                 p
                 for p in truth.points
                 if self.world.hit(
-                    spec.skill + shift,
+                    skill + shift,
                     model=model,
                     spec=spec,
                     task=task,
@@ -357,7 +376,7 @@ class SimulatedProvider(ModelProvider):
                 d
                 for d in truth.decoys
                 if self.world.hit(
-                    (1.0 - spec.skill) * 0.5,
+                    (1.0 - min(max(skill, 0.0), 1.0)) * 0.5,
                     model=model,
                     spec=spec,
                     task=task,

@@ -85,6 +85,7 @@ fusion ask "How should I retry a failed HTTP call?"
 | `fusion config paths\|show\|validate`, `fusion strategies list`, `fusion models list\|check` | Configuration, strategies, the model catalog |
 | `fusion doctor` | Is this machine ready? See [below](#fusion-doctor) |
 | `fusion dashboard [--port 8765]` | A read-only local web view of spend, runs, benchmarks and configuration; see [Dashboard](#dashboard) |
+| `fusion tune [--mock] [--arm A] [--mode wide\|deep] [--k K] [--axes inv,dom] [--limit N] [--max-usd USD]` | Tune the [prompt pack](#prompt-pack) on the dev split: probe proposed edits, compose a final, confirm it on held-out tasks; writes a pack diff and an evidence table ([Tuning](BENCHMARKING.md#tuning-the-prompts-fusion-tune)) |
 | `fusion bench ...`, `fusion install ...`, `fusion mcp`, `fusion init`, `fusion version` | [Benchmarks](BENCHMARKING.md), [client setup](INTEGRATIONS.md), the MCP server, a starter config |
 
 **Flags every run command shares.** The main input is an argument, `-f/--file` or stdin (`-`).
@@ -199,6 +200,7 @@ Restart the shell afterwards. Completion covers commands, subcommands and flags.
 | `FUSION_DATA_DIR` | Directory holding `runs.db` | platform data dir |
 | `FUSION_PROJECT_DIR` | Directory whose `.fusion/config.yaml` is the project layer | working directory |
 | `FUSION_BENCH_DIR` | Where benchmark runs, their database, the response cache and `spend.json` live | `bench-results` under the project directory |
+| `FUSION_PROMPT_PACK` | Directory of prompt files that replace the shipped ones of the same name ([Prompt pack](#prompt-pack)), such as the `pack/` a `fusion tune` run adopted | unset (the shipped pack) |
 | `FUSION_BROWSER_PATH` | Chromium or Chrome binary the optional `[bench-visual]` evaluators use instead of Playwright's own download | Playwright's Chromium |
 | `FUSION_JUDGE_ACCURACY_FLOOR` | Accuracy (0 to 1) the agentic judge must reach in its latest `calibrate-judge --artifacts` run for a study to get a headline verdict ([BENCHMARKING.md](BENCHMARKING.md#frontend-and-performance-tasks-evidence-and-the-agentic-judge)) | `0.8` |
 | `FUSION_SANDBOX_ISOLATION` | Benchmark sandbox: `auto` uses network and write isolation when the platform has it, `require` refuses to run without it, `off` disables it ([SECURITY.md](../SECURITY.md#benchmark-sandbox)) | `auto` |
@@ -693,6 +695,29 @@ root. When `FUSION_DB_PATH` points inside the project, the library stays off for
 `fusion library list|show|forget` reads and deletes them; `--root DIR` names the project (default:
 `FUSION_READ_ROOT`, else the current directory), so run them from the project or pass the same
 root the MCP client uses.
+
+## Prompt pack
+
+The prompts that decide how the panel answers are data, not code: one Markdown file per prompt in
+`src/fusion/config/prompts/`, edited without touching Python and tuned by `fusion tune`
+([BENCHMARKING.md](BENCHMARKING.md#tuning-the-prompts-fusion-tune)).
+
+| File | Axis | Used as |
+|------|------|---------|
+| `rules.md` | INV | the rules every system prompt ends with; must keep `{{untrusted_rules}}` |
+| `claims.md` | INV | the panel's answer format (summary and atomic claims) |
+| `select.md` | INV | how the `select` aggregator ranks candidates; must keep `{{shape}}` |
+| `self_check.md` | INV | rung 0's self-check under `strategy: auto` |
+| `role.judge.md`, `role.synthesizer.md` | INV | the judge and synthesizer roles |
+| `role.coding_reviewer.md`, `role.debugging_hypothesis.md`, `role.architecture_advisor.md`, `role.implementation_planner.md` | DOM | the roles, and the system prompt of code review, debugging, architecture and plans |
+| `role.security_reviewer.md`, `role.performance_reviewer.md` | DOM | review personas a strategy can name (`role:`) |
+| `task.default.md` | DOM | the system prompt of every other request |
+
+To use another pack, point `FUSION_PROMPT_PACK` at a directory holding the files to replace; the
+others stay as shipped. Fusion checks the pack when it first builds a prompt and refuses a file
+that is not a prompt of the pack, an empty prompt, and a `{{placeholder}}` that is unknown or
+missing. The pack's digest is part of the response-cache key, and of a benchmark job's key when it
+is not the shipped pack, so answers made with one pack are never served for another.
 
 ## Modes
 

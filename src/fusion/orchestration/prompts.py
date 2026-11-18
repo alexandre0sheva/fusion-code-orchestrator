@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, NamedTuple
 
+from fusion.config.prompt_pack import PROMPT_SPECS, active_pack
 from fusion.routing.classifier import TaskType, canonical_task_key
 from fusion.security.untrusted import UNTRUSTED_RULES, wrap_untrusted
 
@@ -13,87 +14,42 @@ if TYPE_CHECKING:
     from fusion.orchestration.claims import ClaimCluster
     from fusion.orchestration.lenses import Lens
 
-_STRUCTURED_OUTPUT_RULES = f"""
-Rules for your response:
-- Use ONLY the context provided below; do not invent files, APIs, or behaviors not in context.
-- State assumptions explicitly when information is missing.
-- Separate facts (from context) from recommendations (your judgment).
-- Identify uncertainty and caveats; do not overstate confidence.
-- For coding tasks, include a test strategy and risk notes.
-- Return valid JSON matching the requested schema exactly.
-- {UNTRUSTED_RULES}
-"""
+# The prompts tuning may edit live in the prompt pack (``config/prompts/*.md``, read through
+# ``active_pack``); this module adds the structure around them.
+
+
+def _rules() -> str:
+    """The rules every system prompt ends with (pack prompt ``rules``)."""
+    return "\n" + active_pack().render("rules", untrusted_rules=UNTRUSTED_RULES) + "\n"
+
+
+def _claim_rules() -> str:
+    """The panel's answer format (pack prompt ``claims``)."""
+    return "\n" + active_pack().text("claims") + "\n"
+
 
 # Task types whose main input is material to analyse (a diff, an error, an answer to grade), not
 # the caller's own instruction. An ask, an architecture question or a feature request is the
 # instruction itself and is left outside the delimiters.
 _MATERIAL_TASKS = frozenset({"code_review", "debugging", "answer_eval"})
 
-_CLAIM_RULES = """
-## Output Format
-Answer with one JSON object: a short `summary` and a list of `claims`. A claim is ONE atomic
-statement; do not bundle several points into one claim.
-- `kind`: finding (something wrong or notable in the input), hypothesis (a possible cause),
-  recommendation (something to do), risk (something that could go wrong), test (something to
-  verify).
-- `severity`: low, med, high or critical for findings, hypotheses and risks; null otherwise.
-- `file` and `line`: where it applies, copied from the input; null when you do not know. Never
-  invent a path or line number.
-- `evidence`: a short exact quote, copied character for character from the input, that supports
-  the claim; null if there is none. Never paraphrase it: it is checked against the input.
-- `confidence`: how sure you are of the whole answer, 0 to 1.
-- `none_found`: true when there is nothing to report; `claims` is then empty. That is a valid,
-  complete answer: never invent a claim to fill the list.
-Unless `none_found` is true, include at least one `test` claim for coding tasks. Put every point
-in `claims`, not only in `summary`.
-"""
+_ROLES = tuple(sorted(n.removeprefix("role.") for n in PROMPT_SPECS if n.startswith("role.")))
+_DEFAULT_ROLE = "coding_reviewer"
 
-_ROLE_PROMPTS: dict[str, str] = {
-    "coding_reviewer": (
-        "You are a senior software engineer performing a thorough code review. "
-        "Identify bugs, maintainability issues, and missing tests. Be specific and actionable."
-    ),
-    "security_reviewer": (
-        "You are a security-focused code reviewer. Identify vulnerabilities, "
-        "injection risks, auth flaws, secret exposure, and unsafe defaults."
-    ),
-    "performance_reviewer": (
-        "You are a performance engineer reviewing code changes. "
-        "Identify bottlenecks, N+1 queries, memory leaks, and scalability concerns."
-    ),
-    "debugging_hypothesis": (
-        "You are an expert debugger. Generate ranked hypotheses for the root cause "
-        "with verification steps and a minimal fix strategy."
-    ),
-    "architecture_advisor": (
-        "You are a software architect. Evaluate trade-offs, recommend an approach, "
-        "and document rejected alternatives with risks and reversibility."
-    ),
-    "implementation_planner": (
-        "You are a technical lead creating an implementation plan. "
-        "Break work into phases with affected modules, API changes, and tests to add."
-    ),
-    "judge": (
-        "You are an evaluation judge. Score responses on 0.0-1.0 dimensions. "
-        "Return only valid JSON with scores and brief reasons."
-    ),
-    "synthesizer": (
-        "You are a synthesis expert. Merge panel responses into a unified, "
-        "action-ready recommendation. Preserve caveats and do not add unsupported claims."
-    ),
-}
-
+# The system prompt of each task type: a role's prompt, or ``task.default``.
 _TASK_SYSTEM_PROMPTS: dict[str, str] = {
-    "code_review": _ROLE_PROMPTS["coding_reviewer"],
-    "debugging": _ROLE_PROMPTS["debugging_hypothesis"],
-    "architecture_decision": _ROLE_PROMPTS["architecture_advisor"],
-    "implementation_plan": _ROLE_PROMPTS["implementation_planner"],
-    "answer_eval": _ROLE_PROMPTS["judge"],
-    "default": (
-        "You are a senior software engineer answering as a practical coding model. "
-        "Give Claude Code an answer it can directly use to inspect, edit, test, or decide."
-    ),
+    "code_review": "role.coding_reviewer",
+    "debugging": "role.debugging_hypothesis",
+    "architecture_decision": "role.architecture_advisor",
+    "implementation_plan": "role.implementation_planner",
+    "answer_eval": "role.judge",
+    "default": "task.default",
 }
+
+
+def _role_text(role: str) -> str:
+    return active_pack().text(f"role.{role if role in _ROLES else _DEFAULT_ROLE}")
+
 
 _SYNTHESIS_SCHEMAS: dict[str, dict[str, str]] = {
     "code_review": {
@@ -159,22 +115,21 @@ _SYNTHESIS_SCHEMAS: dict[str, dict[str, str]] = {
 
 def role_names() -> frozenset[str]:
     """Names accepted for a panel member's ``role``."""
-    return frozenset(_ROLE_PROMPTS)
+    return frozenset(_ROLES)
 
 
 def get_role_prompt(role: str) -> str:
     """Return the system prompt for a panel role."""
-    base = _ROLE_PROMPTS.get(role, _ROLE_PROMPTS["coding_reviewer"])
-    return f"{base}\n{_STRUCTURED_OUTPUT_RULES}"
+    return f"{_role_text(role)}\n{_rules()}"
 
 
 def get_system_prompt(task_type: TaskType, *, role: str | None = None) -> str:
     """Return the system prompt for a task type or explicit role."""
-    if role and role in _ROLE_PROMPTS:
+    if role and role in _ROLES:
         return get_role_prompt(role)
     key = canonical_task_key(task_type)
-    base = _TASK_SYSTEM_PROMPTS.get(key, _TASK_SYSTEM_PROMPTS["default"])
-    return f"{base}\n{_STRUCTURED_OUTPUT_RULES}"
+    name = _TASK_SYSTEM_PROMPTS.get(key, _TASK_SYSTEM_PROMPTS["default"])
+    return f"{active_pack().text(name)}\n{_rules()}"
 
 
 class UserPrompt(NamedTuple):
@@ -228,7 +183,7 @@ def compose_user_prompt(
         rest.append(f"\n## Lessons From Earlier Runs\n{wrap_untrusted(lessons)}")
     rest.append(f"\n## {'Input' if material else 'Request'}\n{primary}")
     rest.append(
-        _CLAIM_RULES
+        _claim_rules()
         if claims
         else "\n## Output Format\nRespond with structured analysis. "
         "Include test strategy and risk notes for coding tasks."
@@ -260,7 +215,7 @@ def build_user_prompt(
 def role_instruction(role: str) -> str:
     """A panel member's role, appended after the shared prompt so every member sends the same
     system prompt and prompt prefix."""
-    return f"\n\n## Your Role\n{_ROLE_PROMPTS.get(role, _ROLE_PROMPTS['coding_reviewer'])}"
+    return f"\n\n## Your Role\n{_role_text(role)}"
 
 
 def lens_instruction(lens: Lens, others: list[Lens] | None = None) -> str:
@@ -311,15 +266,7 @@ def approach_instruction(approach: Approach) -> str:
 def self_check_instruction() -> str:
     """Rung 0 of strategy auto: one model answers alone, so it checks its own answer and its
     confidence decides whether a stronger setup is asked (``routing.escalation.triggers``)."""
-    return "\n".join(
-        [
-            "\n\n## Self-check",
-            "You answer alone. Before you reply, check every claim against the input above and "
-            "drop what it does not support. Then set `confidence` to the probability that your "
-            "answer is correct and complete. Be honest: when it is low a stronger setup answers "
-            "instead, so a high number you cannot stand behind costs more than a low one.",
-        ]
-    )
+    return "\n\n## Self-check\n" + active_pack().text("self_check")
 
 
 _PATCH_FIELD = (
@@ -359,7 +306,7 @@ def build_synthesis_prompt(
     for model_name, content in panel_responses:
         parts.append(f"\n## Response from {model_name}\n{wrap_untrusted(content)}")
     parts.append(f"\n## Required JSON Schema\n{json.dumps(schema, indent=2)}")
-    parts.append(_STRUCTURED_OUTPUT_RULES)
+    parts.append(_rules())
     if lensed:
         parts.append(
             "\nEach response covered one area (its lens, named in its heading), so most points "
@@ -435,7 +382,7 @@ def build_refinement_prompt(
         "- Return the complete improved answer as the same JSON object as before "
         "(summary and claims)."
     )
-    parts.append(_STRUCTURED_OUTPUT_RULES)
+    parts.append(_rules())
     return "\n".join(parts)
 
 
@@ -548,23 +495,7 @@ def build_select_prompt(
         if patch
         else "the shape the task asks for (a plan, a decision with its reasons, an answer)"
     )
-    parts.append(
-        "\n## How to decide\n"
-        "Go through the criteria in this order; a later one only breaks a tie on the earlier "
-        "ones.\n"
-        "1. Delivery: it answers what the task asked, not a neighbouring question.\n"
-        f"2. Conformance: it has {shape}.\n"
-        "3. Fidelity: check every specific it states (files, names, numbers, behaviour) against "
-        "the task and its supplied material. Reject invented specifics. Where the material is "
-        "silent, prefer the candidate that says it is silent over one that guesses.\n"
-        "4. Internal consistency: its steps, reasons and conclusion do not contradict each "
-        "other.\n"
-        "5. Operational fitness: someone could act on it as written, and it names how to check "
-        "that it worked.\n"
-        "6. Finish: clarity and completeness of what remains.\n"
-        "Length and polish are not merit: a longer, more confident or better formatted "
-        "candidate is not better for being so."
-    )
+    parts.append("\n## How to decide\n" + active_pack().render("select", shape=shape))
     output = [
         "\n## Output",
         f"Return JSON: `why` (at most {SELECT_OUTPUT_LINES} short lines: the criterion that "

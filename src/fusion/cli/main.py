@@ -2,8 +2,8 @@
 
 The rest lives next to what it does: ``run_cmds`` (ask, review-diff, debug, decide, plan,
 eval-answer), ``runs_cmds``, ``library_cmds``, ``config_cmds``, ``doctor``, ``models_cmd``,
-``fusion.bench.cli`` and ``fusion.install.cli``. ``fusion.cli.app`` re-exports ``app`` for older
-imports.
+``fusion.bench.cli``, ``fusion.tune.cli`` and ``fusion.install.cli``. ``fusion.cli.app``
+re-exports ``app`` for older imports.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from fusion.config.layers import ConfigError, parse_scalar, set_cli_overrides
 from fusion.install.cli import install_app
 from fusion.install.common import InstallError
 from fusion.storage.run_store import RunStore
+from fusion.tune.cli import tune_cmd
 
 # Raised to leave the command line or to report a usage error; Typer shows and exits for these
 # itself, so they pass through untouched. (Typer carries its own copy of Click, so `click`'s
@@ -100,6 +101,7 @@ app.add_typer(install_app, name="install")
 run_cmds.register(app)
 doctor.register(app)
 dashboard_cmd.register(app)
+app.command("tune")(tune_cmd)
 
 load_env()
 

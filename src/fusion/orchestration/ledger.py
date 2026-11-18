@@ -33,6 +33,7 @@ StageName = Literal[
     "solo",
     "eval",
     "library",
+    "tune",
 ]
 CallStatus = Literal["success", "failed", "timeout", "cancelled", "missing_provider"]
 

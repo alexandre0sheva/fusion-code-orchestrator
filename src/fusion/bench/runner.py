@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,6 +49,7 @@ from fusion.bench.store import (
 from fusion.config.layers import ConfigError
 from fusion.config.loader import RoutingPoliciesConfig, load_routing_policies
 from fusion.config.paths import bench_results_dir
+from fusion.config.prompt_pack import active_pack, packaged_pack
 from fusion.evals.engine import EvalEngine
 from fusion.orchestration.context import PipelineContext
 from fusion.orchestration.factory import build_provider_registry
@@ -95,10 +96,12 @@ def build_env(
     *,
     results_dir: Path | None = None,
     providers: bool = True,
+    prompt_effects: Mapping[str, Mapping[str, float]] | None = None,
 ) -> BenchEnv:
     """The environment for ``cfg``: simulated providers for ``--mock``, real ones otherwise.
 
     ``providers=False`` builds none (planning only needs the catalog, not API keys).
+    ``prompt_effects`` plants prompt effects in the simulated world (``fusion tune --mock``).
     """
     root = results_dir or bench_results_dir()
     registry = ModelRegistry.for_mode(use_mock=False)
@@ -112,7 +115,9 @@ def build_env(
         "store": store,
     }
     if cfg.mock:
-        return _mock_env(cfg, tasks, root, **common)  # type: ignore[arg-type]
+        return _mock_env(
+            cfg, tasks, root, prompt_effects=prompt_effects, **common  # type: ignore[arg-type]
+        )
     live = build_provider_registry(use_mock=False) if providers else {}
     cache = ResponseDiskCache(root / "cache") if cfg.cache else None
     if cache is not None:
@@ -136,9 +141,10 @@ def _mock_env(
     book: StrategyBook,
     routing_config: RoutingPoliciesConfig,
     store: BenchStore,
+    prompt_effects: Mapping[str, Mapping[str, float]] | None = None,
 ) -> BenchEnv:
     """Simulated twins of every catalog provider: same models and prices, no network, no spend."""
-    world = SimWorld(tasks, seed=cfg.seed)
+    world = SimWorld(tasks, seed=cfg.seed, prompt_effects=prompt_effects)
     catalog = pricing.catalog
     limits = catalog.provider_limits
     providers: dict[str, ModelProvider] = {}
@@ -196,7 +202,8 @@ def job_key(
     """Hash of everything that decides a job's result; the same job has the same key forever.
 
     For ``strategy: auto`` that includes the ladder, every rung's strategy and the difficulty
-    settings (``routing``), so recalibrating a threshold starts the arm's jobs afresh.
+    settings (``routing``), so recalibrating a threshold starts the arm's jobs afresh. A prompt
+    pack other than the shipped one (``fusion tune``, ``FUSION_PROMPT_PACK``) is part of it too.
     """
     used = routing.ladder(strategy) if routing is not None else [strategy]
     models = {
@@ -213,6 +220,9 @@ def job_key(
         "seed": seed,
         "redact": redact,
     }
+    pack = active_pack()  # the shipped pack adds nothing, so older runs keep their keys
+    if pack.digest != packaged_pack().digest:
+        fields["prompt_pack"] = pack.digest
     if strategy.kind == "auto" and routing is not None:
         fields["ladder"] = {
             "escalation": routing.escalation_for(strategy).model_dump(mode="json"),
@@ -340,9 +350,14 @@ async def run_bench(
     run_id: str | None = None,
     on_item: Callable[[BenchItem, BenchProgress], None] | None = None,
     retry_halted: bool = False,
+    tasks: list[BenchTask] | None = None,
 ) -> BenchRun:
-    """Run (or resume, when ``run_id`` names an existing run) the study ``cfg`` describes."""
-    tasks = select_tasks(load_dataset(cfg.dataset, cfg.split), cfg.limit, cfg.seed, cfg.quota)
+    """Run (or resume, when ``run_id`` names an existing run) the study ``cfg`` describes.
+
+    ``tasks`` replaces the dataset's selection (``fusion tune`` probes slices of the dev split).
+    """
+    if tasks is None:
+        tasks = select_tasks(load_dataset(cfg.dataset, cfg.split), cfg.limit, cfg.seed, cfg.quota)
     env = env or build_env(cfg, tasks)
     unknown = [m for m in cfg.judge_models if m not in env.registry.models]
     if unknown:

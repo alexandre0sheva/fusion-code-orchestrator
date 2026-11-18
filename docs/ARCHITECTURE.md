@@ -96,7 +96,11 @@ they are under test; role fallbacks (`panel`, `judge`, `synthesizer`) come from 
 whichever registry is in use. A panel model's persona prompt comes from its catalog `persona`
 field; models without one answer with the task's own system prompt.
 
-Panel members receive role prompts defined in `src/fusion/orchestration/prompts.py`.
+`src/fusion/orchestration/prompts.py` builds every prompt; the parts `fusion tune` may edit (the
+rules, the claim format, the select criteria, the self-check and the role prompts) come from the
+prompt pack (`config/prompt_pack.py`, files in `config/prompts/`; see
+[CONFIGURATION.md](CONFIGURATION.md#prompt-pack)), read through `active_pack()`, which a tuning probe
+switches with `use_prompt_pack` for the length of one bench run.
 
 ## Components
 
@@ -767,8 +771,9 @@ uv run fusion runs export --format jsonl
 | `sandbox.py`, `patch.py` | the `Sandbox` context manager (limits, scrubbed environment, isolation) and patch extraction and application; used only by benchmark scorers, the verifier and the cross-check (`fusion.verify`, see [Verified generation](#verified-generation-checks-and-the-cross-check)), never by MCP, see [SECURITY.md](../SECURITY.md#benchmark-sandbox) |
 | `virtual.py` | an event loop with a virtual clock, used for simulated runs, and `offload` for blocking work |
 | `cli.py` | the `fusion bench` commands |
+| `fusion.tune` | `fusion tune` ([BENCHMARKING.md](BENCHMARKING.md#tuning-the-prompts-fusion-tune)): `propose` (edits, their validation and the proposer and composer calls), `probe` (a pack run on a slice through `run_bench`, the paired comparison, noise band and verdict), `compose` (the merge composer and the contrasts composers read), `run` (wide and deep modes, the held-out confirmation, the outputs), `cli` |
 
-`providers/simulated.py` holds the simulated models, `providers/simulated_judge.py` the way they play a judge (including the agentic tool protocol) and `providers/simulated_coding.py` the patches (and, for `verified-synth`, the checks) they write for coding tasks. The runner builds an ordinary `BasePipeline`
+`providers/simulated.py` holds the simulated models, `providers/simulated_judge.py` the way they play a judge (including the agentic tool protocol) and `providers/simulated_coding.py` the patches (and, for `verified-synth`, the checks) they write for coding tasks. `providers/simulated_tune.py` holds the simulated proposer and composer and the prompt effects planted for `fusion tune --mock`. The runner builds an ordinary `BasePipeline`
 over a strategy book extended with the study's arms and calls `run(..., mode=Mode.BENCHMARK)` with a
 `RunLedger` of its own, so a failed run's spending is still known; nothing in the pipeline knows it
 is being benchmarked beyond the mode.
