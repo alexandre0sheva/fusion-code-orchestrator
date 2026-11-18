@@ -195,6 +195,70 @@ class DigestInput(_OrchestrationInput):
         return self
 
 
+VERIFY_DESCRIPTION = (
+    "Where the panel's checks run. sandbox (default): Fusion copies the project (never ignored "
+    "or secret files) to a temporary directory and runs every check and `tests_cmd` there, with "
+    "no network and no writes outside the copy, then deletes it; your project is only read. "
+    "host: Fusion runs nothing and returns the top two candidates and the checks for you to run, "
+    "then pick with fusion_select_patch. none: no checks, one patch is selected. Where the "
+    "sandbox is off or unavailable, sandbox falls back to host and the warnings say so"
+)
+TESTS_CMD_DESCRIPTION = (
+    "A shell command that runs the project's tests from the project root, such as "
+    "'python -m pytest -q tests/test_parser.py'. In sandbox mode it runs only in the temporary "
+    "copy (no network: the tools it needs must already be installed) and counts as a check every "
+    "candidate must pass. Omit it when there are no tests to run"
+)
+Cell = Literal["pass", "fail", "error", "timeout"]
+
+
+class ProposePatchInput(_OrchestrationInput):
+    """Input for fusion_propose_patch: candidate patches, cross-checked, one returned as text."""
+
+    task: str = Field(description="The change to make, stated so it stands alone")
+    tests_cmd: str | None = Field(
+        default=None, min_length=1, max_length=2000, description=TESTS_CMD_DESCRIPTION
+    )
+    verify: Literal["sandbox", "host", "none"] = Field(
+        default="sandbox", description=VERIFY_DESCRIPTION
+    )
+    strategy: str | None = Field(
+        default=None,
+        description=(
+            "Strategy name; default verified-synth (three cheap models, each writing a patch and "
+            "the checks that judge any fix). With verify=none the default is panel-nano-select"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _needs_code(self) -> ProposePatchInput:
+        if not self.reads_workspace and not self.file_snippets:
+            msg = "name the code to change: `paths`, `globs` or `diff_ref` (or `file_snippets`)"
+            raise ValueError(msg)
+        return self
+
+
+class SelectPatchInput(BaseModel):
+    """Input for fusion_select_patch: the host's check results for a host-mode proposal."""
+
+    run_id: str = Field(description="The run_id of the host-mode fusion_propose_patch response")
+    results: dict[str, dict[str, Cell]] = Field(
+        min_length=1,
+        description=(
+            "For each candidate you tried (its id from the proposal), each check's result with "
+            "that candidate applied: {candidate: {check id: pass|fail|error|timeout}}. Add your "
+            "own test command's result under a new id such as 'tests': it counts in full"
+        ),
+    )
+    baseline: dict[str, Cell] = Field(
+        default_factory=dict,
+        description=(
+            "Each check's result on the code as it is, before any candidate: a repro check that "
+            "already passes (or an invariant that already fails) is then not counted"
+        ),
+    )
+
+
 class EvalAnswerInput(BaseModel):
     """Input for fusion_eval_answer tool."""
 
@@ -352,6 +416,59 @@ class FusionToolResult(ToolEnvelope):
     raw_outputs: list[dict[str, Any]] | None = Field(
         default=None, description="Each panel answer, when include_raw_outputs is set"
     )
+
+
+class PatchToolResult(ToolEnvelope):
+    """Result of fusion_propose_patch. The patch is text: Fusion never applies it."""
+
+    run_id: str = Field(description="Handle for the stored run: resource fusion://runs/{run_id}")
+    verify: Literal["sandbox", "host", "none"] = Field(
+        description="Where the checks ran: sandbox (by Fusion, in a copy), host (by you) or none"
+    )
+    patch: str | None = Field(
+        default=None,
+        description=(
+            "The chosen patch as a unified diff against the project as it is (sandbox, none); "
+            "null in host mode (see candidates) or when no candidate patch applied"
+        ),
+    )
+    files: list[str] = Field(default_factory=list, description="Files the patch changes")
+    apply: str = Field(default="", description="How to apply the patch, or what to do next")
+    winner: str | None = Field(default=None, description="The panel member whose patch this is")
+    reason: str = Field(default="", description="Why this patch was chosen")
+    checks: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="The checks used: id, author, kind, language, body and, in sandbox mode, the "
+        "winner's result",
+    )
+    matrix: dict[str, dict[str, str]] | None = Field(
+        default=None, description="sandbox: each candidate's result on each check"
+    )
+    candidates: list[dict[str, Any]] | None = Field(
+        default=None, description="host: the top two candidate patches (id, patch, files)"
+    )
+    isolation: str | None = Field(
+        default=None, description="sandbox: the isolation used (sandbox-exec or unshare)"
+    )
+    strategy: str | None = Field(default=None, description="The strategy that produced it")
+    cost_usd: float | None = Field(default=None, description="Model spend; null if unknown")
+    latency_s: float = Field(default=0.0, description="Wall time, checks included, in seconds")
+    models_called: int = Field(default=0, description="Successful model calls")
+    details_uri: str = Field(description="Where the full record of this run can be read")
+    host_tokens_saved_estimate: int | None = Field(
+        default=None, description="Tokens you did not send because Fusion read the files itself"
+    )
+
+
+class SelectPatchResult(ToolEnvelope):
+    """Result of fusion_select_patch. No model is called."""
+
+    run_id: str
+    winner: str | None = Field(default=None, description="The candidate picked")
+    patch: str | None = Field(default=None, description="Its unified diff; never applied")
+    reason: str = Field(default="", description="Why it was picked")
+    scores: dict[str, float] = Field(default_factory=dict, description="Each candidate's score")
+    apply: str = Field(default="", description="How to apply the patch")
 
 
 class StatsToolResult(ToolEnvelope):

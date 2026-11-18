@@ -19,7 +19,9 @@ Fusion is a local process, the MCP server `fusion mcp` or the CLI, that Claude C
 with text and, optionally, the names of project files or a git range to read. It sends that
 material to model providers with your API keys, and returns text. Claude Code stays the component
 that edits files and runs commands: the MCP tools read only what a call names, under the project
-root ([Reading the project](#reading-the-project)), and never write to it or run a shell.
+root ([Reading the project](#reading-the-project)), and never write to it or run a shell. The one
+tool that runs code, `fusion_propose_patch`, runs it only in a temporary copy of the project, in a
+sandbox, and returns its patch as text ([Patch verification](#patch-verification)).
 
 **What it protects**
 
@@ -35,7 +37,7 @@ root ([Reading the project](#reading-the-project)), and never write to it or run
 | The caller (Claude Code, the CLI user) | Trusted: it chooses what to send and which tools to call |
 | Text the caller forwards (diffs, logs, file contents, web pages) | Data. It may contain instructions aimed at a model |
 | Model providers | Trusted with the redacted prompt, not trusted for correctness |
-| Model output | Untrusted data: never run, and cleaned before it is returned |
+| Model output | Untrusted data, cleaned before it is returned; run only as `fusion_propose_patch` checks, in a sandbox copy |
 | Benchmark datasets and the code in them | Untrusted code, run only in a sandbox in benchmark mode |
 
 **Threats and what answers them**
@@ -49,6 +51,7 @@ root ([Reading the project](#reading-the-project)), and never write to it or run
 | A model's output carries terminal escapes, bidi overrides or a huge payload | [Cleaning and size caps](#output-hardening) before the host or a terminal sees it |
 | A web page reaches the dashboard or the HTTP transport through the browser | Both bind 127.0.0.1 and answer only loopback `Host` names; the MCP HTTP transport refuses a non-loopback address without `--allow-remote` |
 | A model-written patch attacks the machine during a benchmark | [Benchmark sandbox](#benchmark-sandbox) |
+| A model-written check or patch damages your project or machine during `fusion_propose_patch` | [Patch verification](#patch-verification): a temporary copy, the same sandbox, and the project only read |
 | A compromised dependency or CI action | [Supply chain](#supply-chain): a locked, audited dependency set and actions pinned to commits |
 
 **Out of scope.** A compromised machine or user account, a malicious provider, and a malicious
@@ -202,7 +205,7 @@ was never reviewed by anyone.
 
 | Control | Behavior |
 |---------|----------|
-| Where it runs | Only inside `fusion bench`, on a dataset you named. The MCP server and every real-mode path never call it, and the pipeline refuses the `verified` and `verified-synth` aggregators outside benchmark mode |
+| Where it runs | Inside `fusion bench`, on a dataset you named, and for `fusion_propose_patch` ([Patch verification](#patch-verification)). No other tool reaches it: the pipeline refuses the `verified` aggregator outside benchmark mode, and `verified-synth` unless the caller hands it a cross-checker |
 | Working directory | A fresh temporary directory per run, deleted afterwards. Absolute paths, `..`, `.git` and symlinks that leave it are rejected for patch files and when collecting results |
 | Environment | Allow-list only: `PATH` and locale pass; `HOME` and `TMPDIR` point inside the sandbox. API keys, tokens and every other variable are not passed |
 | Limits | A wall-clock timeout that kills the whole process group, CPU time, file size, no core dumps, memory on Linux, and capped output |
@@ -244,6 +247,36 @@ Memory limits are not enforced on macOS. Run studies on a machine or container w
 acceptable, and prefer `require` in shared environments. A page that exploits a Chromium
 vulnerability would not be stopped by anything here; keep the browser updated, and do not run
 datasets you did not write.
+
+## Patch verification
+
+`fusion_propose_patch` (and `fusion patch`) is the only tool that runs code, and it decides where
+by `verify`:
+
+| `verify` | What runs | Where |
+|----------|-----------|-------|
+| `sandbox` (default) | Every panel-written check (validated first, as above) against every candidate patch, and your `tests_cmd` | In the [sandbox](#benchmark-sandbox), each run in its own fresh copy of the project, with isolation **required** |
+| `host` | Nothing | The response hands the checks to the host, which runs them where it chooses |
+| `none` | Nothing | No checks |
+
+- **The project is only read.** Fusion reads it once, through the same reader as `paths`
+  ([Reading the project](#reading-the-project)): files outside the root, under `.git`, ignored by
+  `.gitignore`, on the secret-file deny list (`.env*`, keys) and symlinks are never copied, so the
+  copy holds no secret file. (A check can still read files your account can read by absolute
+  path; it has no network to send them anywhere, and its output is not returned, only pass or
+  fail.) The bytes go to temporary directories that are deleted after each run. Binary files are copied (tests may need them); nothing copied is sent to
+  a model. Tests hash the fixture project before and after a run and assert it is byte-identical.
+- **The patch is text.** The winner is returned as a unified diff; Fusion never applies it. The
+  host applies it, as it applies any edit.
+- **Isolation is required.** `sandbox` runs only where `sandbox-exec` (macOS) or `unshare`
+  (Linux) works; otherwise, with `verify.sandbox_enabled: false`, or for a project over the copy
+  limits, it falls back to `host`, runs nothing and says why. `fusion doctor` reports which applies.
+- **Your `tests_cmd` is trusted** (you wrote it): it is not validated, but it still runs only in
+  the copy, with the scrubbed environment, no network and `verify.tests_timeout_s` (120 s).
+- **Linux confines less than macOS.** `unshare --net` takes the network away but does not confine
+  file writes to the copy; there, only the static check validation stands between a hostile
+  check and files your account can write. `fusion doctor` says so. Use `verify: host`, or
+  `verify.sandbox_enabled: false`, where that is not acceptable.
 
 ## Known limitations
 

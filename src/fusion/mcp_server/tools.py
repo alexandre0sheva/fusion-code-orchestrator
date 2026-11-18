@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fusion.config.env import is_test_mode
+from fusion.config.loader import load_verify_config
+from fusion.mcp_server.patch import patch_output, selection_output
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
     DebugErrorInput,
@@ -18,9 +22,14 @@ from fusion.mcp_server.schemas import (
     FusionAskInput,
     FusionStatsInput,
     PlanFeatureInput,
+    ProposePatchInput,
     ReviewDiffInput,
+    SelectPatchInput,
     _OrchestrationInput,
 )
+from fusion.orchestration.aggregate import resolve_aggregator
+from fusion.orchestration.context import PipelineContext
+from fusion.orchestration.pipeline import BasePipeline
 from fusion.orchestration.pipelines import (
     AnswerEvalPipeline,
     ArchitectureDecisionPipeline,
@@ -50,12 +59,28 @@ from fusion.orchestration.schemas import (
 from fusion.orchestration.schemas import (
     ImplementationPlanInput as PipelinePlanInput,
 )
-from fusion.orchestration.strategy import Strategy
+from fusion.orchestration.strategy import BenchmarkOnlyError, Strategy
 from fusion.providers.base import close_providers
 from fusion.routing.budget import BudgetLevel
+from fusion.routing.classifier import TaskType
 from fusion.storage.run_store import RunStore
 from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
-from fusion.workspace import WorkspaceReader, WorkspaceReport
+from fusion.verify.propose import (
+    Crosschecker,
+    Verification,
+    choose_mode,
+    copy_fallback,
+    host_crosschecker,
+    patch_prompt,
+    sandbox_crosschecker,
+    select_from_results,
+)
+from fusion.workspace import ProjectFiles, WorkspaceReader, WorkspaceReport
+
+# fusion_propose_patch's strategy when the call names none: every member writes a patch and the
+# checks that judge any fix; with verify="none" there is nothing to run, so one is selected.
+PATCH_STRATEGY = "verified-synth"
+UNVERIFIED_PATCH_STRATEGY = "panel-nano-select"
 
 
 def _winner_from_delta(
@@ -223,6 +248,7 @@ class FusionTools:
         architecture: ArchitectureDecisionPipeline | None = None,
         plan: ImplementationPlanPipeline | None = None,
         answer_eval: AnswerEvalPipeline | None = None,
+        patch: BasePipeline | None = None,
         db_path: str | None = None,
         use_mock: bool | None = None,
     ) -> None:
@@ -239,6 +265,8 @@ class FusionTools:
         self._architecture = architecture or pipelines["architecture"]
         self._plan = plan or pipelines["plan"]
         self._answer_eval = answer_eval or pipelines["answer_eval"]
+        # No soft time limit: after the panel answers, the cross-check runs checks and tests.
+        self._patch = patch or pipelines["patch"]
         self._db_path = db_path
         self._use_mock = use_mock
         soft_timeout = soft_timeout_from_env()
@@ -404,6 +432,84 @@ class FusionTools:
             )
         )
         return _with_workspace(result.model_dump(), got)
+
+    async def fusion_propose_patch(
+        self, input: ProposePatchInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
+        """Candidate patches from the panel, cross-checked (in a sandbox copy, by the host, or
+        not at all), and the best one returned as a unified diff. Never applied."""
+        base = root or default_root()
+        config = load_verify_config()
+        got = gather_workspace(input, base)
+        reader = WorkspaceReader(base)
+        mode, notes = choose_mode(input.verify, config)
+        # Host and none modes only normalise patches: they read the files a patch touches. The
+        # sandbox needs the whole project, copied into memory once (the project is only read).
+        files: Mapping[str, bytes] = ProjectFiles(reader, max_file_bytes=config.max_file_bytes)
+        if mode == "sandbox":
+            copy = await asyncio.to_thread(
+                reader.copy_project,
+                max_files=config.max_copy_files,
+                max_bytes=config.max_copy_bytes,
+                max_file_bytes=config.max_file_bytes,
+            )
+            if (why := copy_fallback(copy)) is not None:
+                mode = "host"
+                notes.append(why)
+            else:
+                files = copy.files
+        seen = Verification(mode)
+        checker: Crosschecker | None = None
+        if mode == "sandbox":
+            checker = sandbox_crosschecker(
+                files, tests_cmd=input.tests_cmd, config=config, seen=seen
+            )
+        elif mode == "host":
+            checker = host_crosschecker(files, seen=seen)
+        default = PATCH_STRATEGY if mode != "none" else UNVERIFIED_PATCH_STRATEGY
+        ctx = PipelineContext(
+            task_type=TaskType.DEFAULT,
+            primary_content=patch_prompt(input.task, input.tests_cmd),
+            context=_joined(input.context, got.background(input.diff_ref)),
+            file_snippets=[*input.file_snippets, *got.snippets],
+            changed_files=got.files,
+            budget=BudgetLevel(input.budget),
+            strategy=input.strategy or default,
+            max_cost_usd=input.max_cost_usd,
+            shadow_baseline=input.shadow_baseline,
+            expects_patch=True,
+            crosscheck=checker,
+            workspace=got.report,
+        )
+        planned = self._patch.deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
+        settled = resolve_aggregator(
+            planned, ctx.task_type, patch=True, verified=checker is not None
+        )
+        seen.cross_checks = planned.kind == "auto" or settled.aggregator == "verified-synth"
+        try:
+            result = await self._patch.run(ctx)
+        except BenchmarkOnlyError as exc:
+            raise ValueError(str(exc)) from exc
+        return patch_output(
+            result,
+            seen=seen,
+            files=files,
+            tests_cmd=input.tests_cmd,
+            cost=self._patch._build_cost_latency(result),
+            workspace=got.report,
+            notes=notes,
+            detail=input.detail,
+        )
+
+    async def fusion_select_patch(self, input: SelectPatchInput) -> dict[str, Any]:
+        """Pick among a host-mode proposal's candidates from the host's check results. Free."""
+        record = await asyncio.to_thread(self.run_store.get_run, input.run_id)
+        if record is None:
+            msg = f"No run '{input.run_id}'. Use the run_id of a host-mode fusion_propose_patch."
+            raise ValueError(msg)
+        crosscheck = ((record.output_data or {}).get("disagreement") or {}).get("crosscheck")
+        chosen = select_from_results(crosscheck or {}, input.results, input.baseline)
+        return selection_output(input.run_id, chosen)
 
     async def fusion_eval_answer(self, input: EvalAnswerInput) -> dict[str, Any]:
         """Evaluate an answer using multi-model orchestration."""

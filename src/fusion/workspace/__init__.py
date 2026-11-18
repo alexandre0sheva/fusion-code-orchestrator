@@ -3,6 +3,8 @@
 from fusion.workspace.reader import (
     DEFAULT_MAX_BYTES_FILE,
     DEFAULT_MAX_BYTES_TOTAL,
+    ProjectCopy,
+    ProjectFiles,
     ReadFile,
     Skipped,
     Snippet,
@@ -14,6 +16,8 @@ from fusion.workspace.reader import (
 __all__ = [
     "DEFAULT_MAX_BYTES_FILE",
     "DEFAULT_MAX_BYTES_TOTAL",
+    "ProjectCopy",
+    "ProjectFiles",
     "ReadFile",
     "Skipped",
     "Snippet",

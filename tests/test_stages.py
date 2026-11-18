@@ -384,7 +384,9 @@ def test_old_factory_names_still_work_but_warn(tmp_path: Path) -> None:
         pipes = create_pipelines(
             providers={"mock": MockProvider(latency_ms=0.0)}, db_path=str(tmp_path / "d.db")
         )
-    assert set(pipes) == {"ask", "code_review", "debug", "architecture", "plan", "answer_eval"}
+    assert set(pipes) == {
+        "ask", "code_review", "debug", "architecture", "plan", "answer_eval", "patch"
+    }
     pipes["ask"]._run_store.close()
     with warnings.catch_warnings():
         warnings.simplefilter("error")

@@ -2,14 +2,15 @@
 
 Adds Fusion's panel of cheap models to Claude Code: slash commands, skills that say when to call
 it, a `fusion-advisor` subagent, and the MCP server (started with `uvx`, no clone needed). Fusion
-returns text only; Claude Code applies edits and runs commands itself.
+returns text only (`/fusion:patch` runs its checks in a sandbox copy and returns a diff); Claude
+Code applies edits and runs commands itself.
 
 ```text
 plugin/
   .claude-plugin/plugin.json   manifest (name `fusion`, so commands are /fusion:*)
   .mcp.json                    the server: uvx --python ">=3.11" --managed-python --from git+<repo> fusion mcp
-  commands/                    /fusion:ask review debug plan decide eval digest stats bench ab
-  skills/                      fusion-orchestrator, fusion-review, -debug, -decide, -plan, -eval
+  commands/                    /fusion:ask review debug plan decide eval digest patch stats bench ab
+  skills/                      fusion-orchestrator, fusion-review, -debug, -decide, -plan, -eval, -patch
   agents/fusion-advisor.md     returns a short verdict; can read files and call Fusion only
 ```
 

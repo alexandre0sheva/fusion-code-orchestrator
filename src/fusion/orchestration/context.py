@@ -34,6 +34,7 @@ from fusion.orchestration.strategy import (
     ModeSettings,
     PanelMember,
     Strategy,
+    may_run_code,
 )
 from fusion.orchestration.union import UnionResult
 from fusion.providers.base import ModelProvider, ModelResponse
@@ -77,8 +78,11 @@ class PipelineContext:
     # Benchmark only: scores a patch by running the task's visible tests (the ``verified``
     # aggregator). 1.0 = all pass, -1.0 = the patch does not apply, None = cannot be verified.
     verifier: Callable[[str], Awaitable[float | None]] | None = None
-    # Benchmark only: cross-checks candidate patches against the panel's own checks in sandbox
-    # copies (the ``verified-synth`` aggregator; ``fusion.verify.crosscheck``).
+    # Cross-checks candidate patches against the panel's own checks (the ``verified-synth``
+    # aggregator; ``fusion.verify``). The bench runs them in sandbox copies of a task's files,
+    # fusion_propose_patch in sandbox copies of the project (or, in host mode, only validates and
+    # groups them for the host to run). Given one, ``aggregator: auto`` picks verified-synth for
+    # a patch.
     crosscheck: Callable[[list[Candidate]], Awaitable[CrossCheckReport]] | None = None
     # What the tool read from the user's project for this run (files, a git diff) and what it
     # refused; stored with the run's input. None when the caller pasted everything.
@@ -272,18 +276,23 @@ class RunState:
         # concrete aggregator and the lenses or approaches that go with it. A `kind: auto`
         # strategy has no aggregator of its own: each rung's is settled when the rung starts.
         if strategy.kind != "auto":
-            strategy = resolve_aggregator(strategy, ctx.task_type, patch=ctx.expects_patch)
+            strategy = resolve_aggregator(
+                strategy,
+                ctx.task_type,
+                patch=ctx.expects_patch,
+                verified=ctx.crosscheck is not None,
+            )
         if ctx.max_cost_usd is not None:
             cap = ctx.max_cost_usd
             if strategy.max_cost_usd is not None:
                 cap = min(cap, strategy.max_cost_usd)
             strategy = strategy.model_copy(update={"max_cost_usd": cap})
-        if strategy.runs_code and mode is not Mode.BENCHMARK:
+        if not may_run_code(strategy, mode, crosscheck=ctx.crosscheck is not None):
             msg = (
                 f"Strategy '{strategy.name}' uses the '{strategy.aggregator}' aggregator, which "
                 "runs code to choose among answers. It is available only in benchmark mode "
-                "(`fusion bench`): "
-                "Fusion's tools never run code, so Claude Code stays the only executor."
+                "(`fusion bench`) and, for verified-synth, through fusion_propose_patch, which "
+                "runs it on a sandbox copy of the project; the other tools never run code."
             )
             raise BenchmarkOnlyError(msg)
         started = deps.clock()

@@ -19,6 +19,8 @@ EXPECTED_TOOLS = {
     "fusion_stats",
     "fusion_compare_claude_runs",
     "fusion_digest",
+    "fusion_propose_patch",
+    "fusion_select_patch",
 }
 
 

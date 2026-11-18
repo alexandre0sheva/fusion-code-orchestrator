@@ -72,11 +72,11 @@ and, from a local clone, `claude mcp add --scope user fusion -- uv run --directo
 
 | | Name | Use |
 |--|------|-----|
-| Commands (you type them) | `/fusion:ask`, `/fusion:review`, `/fusion:debug`, `/fusion:plan`, `/fusion:decide`, `/fusion:eval`, `/fusion:digest` | One per tool; they name the input (the files, the `diff_ref` range, the error) and tell Claude how to read the answer |
+| Commands (you type them) | `/fusion:ask`, `/fusion:review`, `/fusion:debug`, `/fusion:plan`, `/fusion:decide`, `/fusion:eval`, `/fusion:digest`, `/fusion:patch` | One per tool; they name the input (the files, the `diff_ref` range, the error) and tell Claude how to read the answer |
 | | `/fusion:stats` | Spend, savings and shadow A/B win-rate |
 | | `/fusion:bench` | Summarise the latest benchmark run from `bench-results/` (read-only; never starts a study) |
 | | `/fusion:ab` | Run a task with and without Fusion and compare the two |
-| Skills (Claude loads them) | `fusion-orchestrator`, `fusion-review`, `fusion-debug`, `fusion-decide`, `fusion-plan`, `fusion-eval` | Each says when to call Fusion and when not to, so Claude skips it for trivial edits |
+| Skills (Claude loads them) | `fusion-orchestrator`, `fusion-review`, `fusion-debug`, `fusion-decide`, `fusion-plan`, `fusion-eval`, `fusion-patch` | Each says when to call Fusion and when not to, so Claude skips it for trivial edits |
 | Subagent | `fusion-advisor` | Calls Fusion in its own context and returns a verdict of at most 15 lines, with what it checked against the code. It can read files and call Fusion; it cannot edit or run commands |
 
 Example prompts: "Use Fusion to review this diff before I merge", "Have the fusion-advisor look at
@@ -217,8 +217,10 @@ use that client. `fusion doctor` shows them, with the rest of the setup checks (
 ### Tools
 
 Every tool is annotated `readOnlyHint: true` and `destructiveHint: false` (Fusion changes nothing
-on your machine; it writes only its own run database), `openWorldHint: true` (it calls provider
-APIs; `fusion_stats` calls none) and `idempotentHint: false`. Each has a typed `outputSchema`. The
+on your machine; it writes only its own run database, and `fusion_propose_patch` runs its checks
+in temporary copies it deletes), `openWorldHint: true` (it calls provider APIs; `fusion_stats` and
+`fusion_select_patch` call none, and those two are `idempotentHint: true`) and `idempotentHint:
+false`. Each has a typed `outputSchema`. The
 descriptions the client shows the model say when to call the tool, when not to, and that a call
 takes tens of seconds and costs cents.
 
@@ -231,6 +233,8 @@ takes tens of seconds and costs cents.
 | `fusion_plan_feature` | A plan for a multi-file feature whose approach is unclear | Small changes |
 | `fusion_eval_answer` | Scoring a draft answer against a rubric | Finding out whether code works or a fact is true |
 | `fusion_digest` | A short answer about material too large to read yourself: what a module does, where something is handled, what a big diff changes | A file you are about to edit; one short file |
+| `fusion_propose_patch` | A bug fix or small change where a wrong patch is costly and checks can tell right from wrong: a patch returned as a diff, never applied ([Patches](#patches)) | Large refactors; edits you can make directly |
+| `fusion_select_patch` | The second step of `verify: "host"`: pick from the results of running the checks yourself (free, no model) | Anything else |
 | `fusion_compare_claude_runs` | Measuring Claude Code + Opus against Claude Code + Fusion | Normal work |
 | `fusion_stats` | Spend, savings and shadow A/B win-rate (free, calls no model) | |
 
@@ -310,6 +314,32 @@ heading and cost line.
 
 `fusion_stats` returns `display_markdown`, `warnings` and `result`; `fusion_compare_claude_runs`
 adds `evals`.
+
+### Patches
+
+Inputs: `task` (the change), the code in `paths`/`globs`/`diff_ref` (required), `tests_cmd` (a
+shell command that runs the tests from the project root) and `verify`; the shared inputs above
+apply, and `strategy` defaults to `verified-synth` (three cheap models; with `verify: "none"`,
+`panel-nano-select`). Each member writes a complete patch from its approach (minimal fix,
+root-cause fix) and one to three checks that judge any fix ([ARCHITECTURE.md](ARCHITECTURE.md#verified-generation-checks-and-the-cross-check)).
+
+| `verify` | What happens | You get |
+|----------|--------------|---------|
+| `sandbox` (default) | Fusion copies the project (no ignored or secret files) and runs every check, and `tests_cmd`, against every patch in its own sandbox copy; the patch that passes the most checks the *other* members wrote wins | `patch` (a unified diff against the project as it is), `files`, `checks` with the winner's result on each, `matrix`, `isolation` |
+| `host` | Fusion runs nothing: checks are validated and identical patches grouped, and one cheap call ranks them | `candidates` (the top two diffs) and every valid check's script. Run them in a scratch worktree, then call `fusion_select_patch` with `run_id`, `results` (`{candidate: {check id: pass\|fail\|error\|timeout}}`, your own tests under a new id such as `tests`) and `baseline` (each check on the code as it is) |
+| `none` | No checks; one patch is selected | `patch` |
+
+`sandbox` falls back to `host`, with a warning, when `verify.sandbox_enabled` is false, when the
+machine has no sandbox (`fusion doctor` says), or when the project is over the copy limits
+([CONFIGURATION.md](CONFIGURATION.md#patch-verification)). Either way the project is only read;
+what runs where is in [SECURITY.md](../SECURITY.md#patch-verification). The tool has no soft time
+limit (the checks run after the panel answers): a call takes tens of seconds to a few minutes.
+
+**Apply it yourself.** Every patch is returned as text with an `apply` line: save it and run
+`git apply --check fix.patch && git apply fix.patch`, or make the same edits with your edit tool,
+then run the tests. A candidate whose patch does not apply cannot win, and when no patch applies
+`patch` is null and the warnings say why. The response states the cost and the host tokens Fusion
+saved by reading the files itself.
 
 ### Progress, cancellation and the soft time limit
 

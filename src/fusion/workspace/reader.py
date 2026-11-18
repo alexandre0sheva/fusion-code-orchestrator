@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import stat
+from collections.abc import Iterator, Mapping
 from functools import cache
 from pathlib import Path
 
@@ -29,6 +30,29 @@ _SNIFF = 8192
 
 MAX_BYTES_ENV = "FUSION_WORKSPACE_MAX_BYTES"
 MAX_FILE_BYTES_ENV = "FUSION_WORKSPACE_MAX_FILE_BYTES"
+
+# A whole-project copy (``copy_project``) for a sandbox run; the config's ``verify`` section
+# overrides these.
+DEFAULT_COPY_MAX_FILES = 5_000
+DEFAULT_COPY_MAX_BYTES = 64 * 1024 * 1024
+DEFAULT_COPY_MAX_FILE_BYTES = 4 * 1024 * 1024
+# Outside a git repository nothing says what is ignored; these trees are never project source.
+_UNTRACKED_HEAVY_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".tox",
+        ".nox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+    }
+)
 
 
 class WorkspaceError(ValueError):
@@ -81,6 +105,46 @@ class WorkspaceReport(BaseModel):
         shown = "; ".join(f"{s.path}: {s.reason}" for s in self.skipped[:5])
         more = f"; {len(self.skipped) - 5} more" if len(self.skipped) > 5 else ""
         return f"Workspace: not read ({len(self.skipped)}): {shown}{more}."
+
+
+class ProjectFiles(Mapping[str, bytes]):
+    """The project's files read on demand (``WorkspaceReader.raw_file``): a file the copy would
+    leave out is simply absent. Iterates over the files read so far. For patch work that needs
+    only the files a patch touches (normalising it), not the whole tree."""
+
+    def __init__(self, reader: WorkspaceReader, *, max_file_bytes: int) -> None:
+        self._reader = reader
+        self._max = max_file_bytes
+        self._read: dict[str, bytes | None] = {}
+
+    def __getitem__(self, rel: str) -> bytes:
+        if rel not in self._read:
+            self._read[rel] = self._reader.raw_file(rel, max_file_bytes=self._max)
+        data = self._read[rel]
+        if data is None:
+            raise KeyError(rel)
+        return data
+
+    def __iter__(self) -> Iterator[str]:
+        return iter([k for k, v in self._read.items() if v is not None])
+
+    def __len__(self) -> int:
+        return sum(v is not None for v in self._read.values())
+
+
+class ProjectCopy(BaseModel):
+    """The project's files as ``copy_project`` read them: raw bytes, never sent to a model."""
+
+    root: str
+    files: dict[str, bytes] = Field(default_factory=dict)
+    skipped: list[Skipped] = Field(default_factory=list)
+    total_bytes: int = 0
+    complete: bool = True
+    incomplete_reason: str = ""
+
+    def stop(self, reason: str) -> None:
+        self.complete = False
+        self.incomplete_reason = f"the project has {reason}; the copy stopped there"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -295,6 +359,95 @@ class WorkspaceReader:
             base = Path(top).relative_to(self.root)
             found.extend((base / name).as_posix() for name in files)
         return sorted(found)
+
+    # -- a whole-project copy (for fusion_propose_patch's sandbox) ------------------------------
+
+    def raw_file(
+        self, rel: str, *, max_file_bytes: int = DEFAULT_COPY_MAX_FILE_BYTES
+    ) -> bytes | None:
+        """One project file (``rel``: relative to the root) exactly as on disk, or None when
+        ``copy_project`` would leave it out (outside the root, ``.git``, secret, ignored, a
+        symlink, too big) or it does not exist."""
+        found = self._locate(rel)
+        if isinstance(found, str) or Path(rel).is_absolute():
+            return None
+        _, path, inside = found
+        try:
+            info = (self.root / rel).lstat()
+        except OSError:
+            return None
+        if not stat.S_ISREG(info.st_mode) or info.st_size > max_file_bytes:
+            return None
+        if self.in_repo:
+            try:
+                if git.ignored(self.root, [inside]):
+                    return None
+            except git.GitError:
+                return None
+        try:
+            return path.read_bytes()
+        except OSError:
+            return None
+
+    def copy_project(
+        self,
+        *,
+        max_files: int = DEFAULT_COPY_MAX_FILES,
+        max_bytes: int = DEFAULT_COPY_MAX_BYTES,
+        max_file_bytes: int = DEFAULT_COPY_MAX_FILE_BYTES,
+    ) -> ProjectCopy:
+        """Every file of the project a sandbox copy may hold, in memory, exactly as on disk.
+
+        The same refusals as ``read_paths``: nothing outside the root, under ``.git``, ignored by
+        ``.gitignore`` (in a git repository only tracked and untracked-but-not-ignored files are
+        listed) or on the secret-file deny list; symlinks are left out. Unlike ``read_paths``
+        nothing is redacted and binaries are kept: the copy runs tests and is never sent to a
+        model. A file over ``max_file_bytes`` is skipped; reaching ``max_files`` or ``max_bytes``
+        stops the copy (``complete`` is then False). The project is only read.
+        """
+        copy = ProjectCopy(root=str(self.root))
+        for rel in self._copy_candidates():
+            if len(copy.files) >= max_files:
+                copy.stop(f"more than {max_files:,} files")
+                break
+            found = self._locate(rel)
+            if isinstance(found, str):
+                copy.skipped.append(Skipped(path=rel, reason=found))
+                continue
+            path = self.root / rel
+            try:
+                info = path.lstat()
+            except OSError as exc:
+                copy.skipped.append(Skipped(path=rel, reason=f"cannot read: {exc.strerror}"))
+                continue
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                copy.skipped.append(Skipped(path=rel, reason="a symlink or not a regular file"))
+                continue
+            if info.st_size > max_file_bytes:
+                reason = f"over the per-file copy limit ({info.st_size:,} > {max_file_bytes:,})"
+                copy.skipped.append(Skipped(path=rel, reason=reason))
+                continue
+            if copy.total_bytes + info.st_size > max_bytes:
+                copy.stop(f"more than {max_bytes:,} bytes")
+                break
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                copy.skipped.append(Skipped(path=rel, reason=f"cannot read: {exc.strerror}"))
+                continue
+            copy.files[rel] = data
+            copy.total_bytes += len(data)
+        return copy
+
+    def _copy_candidates(self) -> list[str]:
+        if self.in_repo:
+            return self._candidates()
+        found: list[str] = []
+        for top, dirs, files in os.walk(self.root):
+            dirs[:] = sorted(d for d in dirs if d not in _UNTRACKED_HEAVY_DIRS)
+            base = Path(top).relative_to(self.root)
+            found.extend((base / name).as_posix() for name in sorted(files))
+        return found
 
     # -- git diff ------------------------------------------------------------------------------
 

@@ -23,6 +23,7 @@ import typer
 from rich.markup import escape
 
 from fusion import __version__
+from fusion.bench.sandbox import detect_isolation
 from fusion.cli.common import PROVIDER_KEYS, JsonOption, console, echo_json
 from fusion.config import paths as fusion_paths
 from fusion.config.catalog import catalog_warnings, load_catalog
@@ -34,6 +35,7 @@ from fusion.config.catalog_check import (
 )
 from fusion.config.env import ROUTABLE_VENDORS
 from fusion.config.layers import ConfigError, resolve_config
+from fusion.config.loader import load_verify_config
 from fusion.install.checks import inspect_clients
 from fusion.install.common import InstallError, ServerSpec, verify_server
 
@@ -94,6 +96,7 @@ def run_checks(
     home: Path | None = None,
     mcp_check: McpCheck | None = None,
     live_check: LiveCheck | None = None,
+    isolation: Callable[[], str] | None = None,
 ) -> list[Check]:
     """Every check, in the order a person would fix them."""
     env = os.environ if environ is None else environ
@@ -105,6 +108,7 @@ def run_checks(
     else:
         checks.extend(_safe("keys", lambda: _keys(env)))
         checks.extend(_safe("catalog", _catalog))
+        checks.extend(_safe("sandbox", lambda: [_sandbox(isolation or detect_isolation)]))
     checks.extend(_safe("database", lambda: [_database()]))
     if mcp:
         checks.append(_mcp(mcp_check or default_mcp_check))
@@ -232,6 +236,37 @@ def _catalog() -> list[Check]:
     ]
 
 
+def _sandbox(isolation: Callable[[], str]) -> Check:
+    """Can fusion_propose_patch run checks here (``verify.sandbox_enabled`` and an isolation the
+    OS offers)? Where it cannot, the tool falls back to host mode with a warning."""
+    if not load_verify_config().sandbox_enabled:
+        return Check(
+            "sandbox",
+            "info",
+            "verify.sandbox_enabled is false: fusion_propose_patch never runs code (host mode)",
+        )
+    found = isolation()
+    if found == "sandbox-exec":
+        detail = (
+            "sandbox-exec: checks run in a temporary copy with no network and no writes outside it"
+        )
+        return Check("sandbox", "ok", detail)
+    if found == "unshare":
+        detail = (
+            "unshare: checks run in a temporary copy with no network; Linux does not confine "
+            "their file writes to the copy (static validation is the only guard there)"
+        )
+        return Check("sandbox", "ok", detail)
+    return Check(
+        "sandbox",
+        "warn",
+        "no working sandbox-exec (macOS) or unshare (Linux): fusion_propose_patch falls back to "
+        "host mode and runs nothing",
+        "Linux: install util-linux and allow unprivileged user namespaces; Windows: run Fusion "
+        "in WSL; or set verify.sandbox_enabled: false to silence this",
+    )
+
+
 def _database() -> Check:
     path = fusion_paths.resolve_db_path()
     folder = path.parent
@@ -329,7 +364,7 @@ def doctor(
     strict: Annotated[bool, typer.Option(help="Exit 1 on warnings too")] = False,
     as_json: JsonOption = False,
 ) -> None:
-    """Check Python, keys, config, catalog, database, the MCP server and client setups."""
+    """Check Python, keys, config, catalog, sandbox, database, the MCP server and clients."""
     checks = run_checks(live=live, mcp=mcp)
     failed = any(c.status == "error" for c in checks) or (
         strict and any(c.status == "warn" for c in checks)

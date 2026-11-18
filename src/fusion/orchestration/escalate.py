@@ -48,7 +48,12 @@ from fusion.orchestration.context import Carried, PipelineDeps, RunState
 from fusion.orchestration.ledger import SHADOW_STAGES, CallRecord
 from fusion.orchestration.lenses import base_alias
 from fusion.orchestration.progress import report as report_progress
-from fusion.orchestration.strategy import SELECT_AGGREGATORS, Mode, PanelMember, Strategy
+from fusion.orchestration.strategy import (
+    SELECT_AGGREGATORS,
+    PanelMember,
+    Strategy,
+    may_run_code,
+)
 from fusion.providers.base import ModelRequest
 from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, estimate_tokens, forecast_calls
 from fusion.routing.difficulty import (
@@ -246,7 +251,12 @@ def late_verdict(state: RunState, early: Verdict) -> Verdict:
 def _rung_strategy(state: RunState, deps: PipelineDeps, climb: Climb, index: int) -> Strategy:
     """The rung's strategy, settled for this task, under the auto run's caps."""
     base = deps.routing.strategies.get(climb.policy.rungs[index].strategy)
-    strategy = resolve_aggregator(base, state.task_type, patch=state.ctx.expects_patch)
+    strategy = resolve_aggregator(
+        base,
+        state.task_type,
+        patch=state.ctx.expects_patch,
+        verified=state.ctx.crosscheck is not None,
+    )
     caps = {}
     for name in ("max_cost_usd", "max_latency_s"):
         values = [v for v in (getattr(climb.auto, name), getattr(strategy, name)) if v is not None]
@@ -254,9 +264,9 @@ def _rung_strategy(state: RunState, deps: PipelineDeps, climb: Climb, index: int
     return strategy.model_copy(update=caps)
 
 
-def _usable(strategy: Strategy, mode: Mode) -> bool:
-    """A verified aggregator runs code, so a rung using one is skipped outside a benchmark."""
-    return not strategy.runs_code or mode is Mode.BENCHMARK
+def _usable(strategy: Strategy, state: RunState) -> bool:
+    """A verified aggregator runs code, so a rung using one is skipped where none may run."""
+    return may_run_code(strategy, state.mode, crosscheck=state.ctx.crosscheck is not None)
 
 
 def _records_since(state: RunState, mark: int) -> list[CallRecord]:
@@ -329,7 +339,7 @@ class DifficultyStage:
         allowed = [
             i
             for i in policy.climbable()
-            if _usable(_rung_strategy(state, self.deps, climb, i), state.mode)
+            if _usable(_rung_strategy(state, self.deps, climb, i), state)
         ] or [policy.start_for(estimate.level)]
         below = [i for i in allowed if i <= wanted] or [allowed[0]]
         start = max(below)
@@ -550,7 +560,7 @@ class EscalateStage:
     ) -> _Next | str:
         """Route the rung and check it fits; '' when it has nothing new to ask (skipped)."""
         rung = climb.policy.rungs[index]
-        if not _usable(strategy, current.mode):
+        if not _usable(strategy, current):
             why = f"its {strategy.aggregator} aggregator runs code"
             self._skip(current, climb, index, strategy, why)
             return ""

@@ -113,6 +113,7 @@ Panel members receive role prompts defined in `src/fusion/orchestration/prompts.
 - `fusion_compare_claude_runs`
 - `fusion_stats`
 - `fusion_digest`
+- `fusion_propose_patch` and `fusion_select_patch`
 
 `src/fusion/mcp_server/tools.py` converts MCP input schemas into orchestration pipeline
 inputs and returns the pipelines' output models as dictionaries (`FusionTools`, also used directly
@@ -143,7 +144,8 @@ what the panel produced (claims, deterministic scores, the digest) or halts with
 there were no answers.
 
 **The command line.** `src/fusion/cli/` is split by job: `main.py` (the root app, `--set`, `--verbose`,
-the error contract), `run_cmds.py` (ask, review-diff, debug, decide, plan, digest, eval-answer),
+the error contract), `run_cmds.py` (ask, review-diff, debug, decide, plan, digest, patch,
+eval-answer),
 `runs_cmds.py`, `config_cmds.py`, `doctor.py`, `models_cmd.py`, with `common.py` (exit codes, shared
 flags, input reading) and `live.py` (the live view). `app.py` only re-exports `app`. The live view
 listens on the progress channel above plus a second one, `progress.call_observer`: the call gateway
@@ -397,8 +399,11 @@ patch) the answers are rivals, and one is picked instead of a synthesizer rewrit
 
 ### Verified generation: checks and the cross-check
 
-`aggregator: verified-synth` (strategy `verified-synth`, **benchmark only** until the sandboxed
-tool of Task 11) picks a patch by running code instead of asking a model (`src/fusion/verify/`).
+`aggregator: verified-synth` (strategy `verified-synth`) picks a patch by running code instead of
+asking a model (`src/fusion/verify/`). It runs in benchmark mode and under `fusion_propose_patch`,
+the only callers that hand the run a cross-checker (`PipelineContext.crosscheck`); anywhere else
+the run is refused (`strategy.may_run_code`). Given a cross-checker, `aggregator: auto` settles to
+`verified-synth` for a panel whose answer is a patch (`select+patch` otherwise).
 
 - **What members write** (`verify/synthesis.py`). It is a select aggregator, so members get the
   `patch` approaches (minimal fix, root-cause fix) and each answers with a complete patch. The
@@ -432,7 +437,23 @@ tool of Task 11) picks a patch by running code instead of asking a model (`src/f
   `disagreement.crosscheck` and as `BenchItem.verification`; `disagreement.verified` holds each
   candidate's share of kept checks passed, which the escalation ladder's `patches_fail` trigger
   reads. Orchestration never imports the sandbox: the bench passes `PipelineContext.crosscheck`
-  (`bench.scoring.coding.coding_crosschecker`), as it passes `verifier` to `verified`.
+  (`bench.scoring.coding.coding_crosschecker`), as it passes `verifier` to `verified`, and
+  `fusion_propose_patch` passes one of its own (below). A run with a cross-checker is never cached.
+- **`fusion_propose_patch`** (`verify/propose.py`, `mcp_server/patch.py`). The tool runs the
+  generic `patch` pipeline (no soft time limit: the checks run after the panel) on the task plus
+  `PATCH_REQUEST`, with `expects_patch` and a cross-checker chosen by `verify`. `sandbox`:
+  `WorkspaceReader.copy_project` reads the project once into a `ProjectCopy` (the reader's
+  refusals: nothing ignored, secret, under `.git` or a symlink; raw bytes, never sent to a model)
+  and `sandbox_crosschecker` runs `crosscheck` on it with isolation `require`, the caller's
+  `tests_cmd` joining as a trusted task check. `host`: `host_crosschecker` runs nothing
+  (`host_report` validates checks, normalises and groups patches, and keeps a `handoff` of the
+  candidates and check scripts in the record); `fusion_select_patch` later scores the host's
+  results with the same `pick` (`select_from_results`, no model call). `none`: no cross-checker,
+  so `panel-nano-select` selects. Host and none read only the files a patch touches
+  (`ProjectFiles`). Whatever the mode, the chosen patch is returned through `normalize_patch`: a
+  unified diff against the project as it is, which `git apply` takes. `choose_mode` falls back from
+  `sandbox` to `host` when `verify.sandbox_enabled` is false, no isolation works, or the project is
+  over the copy limits.
 - **Evidence boundary.** Hidden tests, the reference solution and its flaws, and rubrics never enter
   a prompt that proposes an answer: `synthesis.grader_material` lists their telling lines and
   `assert_no_grader_material` fails on a prompt that contains one (a test runs a simulated bench and
@@ -732,6 +753,8 @@ routed. Usage is in [CONFIGURATION.md](CONFIGURATION.md#dashboard).
 
 The orchestration MCP tools are side-effect free inside MCP: they do not execute shell
 commands in user repositories or edit files themselves. They read only the files and git diff a
-call names, read-only and under the project root ([SECURITY.md](../SECURITY.md#reading-the-project)). That boundary should not block
+call names, read-only and under the project root ([SECURITY.md](../SECURITY.md#reading-the-project)).
+`fusion_propose_patch` is the one tool that runs code, and only in sandboxed temporary copies of
+the project; its patch is returned as text ([SECURITY.md](../SECURITY.md#patch-verification)). That boundary should not block
 Claude Code. Claude Code can use Fusion's answer like a cheaper model response, then edit,
 run tests, and continue the normal coding workflow.

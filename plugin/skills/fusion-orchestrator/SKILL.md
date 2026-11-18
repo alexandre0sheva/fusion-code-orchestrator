@@ -7,8 +7,9 @@ user-invocable: false
 # Fusion: when to ask the panel
 
 Fusion asks a panel of cheap models in parallel and returns one answer with the points they agree
-on. It reads the project files and git diff you name (read-only), returns text, runs nothing and
-edits nothing. You stay the executor.
+on. It reads the project files and git diff you name (read-only), returns text and edits nothing.
+The only code it runs is `fusion_propose_patch`'s checks, in a sandbox copy of the project. You
+stay the executor.
 
 ## Call it when
 
@@ -20,6 +21,8 @@ edits nothing. You stay the executor.
 - you are about to rely on a draft answer: `fusion_eval_answer`
 - answering means reading many or long files (what a module does, where something is handled,
   what a large diff changes): `fusion_digest` reads them and returns a few hundred tokens
+- a small fix is costly to get wrong and can be checked by running code: `fusion_propose_patch`
+  returns a patch cross-checked in a sandbox, as a diff for you to apply
 
 ## Do not call it for
 

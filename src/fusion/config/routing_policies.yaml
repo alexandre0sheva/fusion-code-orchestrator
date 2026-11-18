@@ -113,3 +113,17 @@ cache:
   enabled: false
   ttl_seconds: 900
   max_entries: 128
+
+# fusion_propose_patch (`fusion patch`): where the panel's checks and your tests_cmd run. With
+# sandbox_enabled, verify="sandbox" copies the project (no ignored or secret files) to a temporary
+# directory and runs them there, with no network and no writes outside the copy; the project is
+# only read. Set it to false and Fusion never runs code: verify="sandbox" falls back to "host".
+verify:
+  sandbox_enabled: true
+  check_timeout_s: 10        # each check a panel member wrote
+  tests_timeout_s: 120       # the tests_cmd you pass
+  mem_mb: 1024               # Linux only (macOS ignores memory limits)
+  workers: 2                 # sandbox copies running at once
+  max_copy_files: 5000       # a bigger project is not copied: verify falls back to "host"
+  max_copy_bytes: 67108864   # 64 MB
+  max_file_bytes: 4194304    # 4 MB; a bigger file is left out of the copy

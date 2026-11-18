@@ -19,8 +19,10 @@ What it enforces, for each command it runs:
 * **Paths stay inside.** ``copy_in``, ``write``, ``read`` and ``collect`` reject absolute paths,
   ``..`` and symlinks that leave the sandbox.
 
-This is a best-effort guard for benchmark code from a dataset the owner chose, not a security
-boundary against hostile code: see SECURITY.md. It must never be reachable from the MCP server.
+This is a best-effort guard, not a security boundary against hostile code: see SECURITY.md. It
+runs benchmark code from a dataset the owner chose and, through ``fusion.verify``, the checks
+``fusion_propose_patch`` runs on a temporary copy of the user's project (with isolation required).
+Nothing else in the MCP server may reach it.
 """
 
 from __future__ import annotations

@@ -25,7 +25,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugin"
 FIXTURES = Path(__file__).parent / "fixtures"
 TOOL_PREFIX = f"mcp__plugin_{PLUGIN_NAME}_fusion__"
-COMMANDS = {"ask", "review", "debug", "plan", "decide", "stats", "bench", "eval", "ab", "digest"}
+COMMANDS = {
+    "ask", "review", "debug", "plan", "decide", "stats", "bench", "eval", "ab", "digest", "patch"
+}
 SKILLS = {
     "fusion-orchestrator",
     "fusion-review",
@@ -33,6 +35,7 @@ SKILLS = {
     "fusion-decide",
     "fusion-plan",
     "fusion-eval",
+    "fusion-patch",
 }
 
 
@@ -175,6 +178,8 @@ def test_plugin_tells_the_host_to_name_files_instead_of_pasting_them() -> None:
         "skills/fusion-orchestrator/SKILL.md",
         "skills/fusion-debug/SKILL.md",
         "commands/digest.md",
+        "commands/patch.md",
+        "skills/fusion-patch/SKILL.md",
     ):
         assert "`paths`" in texts[name], name
     assert all("reads no files" not in text for text in texts.values())

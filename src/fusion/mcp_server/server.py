@@ -18,6 +18,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
+from fusion.mcp_server.patch import present_patch, present_selection
 from fusion.mcp_server.response import (
     DIGEST_OVERHEAD_TOKENS,
     present_comparison,
@@ -35,8 +36,12 @@ from fusion.mcp_server.schemas import (
     FusionAskInput,
     FusionStatsInput,
     FusionToolResult,
+    PatchToolResult,
     PlanFeatureInput,
+    ProposePatchInput,
     ReviewDiffInput,
+    SelectPatchInput,
+    SelectPatchResult,
     StatsToolResult,
 )
 from fusion.mcp_server.tools import FusionTools
@@ -54,7 +59,9 @@ INSTRUCTIONS = (
     "cents; progress is reported while it runs. Name files in `paths`/`globs` and a git range "
     "in `diff_ref` instead of pasting them: Fusion reads them itself, read-only, under the "
     "project root, and fusion_digest answers questions about large material in a few hundred "
-    "tokens. Responses are compact: the answer, the top "
+    "tokens. fusion_propose_patch returns a patch as a unified diff (never applied: you apply "
+    "it) chosen by running the panel's own checks and your tests in a sandbox copy of the "
+    "project, which is only read. Responses are compact: the answer, the top "
     "claims, confidence and one cost line. Pass detail='full' for everything, or read "
     "fusion://runs/{run_id} later. Pass max_cost_usd to cap spend and strategy to pick a "
     "cheaper or faster form (see fusion://strategies). With the panel-digest strategy no model "
@@ -125,6 +132,23 @@ DIGEST_DESCRIPTION = (
     "it for a file you need to edit (read that yourself) or for one short file. Fusion reads "
     "read-only under the project root and skips secret, ignored, binary and oversize files."
     + _TEXT_ONLY
+)
+PATCH_DESCRIPTION = (
+    "Get a patch for a code change from a panel of cheap models, each writing a complete patch "
+    "and checks that judge any fix; every patch is run against everyone's checks (and your "
+    "`tests_cmd`) in a sandbox copy of the project, and the one that passes the most checks "
+    "the others wrote is returned as a unified diff. Fusion never applies it or changes your "
+    "files: you apply it. Call it for a bug fix or small change where a wrong patch is costly "
+    "and checks can tell right from wrong. Do not call it for large refactors or for edits you "
+    "can make directly. Name the files in `paths`. verify='host' runs nothing: you get two "
+    "candidates and their checks to run, then call fusion_select_patch. A call takes tens of "
+    "seconds to a few minutes and costs cents; the response states the cost."
+)
+SELECT_PATCH_DESCRIPTION = (
+    "After fusion_propose_patch with verify='host': pass its run_id and the results of running "
+    "its checks on each candidate (and on the code as it is) to get the patch that passes the "
+    "most checks the others wrote. Free and instant: no model is called and nothing runs. Only "
+    "for that second step."
 )
 STATS_DESCRIPTION = (
     "Show cumulative Fusion usage: money spent against the baseline model's estimated cost, "
@@ -287,6 +311,32 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         with _progress_to(ctx):
             output = await tools.fusion_eval_answer(input)
         return to_tool_result(present_run(output, input.detail))
+
+    @mcp.tool(
+        description=PATCH_DESCRIPTION,
+        # It runs checks only in a temporary copy (deleted afterwards): nothing of the user's
+        # changes, so it is read-only for the client.
+        annotations=panel_tool("Propose a verified patch"),
+        output_schema=PatchToolResult.model_json_schema(),
+    )
+    async def fusion_propose_patch(input: ProposePatchInput, ctx: Context) -> ToolResult:
+        with _progress_to(ctx):
+            output = await tools.fusion_propose_patch(input, root=await client_root(ctx))
+        return to_tool_result(present_patch(output))
+
+    @mcp.tool(
+        description=SELECT_PATCH_DESCRIPTION,
+        annotations=ToolAnnotations(
+            title="Pick a patch from your check results",
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        output_schema=SelectPatchResult.model_json_schema(),
+    )
+    async def fusion_select_patch(input: SelectPatchInput) -> ToolResult:
+        return to_tool_result(present_selection(await tools.fusion_select_patch(input)))
 
     @mcp.tool(
         description=STATS_DESCRIPTION,

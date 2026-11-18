@@ -76,6 +76,7 @@ fusion ask "How should I retry a failed HTTP call?"
 | `fusion ask PROMPT [-f FILE]...` | Ask the panel any coding question; `-f` names project files for it to read, with the rules of the MCP `paths` input: under the current directory, skipping secret, ignored, binary and oversize files ([Reading the project](INTEGRATIONS.md#reading-the-project)) |
 | `fusion review-diff --diff-ref REF` or `-f DIFF` | Review `git diff REF` read by Fusion itself (`--diff-ref main...HEAD`), or a diff file (`git diff \| fusion review-diff -f -`) |
 | `fusion digest QUESTION [-f FILE]... [--glob PATTERN]... [--diff-ref REF]` | Have cheap models read large material and answer in at most `--max-answer-tokens` (default 600) |
+| `fusion patch TASK -f FILE... [--tests-cmd CMD] [--verify sandbox\|host\|none] [--diff-only]` | A patch cross-checked by the panel's own checks (and `CMD`) in a sandbox copy of the project, printed as a unified diff and never applied; `--diff-only` prints the diff alone (exit 3 when there is none), e.g. `> fix.patch` ([Patches](INTEGRATIONS.md#patches)) |
 | `fusion debug [ERROR] [-f TRACE] [--logs-file LOG]` | Ranked root causes and how to check each |
 | `fusion decide [QUESTION]`, `fusion plan [FEATURE]` | An architecture decision, an implementation plan (`-f FILE` reads the text from a file) |
 | `fusion eval-answer`, `fusion compare-claude-runs` | Score an answer, compare Claude Code runs |
@@ -132,7 +133,10 @@ Checks, in the order to fix them: the Fusion and Python versions and whether `uv
 configuration files; each provider's key (shown as `…` and its last four characters, never whole;
 with `OPENROUTER_API_KEY` set, a vendor without its own key is `ok` because its models run through
 OpenRouter), and, with that key, the [OpenRouter privacy setting](#openrouter-routes-and-data-policy)
-it cannot verify; catalog staleness and retiring models; that the database folder is writable; that `fusion mcp`
+it cannot verify; catalog staleness and retiring models; whether `fusion_propose_patch` can use a
+sandbox here (`sandbox-exec` on macOS, `unshare` on Linux, which takes away the network but does
+not confine file writes; a warning where neither works, since the tool then falls back to host
+mode; `info` when [`verify.sandbox_enabled`](#patch-verification) is off); that the database folder is writable; that `fusion mcp`
 starts, speaks only JSON-RPC on stdout and lists its tools (it runs on the mock provider and a
 scratch database, so it needs no keys and touches nothing of yours; `--no-mcp` skips it); and each
 client's setup (Claude Code, Cursor, Codex; a client you do not use shows as `info`). A failing
@@ -645,6 +649,27 @@ message naming the key. Move the panel into a strategy and set `rounds` for refi
 per-task choices went away with them: code review no longer swaps in the security-focused GPT-6 Luna
 (`gpt-luna-security` remains in the catalog; give a member `role: security_reviewer` to get the same
 prompt for every task) and no longer widens the panel for high-risk diffs.
+
+## Patch verification
+
+The `verify` section sets where `fusion_propose_patch` (`fusion patch`) runs the panel's checks and
+your `tests_cmd` ([INTEGRATIONS.md](INTEGRATIONS.md#patches); the security
+model is in [SECURITY.md](../SECURITY.md#patch-verification)).
+
+```yaml
+verify:
+  sandbox_enabled: true      # false: Fusion never runs code; verify=sandbox falls back to host
+  check_timeout_s: 10        # each panel-written check
+  tests_timeout_s: 120       # your tests_cmd
+  mem_mb: 1024               # Linux only (macOS ignores memory limits)
+  workers: 2                 # sandbox copies running at once
+  max_copy_files: 5000       # a larger project is not copied: verify falls back to host
+  max_copy_bytes: 67108864   # 64 MB
+  max_file_bytes: 4194304    # 4 MB; a larger file is left out of the copy
+```
+
+`FUSION__VERIFY__SANDBOX_ENABLED=false` (or `fusion --set verify.sandbox_enabled=false`) turns
+execution off for one shell or one command.
 
 ## Modes
 

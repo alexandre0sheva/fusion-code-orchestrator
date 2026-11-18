@@ -150,6 +150,7 @@ def build_pipelines(settings: Settings, providers: ProviderSet | None = None) ->
         "architecture": _pipeline(ArchitectureDecisionPipeline, deps),
         "plan": _pipeline(ImplementationPlanPipeline, deps),
         "answer_eval": _pipeline(AnswerEvalPipeline, deps),
+        "patch": _pipeline(BasePipeline, deps),
     }
 
 

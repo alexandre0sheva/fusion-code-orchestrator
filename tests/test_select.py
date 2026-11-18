@@ -385,7 +385,7 @@ def test_auto_picks_union_for_review_and_debug_and_select_for_the_rest(
 
 
 def test_a_patch_task_resolves_to_select_whatever_its_type() -> None:
-    # roadmap: coding patches -> verified-synth, which arrives with Task 11
+    # without a cross-checker; with one it is verified-synth (test_propose_patch.py)
     assert default_aggregator(TaskType.DEBUGGING, patch=True) == "select+patch"
 
 

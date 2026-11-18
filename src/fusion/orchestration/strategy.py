@@ -54,6 +54,7 @@ __all__ = [
     "load_strategy_book",
     "member_overrides",
     "mock_strategy_book",
+    "may_run_code",
 ]
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
@@ -85,13 +86,22 @@ LENS_AGGREGATORS = frozenset({"auto", "llm", "digest", "union", "union+check"})
 # Aggregators that pick ONE whole answer among rivals, so members get approaches, not lenses.
 # verified-synth picks by running checks and asks the selector only on a tie.
 SELECT_AGGREGATORS = frozenset({"select", "select+patch", "verified-synth"})
-# Aggregators that run code to choose (a patch against tests or checks): benchmark only until
-# Task 11's sandboxed tool; the MCP tools never run code.
+# Aggregators that run code to choose (a patch against tests or checks). They run in benchmark
+# mode, and verified-synth also under fusion_propose_patch, which hands the run a cross-checker
+# that works on a sandbox copy (``PipelineContext.crosscheck``); no other tool runs code.
 CODE_AGGREGATORS = frozenset({"verified", "verified-synth"})
 
 
 class BenchmarkOnlyError(ConfigError):
-    """A strategy that runs code (``verified``, ``verified-synth``) was used outside a benchmark."""
+    """A strategy that runs code (``verified``, ``verified-synth``) was used where none may run."""
+
+
+def may_run_code(strategy: Strategy, mode: Mode, *, crosscheck: bool) -> bool:
+    """Whether a run may use ``strategy``: one that runs code needs benchmark mode, except
+    ``verified-synth`` given a cross-checker (``crosscheck``: fusion_propose_patch's sandbox)."""
+    if not strategy.runs_code or mode is Mode.BENCHMARK:
+        return True
+    return strategy.aggregator == "verified-synth" and crosscheck
 
 
 class Mode(StrEnum):

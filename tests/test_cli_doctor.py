@@ -371,3 +371,28 @@ def test_live_reports_openrouter_drift_and_training_providers(machine: Path) -> 
     assert by_name["live:gemini-flash@openrouter"].status == "warn"
     assert by_name["live:openrouter-privacy"].status == "error"
     assert by_name["live:openrouter-privacy"].detail == "openrouter (newcomer may train)"
+
+
+@pytest.mark.parametrize(
+    ("found", "status", "words"),
+    [
+        ("sandbox-exec", "ok", "no writes outside"),
+        ("unshare", "ok", "does not confine"),
+        ("none", "warn", "falls back to host mode"),
+    ],
+)
+def test_doctor_says_whether_propose_patch_can_use_a_sandbox(
+    machine: Path, found: str, status: str, words: str
+) -> None:
+    (check,) = named(run(machine, ALL_KEYS, isolation=lambda: found), "sandbox")
+    assert check.status == status and words in check.detail
+    if status == "warn":
+        assert "WSL" in check.fix
+
+
+def test_doctor_reports_a_sandbox_turned_off(
+    machine: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FUSION__VERIFY__SANDBOX_ENABLED", "false")
+    (check,) = named(run(machine, ALL_KEYS, isolation=lambda: "sandbox-exec"), "sandbox")
+    assert check.status == "info" and "never runs code" in check.detail

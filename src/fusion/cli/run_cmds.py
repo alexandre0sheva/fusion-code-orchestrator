@@ -1,4 +1,5 @@
-"""Commands that run the panel: ask, review-diff, debug, decide, plan, digest and eval-answer.
+"""Commands that run the panel: ask, review-diff, debug, decide, plan, digest, patch and
+eval-answer.
 
 They share one shape: the main input is an argument, ``--file`` or stdin; then ``--context``,
 ``--strategy``, ``--max-cost``, ``--detail``, ``--json``, ``--mock``, ``--db-path`` and ``--quiet``.
@@ -8,6 +9,7 @@ progress and warnings to stderr. Exit codes are listed in ``fusion.cli.common``.
 
 from __future__ import annotations
 
+import enum
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -40,6 +42,7 @@ from fusion.cli.common import (
     require_a_provider,
     run_tool,
 )
+from fusion.mcp_server.patch import present_patch
 from fusion.mcp_server.response import (
     COMPACT_MAX_TOKENS,
     DIGEST_OVERHEAD_TOKENS,
@@ -54,6 +57,7 @@ from fusion.mcp_server.schemas import (
     EvalAnswerInput,
     FusionAskInput,
     PlanFeatureInput,
+    ProposePatchInput,
     ReviewDiffInput,
 )
 
@@ -457,10 +461,99 @@ def digest(
     )
 
 
+class Verify(enum.StrEnum):
+    sandbox = "sandbox"
+    host = "host"
+    none = "none"
+
+
+def patch(
+    task: Annotated[
+        str | None, typer.Argument(help="The change to make, stated so it stands alone (- stdin)")
+    ] = None,
+    file: FileOption = None,
+    glob: GlobOption = None,
+    diff_ref: DiffRefOption = None,
+    tests_cmd: Annotated[
+        str | None,
+        typer.Option(
+            "--tests-cmd",
+            help="Shell command that runs the tests from the project root; in sandbox mode it "
+            "runs only in the temporary copy, with no network",
+        ),
+    ] = None,
+    verify: Annotated[
+        Verify,
+        typer.Option(
+            help="sandbox: Fusion runs the checks in a temporary copy; host: you run them; "
+            "none: no checks"
+        ),
+    ] = Verify.sandbox,
+    diff_only: Annotated[
+        bool,
+        typer.Option("--diff-only", help="Print only the diff (exit 3 when there is none)"),
+    ] = False,
+    context: ContextOption = "",
+    context_file: ContextFileOption = None,
+    strategy: StrategyOption = None,
+    max_cost: MaxCostOption = None,
+    detail: DetailOption = Detail.compact,
+    as_json: JsonOption = False,
+    mock: MockOption = False,
+    db_path: DbPathOption = None,
+    quiet: QuietOption = False,
+) -> None:
+    """Get a patch, cross-checked by the panel's own checks, as a unified diff. Never applied.
+
+    Example: fusion patch "Fix the off-by-one in paginate()" -f src/pages.py
+    --tests-cmd 'python -m pytest -q tests/test_pages.py' --diff-only > fix.patch
+    """
+    text = primary_text(task, None, what="the change", flag="the TASK argument")
+    if not (file or glob or diff_ref):
+        msg = "name the code to change with --file, --glob or --diff-ref"
+        raise CliError(msg, code=EXIT_USAGE)
+    request = ProposePatchInput(
+        task=text,
+        paths=[str(path) for path in file or []],
+        globs=list(glob or []),
+        diff_ref=diff_ref,
+        tests_cmd=tests_cmd,
+        verify=verify.value,
+        context=context_text(context, context_file),
+        strategy=strategy,
+        max_cost_usd=check_max_cost(max_cost),
+        detail=detail.value,
+    )
+    require_a_provider(mock)
+    tools = make_tools(db_path, mock)
+    result = present_patch(run_tool(tools, lambda t: t.fusion_propose_patch(request), quiet=quiet))
+    if diff_only:
+        if result.patch:
+            typer.echo(result.patch, nl=False)
+        for warning in result.warnings:
+            err_console.print(f"warning: {warning}", style="yellow", highlight=False)
+    elif as_json:
+        echo_json(result.model_dump(exclude_none=True))
+    elif sys.stdout.isatty():
+        console.print(Markdown(result.display_markdown))
+    else:
+        typer.echo(result.display_markdown)
+    if not quiet and not as_json:
+        err_console.print(
+            f"run {result.run_id}  (fusion runs show {result.run_id})",
+            style="dim",
+            highlight=False,
+            soft_wrap=True,
+        )
+    if diff_only and not result.patch:
+        raise typer.Exit(EXIT_HALTED)
+
+
 def register(app: typer.Typer) -> None:
     """Add the run commands to the root app."""
     app.command("ask")(ask)
     app.command("digest")(digest)
+    app.command("patch")(patch)
     app.command("review-diff")(review_diff)
     app.command("debug")(debug)
     app.command("decide")(decide)

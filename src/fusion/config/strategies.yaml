@@ -26,16 +26,18 @@
 #                         choice that is not an id falls back to a vote, with a warning
 #                select+patch  select, plus up to 3 short points other candidates cover and the
 #                         chosen one lacks, appended after it (a cheap union without a rewrite)
-#                verified-synth  benchmark only, coding tasks: every member writes a complete
+#                verified-synth  coding tasks: every member writes a complete
 #                         patch (from its approach) plus 1-3 check scripts and guardrails; each
 #                         check is validated, run on the unpatched copy (one that already passes
 #                         is dropped), then every patch runs against every check in a sandbox
 #                         copy. Checks by OTHER members (and the task's visible tests) count in
 #                         full, a member's own count half; the best score wins, a tie goes to one
-#                         selector call (aggregator_model). Refused outside `fusion bench`
+#                         selector call (aggregator_model). Runs only in `fusion bench` and
+#                         under fusion_propose_patch (a sandbox copy); refused elsewhere
 #                auto     the default: settled per task. code_review and debugging -> union (with
 #                         lenses); implementation_plan, architecture_decision, asks and patches
-#                         -> select+patch (with approaches)
+#                         -> select+patch (with approaches); a patch -> verified-synth where the
+#                         run can cross-check it (the bench, fusion_propose_patch)
 # lenses       auto | off. auto: on a task type that has lenses (lenses.yaml: code review,
 #              debugging, plans, architecture) each member covers one area and reports only on
 #              it, so the answers are pieces of one result. Unset means auto for a panel whose
@@ -369,10 +371,10 @@ strategies:
   verified-synth:
     kind: panel
     description: >-
-      Benchmark only. The nano panel each write a complete patch (minimal fix, root-cause fix) and
-      the checks that should judge any fix; every patch is run against every check in a sandbox
-      copy and the one that passes the most checks the others wrote wins. A tie goes to one cheap
-      Haiku call. Refused outside `fusion bench`, because it runs code.
+      The nano panel each write a complete patch (minimal fix, root-cause fix) and the checks that
+      should judge any fix; every patch is run against every check in a sandbox copy and the one
+      that passes the most checks the others wrote wins. A tie goes to one cheap Haiku call. It
+      runs code, so only `fusion bench` and fusion_propose_patch (the default there) may use it.
     members:
       - model: claude-haiku
       - model: gpt-luna

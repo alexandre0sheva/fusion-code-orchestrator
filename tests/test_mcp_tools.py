@@ -37,6 +37,10 @@ ARGUMENTS: dict[str, dict[str, Any]] = {
     # read-only, from the test run's cwd (this repository)
     "fusion_digest": {"question": "What is this project?", "paths": ["pyproject.toml"]},
     "fusion_stats": {},
+    # verify=none reads only the files a patch touches (the mock writes none) and runs nothing
+    "fusion_propose_patch": {"task": "Fix the bug", "paths": ["pyproject.toml"], "verify": "none"},
+    # needs a host-mode run to pick from: called in test_propose_patch.py, listed here
+    "fusion_select_patch": {"run_id": "r", "results": {"a": {"a/x": "pass"}}},
     "fusion_compare_claude_runs": {
         "task_prompt": "Fix the bug",
         "opus_output": "Changed the loop bound.",
@@ -61,21 +65,24 @@ async def test_every_tool_declares_annotations_and_a_typed_output_schema(server:
         hints = tool.annotations
         assert hints is not None, name
         assert hints.read_only_hint is True and hints.destructive_hint is False, name
-        assert hints.open_world_hint is (name != "fusion_stats"), name
-        assert hints.idempotent_hint is (name == "fusion_stats"), name
+        local = name in {"fusion_stats", "fusion_select_patch"}  # no model, nothing changes
+        assert hints.open_world_hint is (not local), name
+        assert hints.idempotent_hint is local, name
         assert tool.output_schema and "display_markdown" in tool.output_schema["properties"], name
 
 
 async def test_descriptions_say_when_to_call_and_when_not_to(server: Any) -> None:
     async with Client(server) as client:
         tools = {t.name: t for t in await client.list_tools()}
-    for name in set(ARGUMENTS) - {"fusion_stats"}:
+    for name in set(ARGUMENTS) - {"fusion_stats", "fusion_select_patch"}:
         text = tools[name].description or ""
         assert ("Call it" in text and "Do not call it" in text) or "Only for" in text, name
     for name in ("fusion_ask", "fusion_review_diff", "fusion_debug_error"):
         description = tools[name].description or ""
         assert "tens of seconds" in description and "cents" in description, name
     assert "no model" in (tools["fusion_stats"].description or "")
+    assert "no model is called" in (tools["fusion_select_patch"].description or "")
+    assert "never applies" in (tools["fusion_propose_patch"].description or "")
 
 
 async def test_schemas_offer_the_cost_cap_strategy_and_detail_but_hide_legacy_names(
@@ -99,6 +106,8 @@ async def test_each_tool_answers_with_text_and_a_record_that_matches_its_schema(
     async with Client(server) as client:
         tools = {t.name: t for t in await client.list_tools()}
         for name, arguments in ARGUMENTS.items():
+            if name == "fusion_select_patch":
+                continue
             result = await client.call_tool(name, {"input": arguments})
             record = result.structured_content
             assert record is not None, name

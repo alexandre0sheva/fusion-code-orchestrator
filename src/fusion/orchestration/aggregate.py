@@ -9,7 +9,8 @@ call, lives in ``synthesize.py``; ``select``, one cheap call that picks an answe
 
 ``aggregator: auto`` is settled per task before the run (``resolve_aggregator``): the answers to a
 review or a debugging task are findings that add together (``union``), the answers to a plan, a
-decision, an ask or a patch are rivals of which one is picked (``select+patch``).
+decision, an ask or a patch are rivals of which one is picked (``select+patch``, or for a patch
+``verified-synth`` when the run can cross-check patches in a sandbox).
 """
 
 from __future__ import annotations
@@ -61,34 +62,44 @@ _FINDING_TASKS = frozenset({"code_review", "debugging"})
 _SOLUTION_TASKS = frozenset({"implementation_plan", "architecture_decision", "default"})
 
 
-def default_aggregator(task_type: TaskType | str, *, patch: bool = False) -> str:
+def default_aggregator(
+    task_type: TaskType | str, *, patch: bool = False, verified: bool = False
+) -> str:
     """What ``aggregator: auto`` becomes for a task.
 
     ``code_review`` and ``debugging`` -> ``union`` (each lens's findings added together);
     ``implementation_plan``, ``architecture_decision`` and asks -> ``select+patch`` (rival whole
-    answers, one picked); an answer that is a code patch -> ``select+patch`` too (the roadmap's
-    ``verified-synth``, which needs the sandbox of Task 11, replaces it there). ``answer_eval``
-    keeps the synthesizer.
+    answers, one picked); an answer that is a code patch -> ``verified-synth`` when the run can
+    cross-check patches (``verified``: the bench, or fusion_propose_patch's sandbox or host mode),
+    else ``select+patch``. ``answer_eval`` keeps the synthesizer.
     """
     key = canonical_task_key(task_type) if isinstance(task_type, TaskType) else task_type
     if patch:
-        return "select+patch"
+        return "verified-synth" if verified else "select+patch"
     if key in _FINDING_TASKS:
         return "union"
     return "select+patch" if key in _SOLUTION_TASKS else "llm"
 
 
 def resolve_aggregator(
-    strategy: Strategy, task_type: TaskType | str, *, patch: bool = False
+    strategy: Strategy,
+    task_type: TaskType | str,
+    *,
+    patch: bool = False,
+    verified: bool = False,
 ) -> Strategy:
     """``strategy`` with ``aggregator: auto`` settled for this task; any other strategy as it is.
 
     The members then get what the aggregator keeps: lenses for ``union``, approaches for
-    ``select+patch`` (never both: findings add together, rivals are picked among).
+    ``select+patch`` and ``verified-synth`` (never both: findings add together, rivals are picked
+    among). Only a panel cross-checks (``verified``): one answer, or a cascade's early vote, has
+    no rivals to run against each other's checks.
     """
     if strategy.aggregator != "auto":
         return strategy
-    kind = default_aggregator(task_type, patch=patch)
+    kind = default_aggregator(
+        task_type, patch=patch, verified=verified and strategy.kind == "panel"
+    )
     if strategy.kind == "solo":
         return strategy.model_copy(update={"aggregator": kind})
     selecting = kind in SELECT_AGGREGATORS

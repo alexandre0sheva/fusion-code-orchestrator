@@ -45,13 +45,16 @@ __all__ = [
     "RoutingPoliciesConfig",
     "RoutingSection",
     "Rung",
+    "VerifyConfig",
     "load_baseline",
     "load_model_registry",
     "load_routing_policies",
+    "load_verify_config",
 ]
 
 _CONFIG_DIR = Path(__file__).parent
 _ROUTING_KEYS = frozenset({"policies", "routing", "budgets", "fanout", "refinement", "cache"})
+
 
 class ModelRegistryConfig(BaseModel):
     """Full model registry loaded from YAML."""
@@ -421,6 +424,30 @@ def load_routing_policies(path: Path | None = None) -> RoutingPoliciesConfig:
         return RoutingPoliciesConfig.model_validate(section)
     except ValidationError as exc:
         raise format_validation_error(exc, section_prefix="", resolved=resolved) from exc
+
+
+class VerifyConfig(BaseModel):
+    """``verify``: where fusion_propose_patch runs the panel's checks and the user's tests."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sandbox_enabled: bool = True  # false: Fusion never runs code; sandbox falls back to host
+    check_timeout_s: float = Field(default=10.0, gt=0, le=600)
+    tests_timeout_s: float = Field(default=120.0, gt=0, le=3600)
+    mem_mb: int | None = Field(default=1024, ge=64)
+    workers: int = Field(default=2, ge=1, le=16)
+    max_copy_files: int = Field(default=5000, ge=1)
+    max_copy_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
+    max_file_bytes: int = Field(default=4 * 1024 * 1024, ge=1)
+
+
+def load_verify_config() -> VerifyConfig:
+    """The ``verify`` section of the layered configuration."""
+    resolved = resolve_config()
+    try:
+        return VerifyConfig.model_validate(resolved.data.get("verify") or {})
+    except ValidationError as exc:
+        raise format_validation_error(exc, section_prefix="verify", resolved=resolved) from exc
 
 
 def load_baseline(path: Path | None = None, catalog: Catalog | None = None) -> BaselineConfig:

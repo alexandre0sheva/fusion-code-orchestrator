@@ -50,6 +50,7 @@ SECTIONS = frozenset(
         "lenses",
         "approaches",
         "baselines",
+        "verify",
     }
 )
 ENV_PREFIX = "FUSION__"

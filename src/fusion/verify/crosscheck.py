@@ -50,7 +50,9 @@ __all__ = [
     "Matrix",
     "Pick",
     "SandboxCopy",
+    "check_records",
     "crosscheck",
+    "patched_files",
     "pick",
     "run_check",
     "snapshot",
@@ -289,6 +291,9 @@ class CrossCheckReport:
     guardrails: dict[str, list[str]] = field(default_factory=dict)
     isolation: str = "none"
     seconds: float = 0.0
+    # Host mode (``fusion.verify.propose``): what the host needs later to pick, kept with the run
+    # (each candidate's normalised patch and every valid check, with its body).
+    handoff: dict[str, Any] | None = None
 
     @property
     def kept(self) -> list[CheckRecord]:
@@ -308,7 +313,16 @@ class CrossCheckReport:
             "guardrails": self.guardrails,
             "isolation": self.isolation,
             "seconds": round(self.seconds, 2),
+            **({"handoff": self.handoff} if self.handoff is not None else {}),
         }
+
+
+def check_records(
+    candidates: Sequence[Candidate], task_checks: Sequence[CheckScript] = ()
+) -> list[CheckRecord]:
+    """One record per check with a unique id (``author/name``), each candidate check validated
+    (``invalid`` with its reasons when it fails validation); the task's checks are trusted."""
+    return _records(candidates, CheckEnv(source={}, task_checks=tuple(task_checks)))
 
 
 def _records(candidates: Sequence[Candidate], env: CheckEnv) -> list[CheckRecord]:

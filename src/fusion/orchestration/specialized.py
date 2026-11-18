@@ -294,3 +294,6 @@ class PipelineMap(TypedDict):
     architecture: ArchitectureDecisionPipeline
     plan: ImplementationPlanPipeline
     answer_eval: AnswerEvalPipeline
+    # fusion_propose_patch: the generic engine with no soft time limit, since the cross-check runs
+    # the panel's checks and the caller's tests after the panel answers.
+    patch: BasePipeline

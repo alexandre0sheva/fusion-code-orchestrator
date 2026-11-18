@@ -137,8 +137,9 @@ class BasePipeline:
         return await SoftTimeoutRecovery(self.deps).run(state)
 
     def _cache_key(self, state: RunState) -> str | None:
-        """The response-cache key of this run, or None when the cache is off."""
-        if not self._cache.enabled:
+        """The response-cache key of this run, or None when the cache is off or the run
+        cross-checks patches (their checks ran on the project as it was: never replay them)."""
+        if not self._cache.enabled or state.ctx.crosscheck is not None:
             return None
         assert state.strategy is not None
         return request_key(state.ctx, state.strategy)
