@@ -11,7 +11,7 @@ result.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -29,11 +29,13 @@ from fusion.orchestration.aggregate import (
     build_verified,
     build_vote,
 )
+from fusion.orchestration.approaches import Approach, assign_approaches
 from fusion.orchestration.budget_guard import (
     escalation_calls,
     judge_calls,
     preflight,
     refine_round_calls,
+    select_calls,
     synthesis_calls,
     union_check_calls,
 )
@@ -65,7 +67,15 @@ from fusion.orchestration.progress import report as report_progress
 from fusion.orchestration.prompts import build_user_prompt, get_system_prompt
 from fusion.orchestration.refine import RefinementResult, refine_panel_responses
 from fusion.orchestration.result import PanelResult, PipelineResult, build_usage_summary
-from fusion.orchestration.strategy import PanelMember, Strategy
+from fusion.orchestration.select import (
+    PATCH_POINTS,
+    SelectionResult,
+    anonymise,
+    parse_selection,
+    render_selection,
+    run_selector,
+)
+from fusion.orchestration.strategy import SELECT_AGGREGATORS, PanelMember, Strategy
 from fusion.orchestration.synthesize import synthesize_responses
 from fusion.orchestration.union import (
     Material,
@@ -202,18 +212,22 @@ class RouteStage(_Stage):
     def _seats(self, state: RunState, strategy: Strategy, aliases: list[str]) -> list[PanelMember]:
         """The run's members in order, a model listed twice taking a seat per copy.
 
-        Copies of one model exist to cover different areas, so a model gets at most as many seats
-        as the task type has lenses (one when it has none or the strategy has lenses off).
+        Copies of one model exist to cover different areas or answer from different stances, so a
+        model gets at most as many seats as the task type has lenses (or, for a select strategy,
+        approaches); one when it has none or the strategy has both off.
         """
         pending: dict[str, list[PanelMember]] = {}
         for member in strategy.members:
             pending.setdefault(member.model, []).append(member)
-        lenses = (
-            self.deps.routing.strategies.lenses.for_task(state.task_type)
-            if strategy.lenses == "auto"
-            else []
-        )
-        limit = max(len(lenses), 1)
+        routing = self.deps.routing.strategies
+        variants: Sequence[Lens | Approach] = []
+        noun = "lens(es) to split it by"
+        if strategy.lenses == "auto":
+            variants = routing.lenses.for_task(state.task_type)
+        elif strategy.approaches == "auto":
+            variants = routing.approaches.available(state.task_type, patch=state.ctx.expects_patch)
+            noun = "approach(es) to answer it from"
+        limit = max(len(variants), 1)
         members: list[PanelMember] = []
         dropped: dict[str, int] = {}
         for alias in aliases:
@@ -227,7 +241,7 @@ class RouteStage(_Stage):
             assert state.routing is not None
             state.routing.reasons.append(
                 f"{alias} runs {limit} time(s), not {limit + count}: "
-                f"{canonical_task_key(state.task_type)} has {len(lenses)} lens(es) to split it by"
+                f"{canonical_task_key(state.task_type)} has {len(variants)} {noun}"
             )
         seats = seated(members)
         for member in seats:
@@ -428,6 +442,8 @@ class PanelStage(_Stage):
             )
         if strategy.lenses == "auto":
             state.lenses = self._assign(state)
+        elif strategy.approaches == "auto":
+            state.approaches = self._assign_approaches(state)
         return self._accept(state, await self._fan(state, state.panel_models))
 
     def _assign(self, state: RunState) -> dict[str, Lens]:
@@ -435,18 +451,36 @@ class PanelStage(_Stage):
         lenses = assign_lenses(
             state.task_type, state.members, self.deps.routing.strategies.lenses
         )
-        if not lenses:
-            return {}
-        idle = [m.model for m in state.members if m.model not in lenses]
+        self._drop_idle_seats(state, lenses, "Lenses")
+        return lenses
+
+    def _assign_approaches(self, state: RunState) -> dict[str, Approach]:
+        """Each member's approach (the patch approaches for a task that asks for a patch)."""
+        approaches = assign_approaches(
+            state.task_type,
+            state.members,
+            patch=state.ctx.expects_patch,
+            book=self.deps.routing.strategies.approaches,
+        )
+        self._drop_idle_seats(state, approaches, "Approaches")
+        return approaches
+
+    @staticmethod
+    def _drop_idle_seats(
+        state: RunState, assigned: Mapping[str, Lens] | Mapping[str, Approach], label: str
+    ) -> None:
+        """Stop asking a seat that holds nothing, and say who holds what."""
+        if not assigned:
+            return
+        idle = [m.model for m in state.members if m.model not in assigned]
         if idle:
-            state.members = [m for m in state.members if m.model in lenses]
+            state.members = [m for m in state.members if m.model in assigned]
             state.panel_models = [m.model for m in state.members]
             if state.trace is not None:
                 state.trace.panel_models = state.panel_models
         if state.routing is not None:
-            shown = ", ".join(f"{alias}: {lens.name}" for alias, lens in lenses.items())
-            state.routing.reasons.append(f"Lenses: {shown}")
-        return lenses
+            shown = ", ".join(f"{alias}: {item.name}" for alias, item in assigned.items())
+            state.routing.reasons.append(f"{label}: {shown}")
 
     async def _fan(
         self,
@@ -474,6 +508,7 @@ class PanelStage(_Stage):
             label=label,
             avoid=state.panel_models,
             lenses=state.lenses,
+            approaches=state.approaches,
         )
 
     def _fanout_config(self, state: RunState) -> FanoutConfig:
@@ -498,6 +533,11 @@ class PanelStage(_Stage):
             model: state.lenses[member].name
             for model, member in fanout.answered_for.items()
             if member in state.lenses
+        }
+        state.answer_approaches = {
+            model: state.approaches[member].name
+            for model, member in fanout.answered_for.items()
+            if member in state.approaches
         }
         if not fanout.quorum_met:
             self._halt_without_quorum(state)
@@ -635,6 +675,7 @@ class RefineStage(_Stage):
                     gateway=state.gateway,
                     members=members,
                     lenses=_lens_by_answer(state),
+                    approaches=_approach_by_answer(state),
                 )
             finally:
                 state.guard.release("refinement")
@@ -723,6 +764,17 @@ def _lens_by_answer(state: RunState) -> dict[str, Lens]:
     }
 
 
+def _approach_by_answer(state: RunState) -> dict[str, Approach]:
+    """Each answering model's approach (a hedge or fallback answers with its member's stance)."""
+    if state.fanout is None:
+        return {}
+    return {
+        model: state.approaches[member]
+        for model, member in state.fanout.answered_for.items()
+        if member in state.approaches
+    }
+
+
 class ClaimsStage(_Stage):
     """Read each answer as claims, group them across models, and measure the agreement."""
 
@@ -739,6 +791,8 @@ class ClaimsStage(_Stage):
             state.disagreement["none_found"] = sorted(
                 m for m, a in state.answers.items() if a.none_found
             )
+        if state.answer_approaches:
+            state.disagreement["approaches"] = dict(state.answer_approaches)
         state.warnings.extend(_claims_warnings(state))
         return state
 
@@ -861,7 +915,9 @@ class AggregateStage(_Stage):
     merge, a vote keeps the points a majority backed, best-of returns the answer the others agree
     with most. ``llm`` makes one synthesizer call that sees the clusters as well as the answers,
     unless the cost or latency cap leaves no room for it, in which case the digest is returned,
-    or the strategy's ``skip_aggregator`` finds the panel already agrees.
+    or the strategy's ``skip_aggregator`` finds the panel already agrees. ``select`` and
+    ``select+patch`` make one small call that picks the best of the anonymised answers (see
+    ``select.py``) and fall back to a vote when it names no valid choice.
     """
 
     async def run(self, state: RunState) -> RunState:
@@ -874,6 +930,10 @@ class AggregateStage(_Stage):
             kind = self._skip(state) or kind
         if kind in {"union", "union+check"}:
             state.synth_response = await self._union(state, check=kind == "union+check")
+        elif kind in SELECT_AGGREGATORS:
+            state.synth_response = await self._select(
+                state, readable, with_points=kind == "select+patch"
+            )
         elif kind == "solo":
             response = state.successful[0][1]
             state.synth_response = response.model_copy(update={"text": readable[0][1]})
@@ -966,6 +1026,92 @@ class AggregateStage(_Stage):
                 f"union+check: {model} failed ({response.error}); the unquoted findings were "
                 "left unchecked"
             )
+
+    async def _select(
+        self, state: RunState, readable: list[tuple[str, str]], *, with_points: bool
+    ) -> ModelResponse:
+        """The best of the panel's whole answers, picked by one cheap call (see ``select.py``)."""
+        if len(readable) == 1:  # one answer has no rival
+            return ModelResponse(provider="fusion", model="select", text=readable[0][1])
+        model = state.synthesizer_model
+        if not model:
+            state.warnings.append("select: no selector model is available; chose by vote instead")
+            return self._select_fallback(state, readable, model)
+        sizes = [r.output_tokens or ANSWER_OUTPUT_TOKENS for _, r in state.successful]
+        reason = state.guard.check("synthesis", select_calls(model, state.prompt_tokens, sizes))
+        if reason:
+            state.warnings.append(f"{reason}; chose by vote instead of asking the selector")
+            return self._select_fallback(state, readable, model)
+        candidates = anonymise(readable, state.run_id, hide=self._names(readable))
+        points = PATCH_POINTS if with_points else 0
+        try:
+            response = await run_selector(
+                selector_model=model,
+                registry_models=self.deps.registry.models,
+                task_type=state.task_type,
+                material=state.sanitized_primary,
+                candidates=candidates,
+                patch=state.ctx.expects_patch,
+                patch_points=points,
+                gateway=state.gateway,
+            )
+        finally:
+            state.guard.release("synthesis")
+        if response.error:
+            state.warnings.append(f"select: {model} failed ({response.error}); chose by vote")
+            return self._select_fallback(state, readable, model)
+        result = parse_selection(response, [c.id for c in candidates], points)
+        if result is None:
+            state.warnings.append(f"select: {model} returned no valid choice; chose by vote")
+            return self._select_fallback(state, readable, model)
+        picked = next(c for c in candidates if c.id == result.choice_id)
+        text = dict(readable)[picked.model]  # as written: the scrub applies to the selector only
+        state.chosen = picked.model
+        self._record_selection(state, model, result, picked.model, len(candidates))
+        return ModelResponse(provider="fusion", model="select", text=render_selection(text, result))
+
+    def _names(self, readable: list[tuple[str, str]]) -> list[str]:
+        """Every name the panel's answers could be traced to: aliases and provider model ids."""
+        names: list[str] = []
+        for alias, _ in readable:
+            names += [alias, base_alias(alias)]
+            entry = self.deps.registry.models.get(alias)
+            if entry is not None:
+                names.append(entry.model_id)
+        return names
+
+    @staticmethod
+    def _record_selection(
+        state: RunState, model: str, result: SelectionResult, picked: str, n: int
+    ) -> None:
+        state.disagreement["selection"] = {
+            "model": model,
+            "choice": result.choice_id,
+            "runner_up": result.runner_up,
+            "why": result.why,
+            "picked": picked,
+            "candidates": n,
+            "added_points": len(result.missing),
+        }
+        if state.routing is not None:
+            first = result.why.splitlines()[0] if result.why else "no reason given"
+            extra = f", plus {len(result.missing)} point(s)" if result.missing else ""
+            state.routing.reasons.append(
+                f"select picked {picked}'s answer ({result.choice_id} of {n}{extra}): {first}"
+            )
+
+    def _select_fallback(
+        self, state: RunState, readable: list[tuple[str, str]], model: str
+    ) -> ModelResponse:
+        """The selector gave no usable choice: a vote when a majority backed something, else the
+        answer the others agree with most (a vote over nothing would return nothing)."""
+        report = state.agreement
+        voted = state.ctx.expects_patch or (report is not None and bool(report.consensus))
+        state.disagreement["selection"] = {
+            "model": model,
+            "fallback": "vote" if voted else "best_of",
+        }
+        return self._vote(state, readable) if voted else self._best_of(state, readable)
 
     @staticmethod
     def _vote(state: RunState, readable: list[tuple[str, str]]) -> ModelResponse:
@@ -1108,7 +1254,7 @@ class FinalEvalStage(_Stage):
             disagreement=state.disagreement,
             confidence=state.final_eval.confidence,
             # the union's own selection: the points it dropped must not come back in the fields
-            clusters=state.union.kept_clusters() if state.union else state.clusters,
+            clusters=_final_clusters(state),
             summary=_headline(state),
             score=_mean_score(state),
         )
@@ -1131,16 +1277,36 @@ class FinalEvalStage(_Stage):
         return state
 
 
+def _final_clusters(state: RunState) -> list[ClaimCluster]:
+    """The claims the final answer's structured fields are built from: what the union kept, or
+    what the chosen answer said (a select run returns one answer, not every point of the panel)."""
+    if state.union:
+        return state.union.kept_clusters()
+    if state.chosen:
+        mine = [c for c in state.clusters if state.chosen in c.models]
+        return mine or state.clusters
+    return state.clusters
+
+
 def _headline(state: RunState) -> str:
-    """Summary for fields built from claims: the panelists' own summaries."""
-    summaries = [(m, a.summary.strip()) for m, a in state.answers.items() if a.summary.strip()]
+    """Summary for fields built from claims: the panelists' own summaries (a select run's chosen
+    answer speaks alone)."""
+    answers = _chosen_answers(state)
+    summaries = [(m, a.summary.strip()) for m, a in answers.items() if a.summary.strip()]
     if len(summaries) == 1:
         return summaries[0][1]
     return "\n".join(f"{m}: {s}" for m, s in summaries)
 
 
+def _chosen_answers(state: RunState) -> dict[str, PanelAnswer]:
+    """The answers the final one speaks for: the chosen one on a select run, else all."""
+    if state.chosen in state.answers:
+        return {state.chosen: state.answers[state.chosen]}
+    return state.answers
+
+
 def _mean_score(state: RunState) -> float | None:
-    scores = [a.score for a in state.answers.values() if a.score is not None]
+    scores = [a.score for a in _chosen_answers(state).values() if a.score is not None]
     return sum(scores) / len(scores) if scores else None
 
 

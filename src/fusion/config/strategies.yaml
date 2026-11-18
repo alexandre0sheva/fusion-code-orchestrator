@@ -18,6 +18,17 @@
 #                union+check  union, plus one cheap call (aggregator_model) that rules on the
 #                         "not checked" findings; a confirmation counts only with a quote that
 #                         passes the same string match
+#                select   one cheap call (aggregator_model, at most 400 output tokens) picks the
+#                         best of the members' whole answers, shown as anonymous candidates c1..cN
+#                         in an order shuffled by the run id; the chosen answer is returned as
+#                         written. For answers that are rivals (plans, decisions, asks, patches);
+#                         members then answer from different `approaches` (approaches.yaml). A
+#                         choice that is not an id falls back to a vote, with a warning
+#                select+patch  select, plus up to 3 short points other candidates cover and the
+#                         chosen one lacks, appended after it (a cheap union without a rewrite)
+#                auto     the default: settled per task. code_review and debugging -> union (with
+#                         lenses); implementation_plan, architecture_decision, asks and patches
+#                         -> select+patch (with approaches)
 # lenses       auto | off. auto: on a task type that has lenses (lenses.yaml: code review,
 #              debugging, plans, architecture) each member covers one area and reports only on
 #              it, so the answers are pieces of one result. Unset means auto for a panel whose
@@ -28,6 +39,11 @@
 #              see, and a vote or best_of fallback becomes union. A member may name its `lens`;
 #              a model may be listed more than once only with lenses (each copy takes another
 #              lens; a copy with no lens left for the task type is not asked)
+# approaches   auto | off. auto: with a select aggregator every member answers the WHOLE task from
+#              its own approach (approaches.yaml: plans: smallest change, cleanest design, safest
+#              rollout; ...), so the rival answers differ. Unset means auto for a select panel.
+#              A member may name its `approach`. Lenses and select never combine (a lens answers
+#              one area, so there would be no whole answer to pick): such a strategy is refused
 # kind: cascade  the `cascade.first` cheapest members answer first; if they agree (agreement >=
 #              `cascade.agreement_threshold`, nothing disputed, task not high risk) the run ends
 #              there with `cascade.early_aggregator` (vote | best_of) and no synthesis call;
@@ -243,6 +259,46 @@ strategies:
       - model: claude-haiku
       - model: claude-haiku
     aggregator: union
+
+  panel-nano-select:
+    kind: panel
+    description: >-
+      The nano panel where every member answers the whole task from its own approach and one
+      cheap Haiku call picks the best answer (`select+patch`: plus a few points the others
+      covered). For plans, architecture decisions, asks and patches; the selector costs about a
+      tenth of a synthesis.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: select+patch
+    aggregator_model: claude-haiku
+
+  panel-luna-approaches:
+    kind: panel
+    description: >-
+      GPT-6 Luna asked once per approach (three copies, each answering from another stance),
+      then one cheap call picks the best. The self-mixture of panel-nano-select; where a task
+      has fewer approaches Luna is asked fewer times.
+    members:
+      - model: gpt-luna
+      - model: gpt-luna
+      - model: gpt-luna
+    aggregator: select
+    aggregator_model: claude-haiku
+
+  panel-nano-auto:
+    kind: panel
+    description: >-
+      The nano panel with `aggregator: auto`: lenses and `union` (no merge call) for review and
+      debugging, approaches and a cheap `select+patch` call for plans, decisions, asks and
+      patches.
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: auto
+    aggregator_model: claude-haiku
 
   panel-digest:
     kind: panel

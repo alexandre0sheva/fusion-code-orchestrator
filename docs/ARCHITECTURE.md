@@ -28,7 +28,8 @@ Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
      JudgeStage        safety checks and claim-derived scores per answer; LLM judge if on
      AggregateStage    final answer (solo: the answer itself; llm: one synthesizer call;
                        digest, vote, best_of, union: built from the claims, no call;
-                       union+check: union plus one checker call)
+                       union+check: union plus one checker call; select, select+patch: one
+                       small call that picks the best answer; auto is settled per task first)
    FinalEvalStage    final eval, structured output, budget warnings
    ShadowStage       collect the baseline answer and judge it blind against Fusion's
    PersistStage      build the result from the ledger, store the run (always runs)
@@ -221,8 +222,8 @@ strategy into:
 - panel models (the strategy's enabled members; if none is enabled, the catalog's panel-role models
   with a warning);
 - the judge model (the task policy's `judge_model`, else a JSON-capable model with the judge role);
-- the aggregator model (`llm` and `union+check` only; empty for solo, digest, vote, best_of and
-  union);
+- the aggregator model (`llm`, `union+check`, `select` and `select+patch` only; empty for solo,
+  digest, vote, best_of and union);
 - the resolved strategy name, an estimated cost tier and routing warnings.
 
 `RoutingDecision.strategy` reports the strategy that ran. Model metadata and prices live in the
@@ -347,6 +348,49 @@ so the answers are pieces of one result.
   the run's `disagreement` holds `lenses`, `lens_exclusive`, `none_found` and the union's counts.
 - **Forecasts** add `LENS_PROMPT_TOKENS` to each lensed panel and refinement call.
 
+### Approaches and the select aggregator
+
+Lenses suit answers that are lists of findings that add up. Where every member gives a **complete**
+answer to the whole task (an implementation plan, an architecture decision, a `fusion_ask` answer, a
+patch) the answers are rivals, and one is picked instead of a synthesizer rewriting them
+(`approaches.py`, `select.py`, config in `approaches.yaml`).
+
+- **Approaches.** An `Approach` is a stance a member answers the whole task from (plans: smallest
+  change, cleanest design, safest rollout; decisions: each option argued by its strongest advocate;
+  asks: direct, grounded, thorough; patches: minimal fix, root-cause fix). `assign_approaches` works
+  like `assign_lenses` (a member that names one keeps it, the rest take the others in order, a
+  model listed twice runs as seats and a seat that would repeat its approach is dropped), and a task
+  that expects a patch uses the `patch` approaches whatever its type. The member's prompt gets
+  `prompts.approach_instruction` after the shared prefix (it replaces the catalog persona, as a lens
+  does; a hedge or fallback keeps the member's approach); `RunState.answer_approaches` and the run's
+  `disagreement.approaches` record who answered from what. Lenses and `select` never combine: a lens
+  makes an answer cover one area, so no whole answer would be left to pick (rejected at load).
+- **Selection** (`AggregateStage._select`). `select.anonymise` labels the readable answers
+  `c1`..`cN` in an order shuffled by a hash of the run id (stable for one run, no position tell)
+  and scrubs the panel's aliases and provider model ids from the text. `prompts.build_select_prompt`
+  ports Harness²'s `select()`: delivery, conformance, fidelity against the supplied material (reject
+  invented specifics; where the material is silent prefer the candidate that says so), internal
+  consistency, operational fitness, finish; length and polish are not merit. The call (stage
+  `synthesis`, role `selector`, `SELECT_OUTPUT_TOKENS` = 400, a JSON schema) returns `why` (at most 6
+  lines), `choice` and `runner_up`; the selector never sees a model, a vendor or an approach.
+  `parse_selection` also reads prose ending in a fenced `choice` block. The chosen answer is returned
+  as written, and `FinalEvalStage` builds the structured fields from that answer's clusters.
+  `select+patch` also takes up to three one-sentence points (each must name another candidate) that
+  the chosen answer lacks and appends them after it, with no rewrite.
+- **Fallback.** A failed call, a choice that is not an id, a cost or latency cap with no room, or no
+  selector model falls back, with a warning, to a vote (the patch vote for a patch task) when a
+  majority backed something and to `best_of` otherwise; `disagreement.selection.fallback` says
+  which. A single surviving answer is returned without a call.
+- **`aggregator: auto`** (the schema default; the packaged strategies name theirs) is settled in
+  `RunState.start` by `aggregate.resolve_aggregator`: `default_aggregator(task_type, patch=)` gives
+  `union` (with lenses) for review and debugging and `select+patch` (with approaches) for plans,
+  decisions, asks and patches; `answer_eval` keeps `llm`. Every later stage sees a concrete
+  strategy; the forecast of an unresolved one is its dearest form (a synthesis).
+- **Cost.** `budget_guard.select_calls` plans the call: the task and every answer in, at most 400
+  tokens out, about a tenth of a synthesis. Both kinds of call are in the ledger under `synthesis`
+  with their roles, so the 0.3.0 study can compare them. Forecasts add `APPROACH_PROMPT_TOKENS` to
+  each member of a select panel.
+
 ### Cascade, aggregators and caps
 
 Three mechanisms cut what a run spends without a model call of their own. All of them read the
@@ -365,7 +409,8 @@ claim clusters and the ledger, never an answer's wording.
   threshold, risk, who ran) is stored with the run.
 - **Aggregators** (`aggregate.py`). `aggregator_for(strategy, cascade_exited_early, lensed)` picks
   one; `digest`, `vote` and `best_of` are pure functions of the clusters and answers (`union` is in
-  [Lenses and the union](#lenses-and-the-union)). `vote` keeps the
+  [Lenses and the union](#lenses-and-the-union), `select` in
+  [Approaches and the select aggregator](#approaches-and-the-select-aggregator)). `vote` keeps the
   `consensus` clusters, `best_of` scores each model by the mean share of the other models backing
   its clusters (halved when disputed) and returns that model's answer as written, and `digest`
   lists consensus, disputed and single-model clusters ahead of every answer for Claude Code to

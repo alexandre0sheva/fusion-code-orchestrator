@@ -17,6 +17,8 @@ from fusion.evals.schemas import (
     HybridEvalResult,
     ModelResponseEval,
 )
+from fusion.orchestration.aggregate import resolve_aggregator
+from fusion.orchestration.approaches import Approach
 from fusion.orchestration.budget_guard import BudgetGuard, BudgetReport, Preflight
 from fusion.orchestration.cascade import CascadeOutcome
 from fusion.orchestration.claims import AgreementReport, ClaimCluster, PanelAnswer
@@ -130,6 +132,8 @@ class RunState:
     panel_models: list[str] = field(default_factory=list)
     lenses: dict[str, Lens] = field(default_factory=dict)  # member -> the area it covers
     answer_lenses: dict[str, str] = field(default_factory=dict)  # answering model -> lens name
+    approaches: dict[str, Approach] = field(default_factory=dict)  # member -> its stance
+    answer_approaches: dict[str, str] = field(default_factory=dict)  # answering model -> approach
     judge_model: str = ""
     synthesizer_model: str = ""
     context_eval: ContextEvalResult | None = None
@@ -150,6 +154,7 @@ class RunState:
     disagreement: dict[str, Any] = field(default_factory=dict)
     synth_response: ModelResponse | None = None
     union: UnionResult | None = None  # the union aggregator's sorted findings
+    chosen: str = ""  # the model whose answer the select aggregator returned
     final_answer: str = ""
     structured: dict[str, Any] = field(default_factory=dict)
     final_eval: FinalEvalResult | None = None
@@ -237,6 +242,9 @@ class RunState:
             redact=redact_run,
         )
         strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
+        # `aggregator: auto` is settled here, once the task is known: every later stage sees a
+        # concrete aggregator and the lenses or approaches that go with it.
+        strategy = resolve_aggregator(strategy, ctx.task_type, patch=ctx.expects_patch)
         if ctx.max_cost_usd is not None:
             cap = ctx.max_cost_usd
             if strategy.max_cost_usd is not None:

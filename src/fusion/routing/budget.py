@@ -59,8 +59,11 @@ PROMPT_OVERHEAD_TOKENS = 900  # system prompt, claim schema and formatting aroun
 # A lens's instructions and the other lenses' areas, added to each lensed panel and refinement
 # call (the longest packaged lens prompt is about 590 tokens; tests keep this above it).
 LENS_PROMPT_TOKENS = 600
+# An approach's stance, added to each member call of a select panel (the packaged ones are ~60).
+APPROACH_PROMPT_TOKENS = 250
 ANSWER_OUTPUT_TOKENS = 1_500  # one panel or refinement answer
 SYNTHESIS_OUTPUT_TOKENS = 1_500
+SELECT_OUTPUT_TOKENS = 400  # the selector's id, a few lines of why and a few short extra points
 JUDGE_OUTPUT_TOKENS = 400
 
 

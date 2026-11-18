@@ -1,0 +1,90 @@
+# Panel approaches: where the answer to a task is ONE whole solution (an implementation plan, an
+# architecture decision, a `fusion_ask` answer, a patch), every panel member answers the whole
+# task, so the answers are rivals, not pieces. To make the rivals differ, each member gets an
+# approach: a stance to answer from. A cheap `select` call then picks the best one (strategies.yaml).
+# Review and debugging keep lenses + `union` (lenses.yaml): there the answers are findings that
+# add together.
+#
+# An approach:
+#   task_types   implementation_plan, architecture_decision, default (what `fusion_ask` uses) or
+#                patch (any task where the answer is a code change; these replace the task type's
+#                own approaches)
+#   instruction  the stance, in one or two sentences; the order below is the order approaches are
+#                given out in
+#
+# How approaches are given out: a member that names an `approach` keeps it; the others take the
+# task's remaining approaches in order, repeating when there are more members than approaches. A
+# model listed more than once in a strategy (a self-mixture) gets a different approach each time;
+# a copy that would repeat one is dropped. Strategies switch approaches off with `approaches: off`.
+# The selector never sees a candidate's approach, model or vendor.
+
+approaches:
+  # -- implementation plans ---------------------------------------------------------------------
+  smallest_change:
+    task_types: [implementation_plan]
+    instruction: >-
+      Plan the smallest change that delivers the request: reuse what exists, touch as few files
+      and interfaces as possible, and leave everything not needed for the request alone.
+
+  cleanest_design:
+    task_types: [implementation_plan]
+    instruction: >-
+      Plan the cleanest design for the request: put each responsibility where it belongs, name
+      the interfaces, and accept a larger change when it leaves the code easier to extend.
+
+  safest_rollout:
+    task_types: [implementation_plan]
+    instruction: >-
+      Plan the safest way to ship the request: small independently reversible steps, a check
+      after each, feature flags or staged exposure where they help, and a rollback for every step.
+
+  # -- architecture decisions -------------------------------------------------------------------
+  evolve_existing:
+    task_types: [architecture_decision]
+    instruction: >-
+      Argue, as its strongest advocate, for evolving what already exists: extend the current
+      system and patterns. Name the cost of every alternative honestly, then give your decision.
+
+  purpose_built:
+    task_types: [architecture_decision]
+    instruction: >-
+      Argue, as its strongest advocate, for the purpose-built option that fits the problem best
+      even if it means more new work. Name what it costs and risks, then give your decision.
+
+  adopt_standard:
+    task_types: [architecture_decision]
+    instruction: >-
+      Argue, as its strongest advocate, for adopting an established library, service or standard
+      instead of building. Name the lock-in and the fit gaps, then give your decision.
+
+  # -- questions (fusion_ask) -------------------------------------------------------------------
+  direct:
+    task_types: [default]
+    instruction: >-
+      Give the shortest answer that fully answers the question, with the one caveat that matters
+      most. Do not pad.
+
+  grounded:
+    task_types: [default]
+    instruction: >-
+      Answer from the supplied files and context first: cite what they show, and where they say
+      nothing, say so plainly instead of filling the gap with a guess.
+
+  thorough:
+    task_types: [default]
+    instruction: >-
+      Work the question through: consider the edge cases and the strongest objection to your own
+      answer, then give the answer and when it would not hold.
+
+  # -- patches ----------------------------------------------------------------------------------
+  minimal_fix:
+    task_types: [patch]
+    instruction: >-
+      Write the smallest patch that makes the change work: no refactoring, no unrelated edits,
+      the fewest lines that fix the problem as stated.
+
+  root_cause_fix:
+    task_types: [patch]
+    instruction: >-
+      Find the underlying cause and write the patch that fixes it there, not at the symptom, even
+      if that touches a little more code; keep it to what the cause requires.

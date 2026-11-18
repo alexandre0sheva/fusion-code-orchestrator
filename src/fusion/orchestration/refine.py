@@ -25,6 +25,7 @@ from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.routing.classifier import TaskType, canonical_task_key
 
 if TYPE_CHECKING:
+    from fusion.orchestration.approaches import Approach
     from fusion.orchestration.lenses import Lens
 
 
@@ -76,10 +77,12 @@ async def refine_panel_responses(
     gateway: CallGateway | None = None,
     members: Mapping[str, PanelMember] | None = None,
     lenses: Mapping[str, Lens] | None = None,
+    approaches: Mapping[str, Approach] | None = None,
 ) -> tuple[list[tuple[str, ModelResponse]], RefinementResult]:
     """Run one anonymized peer-review round over successful panel responses.
 
-    ``lenses`` (by answering model) keeps a lensed panelist within its area while it revises.
+    ``lenses`` (by answering model) keeps a lensed panelist within its area while it revises;
+    ``approaches`` keeps a panelist answering the whole task from its stance.
 
     Returns the responses in original order — refined where the second call
     succeeded, round-1 otherwise — plus refinement telemetry.
@@ -115,6 +118,7 @@ async def refine_panel_responses(
                 own_answer=own.content,
                 peer_answers=peers,
                 lens=(lenses or {}).get(model_name),
+                approach=(approaches or {}).get(model_name),
             ),
             max_tokens=entry.max_tokens,
             response_schema=panel_answer_schema(),

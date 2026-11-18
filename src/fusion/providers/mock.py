@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -150,8 +151,23 @@ class MockProvider(ModelProvider):
         prompt = request.user_prompt or " ".join(m.content for m in request.messages)
         return hashlib.sha256(prompt.encode()).hexdigest()[:8]
 
+    def _selector(self, seed: str, request: ModelRequest) -> str:
+        """The selector's verdict: a candidate picked from the seed, the next one as runner-up."""
+        ids = re.findall(r"^## Candidate (c\d+)$", request.user_prompt, re.MULTILINE)
+        pick = int(seed, 16) % len(ids) if ids else 0
+        verdict: dict[str, Any] = {
+            "why": f"Delivers what was asked and stays within the task (mock:{seed}).",
+            "choice": ids[pick] if ids else "c1",
+            "runner_up": ids[(pick + 1) % len(ids)] if len(ids) > 1 else None,
+        }
+        if "`missing`" in request.user_prompt:
+            verdict["missing"] = []
+        return json.dumps(verdict)
+
     def _generate_content(self, request: ModelRequest, personality: str) -> str:
         seed = self._seed(request)
+        if request.metadata.get("role") == "selector":
+            return self._selector(seed, request)
         if request.response_schema is not None and request.metadata.get("role") in _CLAIM_ROLES:
             return self._panel_answer(request, personality, seed)
         if personality == "synthesizer":

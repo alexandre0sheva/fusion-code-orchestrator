@@ -7,8 +7,8 @@ refinement. Cost and pricing methodology lives in [COSTS.md](COSTS.md).
 
 Settings come from five layers; a later layer overrides an earlier one:
 
-1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml`, `strategies.yaml`, `lenses.yaml`
-   and `baseline.yaml` inside the package (`src/fusion/config/`). Do not edit these in an installed copy.
+1. **Packaged defaults**: `catalog.yaml`, `routing_policies.yaml`, `strategies.yaml`, `lenses.yaml`,
+   `approaches.yaml` and `baseline.yaml` inside the package (`src/fusion/config/`). Do not edit these in an installed copy.
 2. **User config**: `config.yaml` in the platform config directory (`fusion config paths` prints it;
    `fusion init` creates a commented starter).
 3. **Project config**: `.fusion/config.yaml` in the working directory (or `FUSION_PROJECT_DIR`).
@@ -37,6 +37,7 @@ Validation errors name the key, the offending value, the layer that set it and t
 | `src/fusion/config/routing_policies.yaml` | Per-task judge model and context threshold; fan-out and refinement settings. |
 | `src/fusion/config/strategies.yaml` | Strategies (which models answer, rounds, aggregation, judging), the budget-to-strategy table and `strategy_aliases` (old strategy names). |
 | `src/fusion/config/lenses.yaml` | Panel lenses: the area each member of a review, debugging, plan or architecture panel covers (see [Lenses](#lenses)). |
+| `src/fusion/config/approaches.yaml` | Panel approaches: the stance each member of a plan, decision, ask or patch panel answers from (see [Approaches and `select`](#approaches-and-select)). |
 | `src/fusion/config/baseline.yaml` | Frontier baseline(s), as catalog aliases, that Fusion's cost is compared against. |
 
 ## Run database
@@ -314,11 +315,13 @@ strategies:
         temperature: 0.2         # optional; sent only if the catalog sets supports_sampling_params
         reasoning_effort: low    # optional per member
         lens: security           # optional: this member's lens (see Lenses); a+b holds two
+        approach: minimal_fix    # optional, select strategies: this member's approach
     lenses: auto                 # auto | off; unset = auto for llm, digest, union, union+check
+    approaches: auto             # auto | off; unset = auto for select, select+patch
     rounds: 2                    # 1 = answer once; 2 = plus one peer-refinement round
-    aggregator: llm              # llm | digest | vote | best_of | union | union+check
-                                 # | verified (benchmark only)
-    aggregator_model: claude-sonnet   # llm and union+check; omit for the catalog's synthesizer
+    aggregator: llm              # auto (the default) | llm | digest | vote | best_of | union
+                                 # | union+check | select | select+patch | verified (benchmark only)
+    aggregator_model: claude-sonnet   # llm, union+check, select; omit for the catalog's synthesizer
     judge: off                   # off | light | full
     judge_feeds_synthesis: false # true = the synthesizer reads the judge's scores (and waits)
     max_cost_usd: 0.05           # optional hard cap, see "Cost and latency caps"
@@ -358,6 +361,9 @@ budget_strategies:
 | `panel-digest` | the `panel-nano` models, no synthesis: the answers come back for Claude Code to merge | 3 |
 | `panel-vote` | the `panel-nano` models, no synthesis: only the points a majority of models backed come back | 3 |
 | `panel-nano-union` | the `panel-nano` models with lenses, merged by `union`: every lens's findings that the input backs, no synthesis | 3 |
+| `panel-nano-select` | the `panel-nano` models, each answering from its own approach; one cheap Haiku 5.5 call picks the best answer (`select+patch`); for plans, decisions, asks and patches | 3 + 1 (small) |
+| `panel-luna-approaches` | GPT-6 Luna asked once per approach (up to three copies), then one cheap call picks the best (`select`); a 0.3.0 ablation candidate, not a default | up to 3 + 1 (small) |
+| `panel-nano-auto` | the `panel-nano` models with `aggregator: auto`: lenses and `union` on review and debugging, approaches and `select+patch` on everything else | 3 (+ 1 small) |
 | `panel-luna-lenses`, `panel-haiku-lenses` | one model asked once per lens (up to three copies), merged by `union`: a self-mixture whose diversity comes from lenses; a 0.3.0 ablation candidate, not a default | up to 3 |
 | `panel-cascade` | the two cheapest of the `panel-nano` models first; if they agree, their shared points come back (2 calls), otherwise the rest answer and Claude Sonnet 5.5 merges | 2, or 3 + 1 |
 | `best-of-n-verified` | **benchmark only** (refused elsewhere, it runs code): the `panel-nano` models each write a patch and the task's visible tests pick one, no synthesis; see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox) | 3 |
@@ -383,7 +389,10 @@ How the fields behave:
   answer that the other models' claims back most, as written (ties go to the answer with more
   evidence, then to the earlier member). `union` adds every member's findings together for a
   lensed panel (see [Lenses](#lenses)); `union+check` also makes one cheap call about the findings
-  the union could not check. `verified` (benchmark mode only, for coding tasks) runs the task's
+  the union could not check. `select` and `select+patch` pick the best of the members' whole answers
+  with one small call (see [Approaches and `select`](#approaches-and-select)). **`auto`**, the
+  default when a strategy names none, becomes `union` for review and debugging and `select+patch`
+  for plans, decisions, asks and patches. `verified` (benchmark mode only, for coding tasks) runs the task's
   visible tests on each panelist's patch and returns the best. `vote`, `best_of`, `digest`, `union`
   and `verified` take no `aggregator_model`. When the task's answer is a code patch, `vote` returns
   the patch most models gave (see [BENCHMARKING.md](BENCHMARKING.md#coding-tasks-and-the-sandbox)).
@@ -416,7 +425,8 @@ How the fields behave:
 - **`speed`**: `balanced` (default) keeps the configured member order, and a cascade's first wave is
   its cheapest members. `fast` ranks members by measured speed for a typical answer (catalog
   `observed_*`): a cascade's first wave and a panel cut by `max_models` are then the fastest.
-- A model may appear only once in a strategy, unless the strategy uses lenses (see below).
+- A model may appear only once in a strategy, unless the strategy uses lenses or approaches (see
+  below).
 - `max_cost_usd` and `max_latency_s` are caps; see [Cost and latency caps](#cost-and-latency-caps).
 
 ### Lenses
@@ -478,6 +488,46 @@ How lenses are used:
   Findings are ranked by severity. **`union+check`** sends only the "not checked" findings to one
   cheap model (`aggregator_model`, at most 400 output tokens); a confirmation counts only with a
   quote that passes the same string match, and a rejection drops the finding.
+
+### Approaches and `select`
+
+Where the answer to a task is **one whole solution** (an implementation plan, an architecture
+decision, a `fusion_ask` answer, a patch) the members' answers are rivals, not pieces, so lenses do
+not apply. To make the rivals differ, each member gets an **approach** (`approaches.yaml`, config
+section `approaches`): a stance to answer the *whole* task from. One cheap call then picks the best
+answer instead of a synthesizer rewriting them.
+
+| Task | Approaches |
+|------|------------|
+| `implementation_plan` | `smallest_change` · `cleanest_design` · `safest_rollout` |
+| `architecture_decision` | `evolve_existing` · `purpose_built` · `adopt_standard` (each option argued by its strongest advocate) |
+| `ask` (task type `default`) | `direct` · `grounded` · `thorough` |
+| any task that expects a patch | `minimal_fix` · `root_cause_fix` (replace the task type's own) |
+
+```yaml
+approaches:
+  fewest_deps:                    # a new approach
+    task_types: [implementation_plan]
+    instruction: Plan it with no new dependency; say what that costs.
+```
+
+- **Assignment** follows lenses: a member that names an `approach` keeps it, the others take the
+  rest in order (they repeat when there are more members), one member alone gets none, and a model
+  listed more than once runs as seats, once per approach (`panel-luna-approaches`).
+- **`select`** shows the selector the answers as anonymous candidates `c1`..`cN`, in an order
+  shuffled by the run id, with no model, vendor or approach. It decides by delivery, conformance,
+  fidelity to the supplied material (an invented specific loses; where the material is silent the
+  candidate that says so wins), consistency and fitness, and length is not a merit. It answers with
+  an id and at most six lines of why in at most 400 output tokens, so the step costs about a tenth
+  of an `llm` synthesis. The chosen answer is returned as written; `select+patch` appends up to
+  three short points that other candidates covered and it lacks. `routing.reasons` and
+  `disagreement.selection` say which answer won, and the selector's call is in the ledger.
+- **A choice that is not an id** (or a failed call, or a cap with no room for the call) falls back
+  to a vote, or to `best_of` when no point had a majority, with a warning.
+- **Lenses and `select` never combine**: a strategy with `lenses: auto` or a member `lens` and a
+  select aggregator is rejected at load, with `approaches` on a non-select aggregator.
+  `aggregator: auto` is the one strategy that uses both, each where it fits.
+- `skip_aggregator` and `judge_feeds_synthesis` need an `llm` aggregator; neither applies to `select`.
 
 ### Cost and latency caps
 

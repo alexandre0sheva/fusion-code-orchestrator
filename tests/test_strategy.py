@@ -175,7 +175,7 @@ def test_a_valid_panel_strategy_keeps_every_field() -> None:
         model="claude-haiku", role="security_reviewer", reasoning_effort="high", temperature=0.2
     )
     assert strategy.models == ["claude-haiku", "gpt-luna", "claude-sonnet"]
-    assert strategy.aggregator == "llm" and strategy.max_latency_s == 30
+    assert strategy.aggregator == "auto" and strategy.max_latency_s == 30  # `auto` is the default
 
 
 SOLO_PER_ALIAS = {
@@ -210,6 +210,9 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-nano-union",
         "panel-luna-lenses",
         "panel-haiku-lenses",
+        "panel-nano-select",
+        "panel-luna-approaches",
+        "panel-nano-auto",
         "panel-cascade",
         "panel-local",
         "best-of-n-verified",
@@ -225,6 +228,10 @@ def test_packaged_strategies_are_the_documented_set() -> None:
     for name, alias in (("panel-luna-lenses", "gpt-luna"), ("panel-haiku-lenses", "claude-haiku")):
         lensed = book.get(name)
         assert [m.model for m in lensed.members] == [alias] * 3 and lensed.lenses == "auto", name
+    select = book.get("panel-nano-select")
+    assert (select.aggregator, select.lenses, select.approaches) == ("select+patch", "off", "auto")
+    assert book.get("panel-luna-approaches").aggregator == "select"
+    assert book.get("panel-nano-auto").aggregator == "auto"
     cascade = book.get("panel-cascade")
     assert cascade.kind == "cascade" and cascade.cascade is not None
     assert (cascade.cascade.first, cascade.cascade.early_aggregator) == (2, "vote")

@@ -4,7 +4,12 @@ Each turns the panel's answers and their claim clusters into the run's final ans
 what the panel already said, so the aggregation step costs nothing. ``digest`` hands everything to
 Claude Code to merge, ``vote`` keeps the points a majority of models backed, and ``best_of``
 returns the one answer that agrees most with the others. (``llm`` aggregation, one synthesizer
-call, lives in ``synthesize.py``.)
+call, lives in ``synthesize.py``; ``select``, one cheap call that picks an answer, lives in
+``select.py``.)
+
+``aggregator: auto`` is settled per task before the run (``resolve_aggregator``): the answers to a
+review or a debugging task are findings that add together (``union``), the answers to a plan, a
+decision, an ask or a patch are rivals of which one is picked (``select+patch``).
 """
 
 from __future__ import annotations
@@ -21,14 +26,78 @@ from fusion.orchestration.claims import (
     patch_text_key,
     top_clusters,
 )
-from fusion.orchestration.strategy import Strategy
+from fusion.orchestration.strategy import LENS_AGGREGATORS, SELECT_AGGREGATORS, Strategy
 from fusion.providers.base import ModelResponse
+from fusion.routing.classifier import TaskType, canonical_task_key
 
-__all__ = ["Aggregator", "Picked", "aggregator_for", "build_best_of", "build_digest", "build_vote"]
+__all__ = [
+    "Aggregator",
+    "Picked",
+    "aggregator_for",
+    "build_best_of",
+    "build_digest",
+    "build_vote",
+    "default_aggregator",
+    "resolve_aggregator",
+]
 
 Aggregator = Literal[
-    "solo", "llm", "vote", "best_of", "digest", "verified", "union", "union+check"
+    "solo",
+    "llm",
+    "vote",
+    "best_of",
+    "digest",
+    "verified",
+    "union",
+    "union+check",
+    "select",
+    "select+patch",
 ]
+
+# Task types whose answer is a list of findings that add together; every other answer is one
+# whole solution (or, for answer_eval, a verdict the synthesizer writes).
+_FINDING_TASKS = frozenset({"code_review", "debugging"})
+_SOLUTION_TASKS = frozenset({"implementation_plan", "architecture_decision", "default"})
+
+
+def default_aggregator(task_type: TaskType | str, *, patch: bool = False) -> str:
+    """What ``aggregator: auto`` becomes for a task.
+
+    ``code_review`` and ``debugging`` -> ``union`` (each lens's findings added together);
+    ``implementation_plan``, ``architecture_decision`` and asks -> ``select+patch`` (rival whole
+    answers, one picked); an answer that is a code patch -> ``select+patch`` too (the roadmap's
+    ``verified-synth``, which needs the sandbox of Task 11, replaces it there). ``answer_eval``
+    keeps the synthesizer.
+    """
+    key = canonical_task_key(task_type) if isinstance(task_type, TaskType) else task_type
+    if patch:
+        return "select+patch"
+    if key in _FINDING_TASKS:
+        return "union"
+    return "select+patch" if key in _SOLUTION_TASKS else "llm"
+
+
+def resolve_aggregator(
+    strategy: Strategy, task_type: TaskType | str, *, patch: bool = False
+) -> Strategy:
+    """``strategy`` with ``aggregator: auto`` settled for this task; any other strategy as it is.
+
+    The members then get what the aggregator keeps: lenses for ``union``, approaches for
+    ``select+patch`` (never both: findings add together, rivals are picked among).
+    """
+    if strategy.aggregator != "auto":
+        return strategy
+    kind = default_aggregator(task_type, patch=patch)
+    if strategy.kind == "solo":
+        return strategy.model_copy(update={"aggregator": kind})
+    selecting = kind in SELECT_AGGREGATORS
+    return strategy.model_copy(
+        update={
+            "aggregator": kind,
+            "lenses": "auto" if kind in LENS_AGGREGATORS and strategy.lenses == "auto" else "off",
+            "approaches": "auto" if selecting and strategy.kind == "panel" else "off",
+        }
+    )
 
 
 def aggregator_for(
@@ -42,7 +111,7 @@ def aggregator_for(
     """
     if strategy.kind == "solo":
         return "solo"
-    kind: Aggregator = strategy.aggregator
+    kind: Aggregator = "llm" if strategy.aggregator == "auto" else strategy.aggregator
     if strategy.kind == "cascade" and cascade_exited_early:
         assert strategy.cascade is not None
         kind = strategy.cascade.early_aggregator

@@ -28,6 +28,7 @@ _PACKAGED_FILES = (
     "routing_policies.yaml",
     "strategies.yaml",
     "lenses.yaml",
+    "approaches.yaml",
     "baseline.yaml",
 )
 # Top-level sections users may set. Add new sections here when a new config area appears.
@@ -46,6 +47,7 @@ SECTIONS = frozenset(
         "budget_strategies",
         "strategy_aliases",
         "lenses",
+        "approaches",
         "baselines",
     }
 )

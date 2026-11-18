@@ -9,6 +9,7 @@ from fusion.routing.classifier import TaskType, canonical_task_key
 from fusion.security.untrusted import UNTRUSTED_RULES, wrap_untrusted
 
 if TYPE_CHECKING:
+    from fusion.orchestration.approaches import Approach
     from fusion.orchestration.claims import ClaimCluster
     from fusion.orchestration.lenses import Lens
 
@@ -284,6 +285,25 @@ def lens_instruction(lens: Lens, others: list[Lens] | None = None) -> str:
     return "\n".join(lines)
 
 
+def approach_instruction(approach: Approach) -> str:
+    """A panel member's approach, appended after the shared prompt like a role or a lens.
+
+    Unlike a lens it covers nothing less than the whole task: the answers are rivals, and one of
+    them will be picked as it stands.
+    """
+    return "\n".join(
+        [
+            f"\n\n## Your Approach: {approach.name}",
+            "Other panelists answer the same task from other stances. Answer the WHOLE task: "
+            "your answer must be a complete answer that stands alone, because one candidate "
+            "answer will be picked as it is and the others discarded.",
+            approach.instruction.strip(),
+            "Stay within the supplied material; where it says nothing, say so instead of "
+            "inventing specifics.",
+        ]
+    )
+
+
 _PATCH_FIELD = (
     "string — ONE patch for the whole change: a unified diff, or the complete new content of each "
     "changed file under `=== path ===` lines. Build it from the patches in the responses (take the "
@@ -357,11 +377,13 @@ def build_refinement_prompt(
     own_answer: str,
     peer_answers: list[tuple[str, str]],
     lens: Lens | None = None,
+    approach: Approach | None = None,
 ) -> str:
     """Build the mixture-of-agents refinement prompt for one panel model.
 
     Peer answers are anonymized as "Response A", "Response B", ... so the model
-    judges content, not reputation. A model with a ``lens`` revises within its area only.
+    judges content, not reputation. A model with a ``lens`` revises within its area only; one
+    with an ``approach`` keeps answering the whole task from that stance.
     """
     key = canonical_task_key(task_type)
     parts = [
@@ -380,6 +402,12 @@ def build_refinement_prompt(
             "Use the other responses to check and sharpen your points in this area; leave the "
             "other areas to them. If nothing in your area needs reporting, set `none_found` to "
             "true and return an empty `claims` list."
+        )
+    if approach is not None:
+        parts.append(
+            f"\n## Your Approach: {approach.name}\n{approach.instruction.strip()} Keep "
+            "answering the whole task from this stance: adopt what the other responses got "
+            "right, but do not turn your answer into theirs."
         )
     parts.append(
         "\n## Refinement Instructions\n"
@@ -439,6 +467,101 @@ def build_union_check_prompt(
             "it. Keep it short; do not explain.",
         ]
     )
+
+
+SELECT_OUTPUT_LINES = 6
+
+
+def select_schema(*, with_missing: bool) -> dict[str, object]:
+    """The selector's JSON answer: why (a few lines), the chosen id, the runner-up and, for
+    ``select+patch``, the points a candidate lacks."""
+    properties: dict[str, object] = {
+        "why": {"type": "string"},
+        "choice": {"type": "string"},
+        "runner_up": {"type": ["string", "null"]},
+    }
+    if with_missing:
+        properties["missing"] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"from": {"type": "string"}, "point": {"type": "string"}},
+                "required": ["from", "point"],
+                "additionalProperties": False,
+            },
+        }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def build_select_prompt(
+    *,
+    task_type: TaskType,
+    material: str,
+    candidates: list[tuple[str, str]],
+    patch: bool = False,
+    patch_points: int = 0,
+) -> str:
+    """Ask one cheap model to pick the best of several whole answers to one task.
+
+    ``candidates`` are ``(id, text)`` pairs in the order to show them (anonymous: no model, vendor
+    or approach appears). The criteria are applied in order, as in Harness²'s ``select()``; the
+    answer is an id plus a few lines of why. ``patch_points`` > 0 also asks for up to that many
+    short points that other candidates cover and the chosen one lacks (``select+patch``).
+    """
+    key = canonical_task_key(task_type)
+    parts = [
+        f"Several candidate answers to one {key} task follow. Each is a complete answer to the "
+        "whole task. Pick the single best one. The candidates are anonymous and their order "
+        "means nothing.",
+        UNTRUSTED_RULES,
+        f"\n## Task\n{wrap_untrusted(material)}",
+    ]
+    for cid, text in candidates:
+        parts.append(f"\n## Candidate {cid}\n{wrap_untrusted(text)}")
+    shape = (
+        "one patch that applies to the files shown (a unified diff, or the full new content of "
+        "each file); several patches, or a patch for files the task never names, do not conform"
+        if patch
+        else "the shape the task asks for (a plan, a decision with its reasons, an answer)"
+    )
+    parts.append(
+        "\n## How to decide\n"
+        "Go through the criteria in this order; a later one only breaks a tie on the earlier "
+        "ones.\n"
+        "1. Delivery: it answers what the task asked, not a neighbouring question.\n"
+        f"2. Conformance: it has {shape}.\n"
+        "3. Fidelity: check every specific it states (files, names, numbers, behaviour) against "
+        "the task and its supplied material. Reject invented specifics. Where the material is "
+        "silent, prefer the candidate that says it is silent over one that guesses.\n"
+        "4. Internal consistency: its steps, reasons and conclusion do not contradict each "
+        "other.\n"
+        "5. Operational fitness: someone could act on it as written, and it names how to check "
+        "that it worked.\n"
+        "6. Finish: clarity and completeness of what remains.\n"
+        "Length and polish are not merit: a longer, more confident or better formatted "
+        "candidate is not better for being so."
+    )
+    output = [
+        "\n## Output",
+        f"Return JSON: `why` (at most {SELECT_OUTPUT_LINES} short lines: the criterion that "
+        "decided it, and what the runner-up lacked), `choice` (the id of the best candidate, "
+        'for example "c2"), `runner_up` (the id of the second best, or null).',
+    ]
+    if patch_points > 0:
+        output.append(
+            f"Also `missing`: at most {patch_points} short points (one sentence each) that "
+            "another candidate covers, that are supported by the task, and that the chosen "
+            'candidate lacks, as {"from": id of that candidate, "point": the point}. Use an '
+            "empty list when the chosen candidate misses nothing that matters. Do not rewrite "
+            "the chosen answer."
+        )
+    parts.extend(output)
+    return "\n".join(parts)
 
 
 def build_judge_prompt(

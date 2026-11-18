@@ -15,6 +15,7 @@ from fusion.orchestration.claims import panel_answer_schema
 from fusion.orchestration.ledger import CallGateway, call_status, standalone_gateway
 from fusion.orchestration.progress import report as report_progress
 from fusion.orchestration.prompts import (
+    approach_instruction,
     compose_user_prompt,
     get_system_prompt,
     lens_instruction,
@@ -26,6 +27,7 @@ from fusion.routing.budget import ANSWER_OUTPUT_TOKENS
 from fusion.routing.classifier import TaskType
 
 if TYPE_CHECKING:
+    from fusion.orchestration.approaches import Approach
     from fusion.orchestration.lenses import Lens
 
 PanelStatus = Literal["success", "failed", "timeout", "missing_provider", "cancelled"]
@@ -104,6 +106,7 @@ async def fanout_to_panel(
     label: str = "panel",
     avoid: Collection[str] = (),
     lenses: Mapping[str, Lens] | None = None,
+    approaches: Mapping[str, Approach] | None = None,
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
@@ -117,7 +120,8 @@ async def fanout_to_panel(
     ask a model in ``avoid`` (the strategy's other members). ``min_successful`` replaces the
     configured quorum (a cascade's first wave needs two answers whatever the panel's quorum is).
     ``label`` names the wave in progress messages ("panel 2/3 done"). ``lenses`` gives members
-    their lens (``lenses.assign_lenses``); a hedge or fallback asked for a member keeps its lens.
+    their lens (``lenses.assign_lenses``) and ``approaches`` their stance
+    (``approaches.assign_approaches``); a hedge or fallback asked for a member keeps both.
     Cancelling the caller cancels every call still in flight.
     """
     fanout_config = config or FanoutConfig()
@@ -137,6 +141,7 @@ async def fanout_to_panel(
         label=label,
         avoid=avoid,
         lenses=lenses or {},
+        approaches=approaches or {},
     )
     return await panel.run()
 
@@ -171,9 +176,11 @@ class _Panel:
         label: str = "panel",
         avoid: Collection[str] = (),
         lenses: Mapping[str, Lens] | None = None,
+        approaches: Mapping[str, Approach] | None = None,
     ) -> None:
         self.label = label
         self.lenses = dict(lenses or {})
+        self.approaches = dict(approaches or {})
         self.panel_models = panel_models
         self.registry_models = registry_models
         self.providers = providers
@@ -222,20 +229,27 @@ class _Panel:
         return lens_instruction(lens, list(others.values()))
 
     async def _call(
-        self, alias: str, member: PanelMember | None, lens: Lens | None = None
+        self,
+        alias: str,
+        member: PanelMember | None,
+        lens: Lens | None = None,
+        approach: Approach | None = None,
     ) -> PanelCallResult:
         entry = self.registry_models[alias]
         explicit = member.role if member and member.role != "auto" else None
-        # A lens replaces the catalog persona (a security persona would fight a correctness lens);
-        # a role the strategy sets on purpose is kept.
-        persona = explicit if lens is not None else explicit or entry.persona
+        # A lens or an approach replaces the catalog persona (a security persona would fight a
+        # correctness lens, a stance its own persona); a role the strategy sets on purpose is kept.
+        stanced = lens is not None or approach is not None
+        persona = explicit if stanced else explicit or entry.persona
         timeout = self.config.per_model_timeout_seconds
         suffix = (role_instruction(persona) if persona else "") + (
             self._lens_text(lens) if lens is not None else ""
-        )
+        ) + (approach_instruction(approach) if approach is not None else "")
         metadata = {"task_type": self.task_type.value, "role": "panel", "personality": persona}
         if lens is not None:
             metadata["lens"] = lens.name
+        if approach is not None:
+            metadata["approach"] = approach.name
         request = ModelRequest(
             model_id=entry.model_id,
             system_prompt=self.system_prompt,
@@ -259,7 +273,9 @@ class _Panel:
         # A hedge or fallback asks another model with its own catalog settings, not the member's,
         # but for the member's lens: the area still needs covering.
         settings = self.members.get(member) if model == member else None
-        task = asyncio.create_task(self._call(model, settings, self.lenses.get(member)))
+        task = asyncio.create_task(
+            self._call(model, settings, self.lenses.get(member), self.approaches.get(member))
+        )
         self._attempts.append(_Attempt(member, model, task))
 
     # -- the wait ---------------------------------------------------------------------------

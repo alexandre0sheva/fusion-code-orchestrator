@@ -54,3 +54,11 @@ arms:
   # 0.3.0: current models reject sampling parameters).
   - {name: self-luna, strategy: panel-luna-lenses}
   - {name: self-haiku, strategy: panel-haiku-lenses}
+  # --- approaches and the select aggregator (roadmap Task 8) ---
+  # For answers that are rivals (plans, decisions, asks, patches). panel-nano (llm synthesis,
+  # identical prompts) is the comparison; select-no-approaches is the control for approaches.
+  - {name: select-patch, strategy: panel-nano-select}  # approaches, one cheap pick + extra points
+  - {name: select, strategy: panel-nano-select, overrides: {aggregator: select}}
+  - {name: select-no-approaches, strategy: panel-nano-select, overrides: {approaches: off}}
+  - {name: auto, strategy: panel-nano-auto}             # union on review/debug, select+patch else
+  - {name: self-luna-select, strategy: panel-luna-approaches}

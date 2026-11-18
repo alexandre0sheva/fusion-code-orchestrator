@@ -31,12 +31,14 @@ from fusion.config.loader import EarlyReturn, FanoutConfig
 from fusion.routing.budget import BudgetLevel
 
 if TYPE_CHECKING:
+    from fusion.orchestration.approaches import ApproachBook
     from fusion.orchestration.lenses import LensBook
     from fusion.routing.model_registry import ModelRegistry
 
 __all__ = [
     "LENS_AGGREGATORS",
     "MODEL_AGGREGATORS",
+    "SELECT_AGGREGATORS",
     "MODE_SETTINGS",
     "BenchmarkOnlyError",
     "CascadeSpec",
@@ -54,14 +56,29 @@ __all__ = [
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 _STRATEGY_KEYS = ("strategies", "budget_strategies", "strategy_aliases")
-AggregatorName = Literal["llm", "vote", "best_of", "digest", "verified", "union", "union+check"]
+AggregatorName = Literal[
+    "auto",
+    "llm",
+    "vote",
+    "best_of",
+    "digest",
+    "verified",
+    "union",
+    "union+check",
+    "select",
+    "select+patch",
+]
 # Aggregators that make no model call, so they take no aggregator_model.
 NO_MODEL_AGGREGATORS = frozenset({"vote", "best_of", "digest", "verified", "union"})
-# Aggregators that call a model (aggregator_model, else the catalog's synthesizer).
-MODEL_AGGREGATORS = frozenset({"llm", "union+check"})
+# Aggregators that call a model (aggregator_model, else the catalog's synthesizer). `auto` is
+# planned as if it did: it becomes union (no call) or select+patch (one call) per task.
+MODEL_AGGREGATORS = frozenset({"auto", "llm", "union+check", "select", "select+patch"})
 # Aggregators that keep what each lens found. vote, best_of and verified keep only what several
-# answers share, or one whole answer, so they would throw away every lens's own findings.
-LENS_AGGREGATORS = frozenset({"llm", "digest", "union", "union+check"})
+# answers share, or one whole answer, so they would throw away every lens's own findings. `auto`
+# lenses the task types whose answer is a list of findings and gives approaches to the others.
+LENS_AGGREGATORS = frozenset({"auto", "llm", "digest", "union", "union+check"})
+# Aggregators that pick ONE whole answer among rivals, so members get approaches, not lenses.
+SELECT_AGGREGATORS = frozenset({"select", "select+patch"})
 
 
 class BenchmarkOnlyError(ConfigError):
@@ -124,6 +141,8 @@ class PanelMember(BaseModel):
     # The member's lens (config/lenses.yaml) when the task type has it; None: one is given out.
     # A merged lens is written a+b. Checked against the configured lenses when strategies load.
     lens: str | None = None
+    # The member's approach (config/approaches.yaml), for a select strategy; None: one is given out.
+    approach: str | None = None
 
     @model_validator(mode="after")
     def _known_role(self) -> PanelMember:
@@ -207,8 +226,10 @@ class Strategy(BaseModel):
     description: str = ""
     members: list[PanelMember] = Field(min_length=1)  # solo = exactly one member
     rounds: int = Field(default=1, ge=1, le=4)  # > 1 adds peer-refinement rounds
-    aggregator: AggregatorName = "llm"
-    # The model of an llm or union+check aggregator; None = the catalog's synthesizer role.
+    # auto (the default): per task, union for review and debugging (answers add together) and
+    # select+patch for plans, decisions, asks and patches (answers are rivals).
+    aggregator: AggregatorName = "auto"
+    # The model of an llm, union+check or select aggregator; None = the catalog's synthesizer role.
     aggregator_model: str | None = None
     judge: Literal["off", "light", "full"] = "off"
     # The synthesizer reads the judge's scores, so synthesis waits for the judge. Otherwise the
@@ -227,10 +248,14 @@ class Strategy(BaseModel):
     # off: every member answers the whole task. Unset: auto for a panel whose aggregator keeps
     # each lens's findings (LENS_AGGREGATORS), off otherwise.
     lenses: Literal["auto", "off"] | None = None
+    # auto: with a select aggregator each member answers the whole task from its own approach
+    # (config/approaches.yaml), so the rival answers differ; off: identical prompts. Unset: auto
+    # for a panel with a select aggregator, off otherwise.
+    approaches: Literal["auto", "off"] | None = None
 
-    @field_validator("lenses", mode="before")
+    @field_validator("lenses", "approaches", mode="before")
     @classmethod
-    def _bool_lenses(cls, value: Any) -> Any:
+    def _bool_switch(cls, value: Any) -> Any:
         if isinstance(value, bool):  # YAML reads `off` as False and `on` as True
             return "auto" if value else "off"
         return value
@@ -238,6 +263,7 @@ class Strategy(BaseModel):
     @model_validator(mode="after")
     def _consistent(self) -> Strategy:
         problems: list[str] = []
+        selecting = self.aggregator in SELECT_AGGREGATORS
         if self.lenses is None:
             lensable = self.kind == "panel" and self.aggregator in LENS_AGGREGATORS
             self.lenses = "auto" if lensable else "off"
@@ -249,12 +275,36 @@ class Strategy(BaseModel):
                     "a cascade stops when its first wave agrees, and lensed answers cover "
                     "different areas instead of agreeing; set lenses: off"
                 )
-            if self.aggregator not in LENS_AGGREGATORS:
+            if selecting:
+                problems.append(
+                    f"a {self.aggregator} aggregator picks ONE whole answer among rivals, and "
+                    "lenses make each answer cover only one area, so there would be no whole "
+                    "answer to pick; its members get approaches instead (set lenses: off, or use "
+                    "aggregator: auto, which lenses review and debugging and selects for the rest)"
+                )
+            elif self.aggregator not in LENS_AGGREGATORS:
                 problems.append(
                     f"lenses split the task by area, and a {self.aggregator} aggregator keeps "
                     "only what several answers share (or one whole answer); use union, "
                     "union+check, llm or digest, or set lenses: off"
                 )
+        if self.approaches is None:
+            self.approaches = "auto" if self.kind == "panel" and selecting else "off"
+        elif self.approaches == "auto" and not selecting:
+            problems.append(
+                "approaches give each member a stance for a select aggregator (select, "
+                f"select+patch); a {self.aggregator} aggregator does not pick among rivals"
+            )
+        if any(m.lens for m in self.members) and selecting:
+            problems.append(
+                f"a member names a lens, but a {self.aggregator} aggregator picks ONE whole "
+                "answer among rivals and lenses make each answer cover only one area"
+            )
+        if any(m.approach for m in self.members) and self.approaches != "auto":
+            problems.append(
+                "a member names an approach, which needs a select aggregator with "
+                "approaches: auto"
+            )
         if self.kind == "cascade":
             if self.cascade is None:
                 self.cascade = CascadeSpec()
@@ -266,14 +316,18 @@ class Strategy(BaseModel):
         elif self.cascade is not None:
             problems.append("'cascade' is only valid for kind 'cascade'")
         aliases = [m.model for m in self.members]
-        if len(set(aliases)) != len(aliases) and self.lenses != "auto":
+        if len(set(aliases)) != len(aliases) and "auto" not in {self.lenses, self.approaches}:
             problems.append(
-                "a model may appear more than once in members only with lenses (each copy then "
-                "covers another area); without lenses the copies would give the same answer"
+                "a model may appear more than once in members only with lenses or approaches "
+                "(each copy then covers another area or answers from another stance); without "
+                "them the copies would give the same answer"
             )
         named = [(m.model, m.lens) for m in self.members if m.lens]
         if len(set(named)) != len(named):
             problems.append("two copies of one model name the same lens")
+        stances = [(m.model, m.approach) for m in self.members if m.approach]
+        if len(set(stances)) != len(stances):
+            problems.append("two copies of one model name the same approach")
         if self.kind == "solo":
             if len(self.members) != 1:
                 problems.append("a solo strategy has exactly one member")
@@ -331,9 +385,11 @@ class StrategyBook:
         budget_map: Mapping[str, str],
         aliases: Mapping[str, str] | None = None,
         lenses: LensBook | None = None,
+        approaches: ApproachBook | None = None,
     ) -> None:
         self.strategies = dict(strategies)
         self._lenses = lenses
+        self._approaches = approaches
         self.budget_map = dict(budget_map)
         # An alias is a strategy's previous name, kept working for one release.
         self.aliases = {
@@ -366,6 +422,15 @@ class StrategyBook:
 
             self._lenses = load_lens_book()
         return self._lenses
+
+    @property
+    def approaches(self) -> ApproachBook:
+        """The configured approaches (loaded on first use when the book was built without them)."""
+        if self._approaches is None:
+            from fusion.orchestration.approaches import load_approach_book
+
+            self._approaches = load_approach_book()
+        return self._approaches
 
     def get(self, name: str) -> Strategy:
         if name in self.strategies:
@@ -446,6 +511,7 @@ def load_strategy_book(path: Path | None = None) -> StrategyBook:
         raise format_validation_error(exc, section_prefix="", resolved=resolved) from exc
     book = StrategyBook(config.strategies, config.budget_strategies, config.strategy_aliases)
     _check_lenses(book)
+    _check_approaches(book)
     return book
 
 
@@ -457,6 +523,19 @@ def _check_lenses(book: StrategyBook) -> None:
                 continue
             try:
                 book.lenses.get(member.lens)
+            except ConfigError as exc:
+                msg = f"strategies.{name}: member {member.model}: {exc}"
+                raise ConfigError(msg) from exc
+
+
+def _check_approaches(book: StrategyBook) -> None:
+    """Every approach a member names is a configured approach."""
+    for name, strategy in book.strategies.items():
+        for member in strategy.members:
+            if member.approach is None:
+                continue
+            try:
+                book.approaches.get(member.approach)
             except ConfigError as exc:
                 msg = f"strategies.{name}: member {member.model}: {exc}"
                 raise ConfigError(msg) from exc
@@ -486,4 +565,4 @@ def mock_strategy_book(book: StrategyBook, registry: ModelRegistry) -> StrategyB
                 "aggregator_model": synthesizer if strategy.aggregator_model else None,
             }
         )
-    return StrategyBook(mapped, book.budget_map, book.aliases, book.lenses)
+    return StrategyBook(mapped, book.budget_map, book.aliases, book.lenses, book.approaches)

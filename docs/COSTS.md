@@ -127,6 +127,7 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `panel-haiku-lenses` | 3 | $0.0039 | 0.08x |
 | `panel-luna-lenses` | 3 | $0.0039 | 0.08x |
 | `panel-duo (synthesizes)` | 3 | $0.0043 | 0.09x |
+| `panel-luna-approaches` | 4 | $0.0050 | 0.10x |
 | `panel-mixed` | 4 | $0.0055 | 0.11x |
 | `panel-open` | 5 | $0.0089 | 0.18x |
 | `solo-flash` | 1 | $0.0094 | 0.19x |
@@ -135,7 +136,9 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `panel-digest` | 3 | $0.0124 | 0.25x |
 | `panel-nano-union` | 3 | $0.0124 | 0.25x |
 | `solo-terra` | 1 | $0.0125 | 0.25x |
+| `panel-nano-select` | 4 | $0.0133 | 0.27x |
 | `panel-nano` | 4 | $0.0144 | 0.29x |
+| `panel-nano-auto` | 4 | $0.0144 | 0.29x |
 | `solo-hydrogen` | 1 | $0.0187 | 0.37x |
 | `solo-argon` | 1 | $0.0250 | 0.50x |
 | `solo-carbon` | 1 | $0.0250 | 0.50x |

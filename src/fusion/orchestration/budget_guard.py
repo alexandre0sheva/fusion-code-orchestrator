@@ -21,12 +21,14 @@ from pydantic import BaseModel, Field
 from fusion.config.loader import ModelEntry
 from fusion.orchestration.cascade import cascade_order, cheapest_first
 from fusion.orchestration.ledger import RunLedger
-from fusion.orchestration.strategy import Strategy
+from fusion.orchestration.strategy import SELECT_AGGREGATORS, Strategy
 from fusion.routing.budget import (
     ANSWER_OUTPUT_TOKENS,
+    APPROACH_PROMPT_TOKENS,
     JUDGE_OUTPUT_TOKENS,
     LENS_PROMPT_TOKENS,
     PROMPT_OVERHEAD_TOKENS,
+    SELECT_OUTPUT_TOKENS,
     SYNTHESIS_OUTPUT_TOKENS,
     PlannedCall,
     RunForecast,
@@ -44,6 +46,7 @@ __all__ = [
     "plan_calls",
     "preflight",
     "refine_round_calls",
+    "select_calls",
     "synthesis_calls",
 ]
 
@@ -109,6 +112,13 @@ def synthesis_calls(
     return [PlannedCall("synthesis", model, read, SYNTHESIS_OUTPUT_TOKENS)]
 
 
+def select_calls(model: str, prompt_tokens: int, answers: Sequence[int]) -> list[PlannedCall]:
+    """The selector reads the task and every answer (no claim clusters) and writes an id, a few
+    lines of why and a few short points: at most ``SELECT_OUTPUT_TOKENS``."""
+    read = _call_input(prompt_tokens) + sum(answers)
+    return [PlannedCall("synthesis", model, read, SELECT_OUTPUT_TOKENS)]
+
+
 def union_check_calls(model: str, prompt_tokens: int) -> list[PlannedCall]:
     """The union+check call: the input plus a short list of findings, a short list of verdicts.
 
@@ -137,9 +147,16 @@ def plan_calls(
     cascade = strategy.cascade if strategy.kind == "cascade" else None
     if cascade is not None and not include_escalation:
         return panel_calls(aliases[: cascade.first], prompt_tokens)
-    # Members of a lensed panel also read their lens (planned for every task type: the forecast
-    # does not know the task's lenses, so it stays on the safe side).
-    member_prompt = prompt_tokens + (LENS_PROMPT_TOKENS if strategy.lenses == "auto" else 0)
+    # Members of a lensed panel also read their lens, and those of a select panel their approach
+    # (planned for every task type: the forecast does not know the task's lenses, so it stays on
+    # the safe side).
+    member_prompt = prompt_tokens + (
+        LENS_PROMPT_TOKENS
+        if strategy.lenses == "auto"
+        else APPROACH_PROMPT_TOKENS
+        if strategy.approaches == "auto"
+        else 0
+    )
     calls = panel_calls(aliases, member_prompt)
     answers = _answer_sizes(len(aliases))
     for _ in range(strategy.rounds - 1):
@@ -156,6 +173,8 @@ def _aggregation_calls(
         return []
     if strategy.aggregator == "union+check":
         return union_check_calls(strategy.aggregator_model, prompt_tokens)
+    if strategy.aggregator in SELECT_AGGREGATORS:
+        return select_calls(strategy.aggregator_model, prompt_tokens, answers)
     return synthesis_calls(strategy.aggregator_model, prompt_tokens, answers)
 
 
