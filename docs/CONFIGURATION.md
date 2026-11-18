@@ -81,6 +81,7 @@ fusion ask "How should I retry a failed HTTP call?"
 | `fusion decide [QUESTION]`, `fusion plan [FEATURE]` | An architecture decision, an implementation plan (`-f FILE` reads the text from a file) |
 | `fusion eval-answer`, `fusion compare-claude-runs` | Score an answer, compare Claude Code runs |
 | `fusion stats`, `fusion runs list\|show\|costs\|compare-baseline\|export` | Spend, savings and the stored run history |
+| `fusion library list [--all]\|show ID\|forget ID\|forget --all`, `fusion library feedback RUN_ID OUTCOME [--note TEXT]` | The [experience library](#experience-library): this project's lessons (every project's with `--all`), one lesson with its evidence and the runs that carried it, deleting one or all of a project's lessons and feedback; feedback on a run (`used`, `partly`, `wrong`, `ignored`), as `fusion_feedback` |
 | `fusion config paths\|show\|validate`, `fusion strategies list`, `fusion models list\|check` | Configuration, strategies, the model catalog |
 | `fusion doctor` | Is this machine ready? See [below](#fusion-doctor) |
 | `fusion dashboard [--port 8765]` | A read-only local web view of spend, runs, benchmarks and configuration; see [Dashboard](#dashboard) |
@@ -670,6 +671,28 @@ verify:
 
 `FUSION__VERIFY__SANDBOX_ENABLED=false` (or `fusion --set verify.sandbox_enabled=false`) turns
 execution off for one shell or one command.
+
+## Experience library
+
+The `library` section turns on per-project lessons learned from your feedback on runs
+(`fusion_feedback`, `fusion library feedback`; how they are made and used:
+[ARCHITECTURE.md](ARCHITECTURE.md#experience-library); what is stored:
+[SECURITY.md](../SECURITY.md#experience-library)). It is off by default: until you enable it,
+feedback is not stored, no lesson is retrieved and no distillation call is made.
+
+```yaml
+library:
+  enabled: false
+  max_lessons: 3             # lessons retrieved into one panel prompt (1-10)
+  max_prompt_tokens: 300     # how much prompt they may take, in all (50-1000)
+  distil_model: null         # catalog alias that writes lessons; null: the task's judge model
+```
+
+Lessons live in the run database ([Run database](#run-database)), keyed by a hash of the project
+root. When `FUSION_DB_PATH` points inside the project, the library stays off for that project.
+`fusion library list|show|forget` reads and deletes them; `--root DIR` names the project (default:
+`FUSION_READ_ROOT`, else the current directory), so run them from the project or pass the same
+root the MCP client uses.
 
 ## Modes
 

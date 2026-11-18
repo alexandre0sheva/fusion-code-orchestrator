@@ -21,6 +21,7 @@ EXPECTED_TOOLS = {
     "fusion_digest",
     "fusion_propose_patch",
     "fusion_select_patch",
+    "fusion_feedback",
 }
 
 

@@ -47,6 +47,7 @@ class CodeReviewPipeline(BasePipeline):
             max_models=input.max_models,
             shadow_baseline=input.shadow_baseline,
             workspace=input.workspace,
+            lessons=input.lessons,
         )
         result = await self.run(ctx)
         structured = result.structured_output
@@ -94,6 +95,7 @@ class FusionAskPipeline(BasePipeline):
             max_models=input.max_models,
             shadow_baseline=input.shadow_baseline,
             workspace=input.workspace,
+            lessons=input.lessons,
         )
         result = await self.run(ctx)
         s = result.structured_output
@@ -148,6 +150,7 @@ class DebugPipeline(BasePipeline):
             max_cost_usd=input.max_cost_usd,
             shadow_baseline=input.shadow_baseline,
             workspace=input.workspace,
+            lessons=input.lessons,
         )
         result = await self.run(ctx)
         s = result.structured_output
@@ -188,6 +191,7 @@ class ArchitectureDecisionPipeline(BasePipeline):
             max_cost_usd=input.max_cost_usd,
             shadow_baseline=input.shadow_baseline,
             workspace=input.workspace,
+            lessons=input.lessons,
         )
         result = await self.run(ctx)
         s = result.structured_output
@@ -230,6 +234,7 @@ class ImplementationPlanPipeline(BasePipeline):
             max_cost_usd=input.max_cost_usd,
             shadow_baseline=input.shadow_baseline,
             workspace=input.workspace,
+            lessons=input.lessons,
         )
         result = await self.run(ctx)
         s = result.structured_output

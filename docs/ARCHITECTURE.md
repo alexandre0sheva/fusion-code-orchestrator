@@ -114,6 +114,7 @@ Panel members receive role prompts defined in `src/fusion/orchestration/prompts.
 - `fusion_stats`
 - `fusion_digest`
 - `fusion_propose_patch` and `fusion_select_patch`
+- `fusion_feedback`
 
 `src/fusion/mcp_server/tools.py` converts MCP input schemas into orchestration pipeline
 inputs and returns the pipelines' output models as dictionaries (`FusionTools`, also used directly
@@ -460,6 +461,43 @@ the run is refused (`strategy.may_run_code`). Given a cross-checker, `aggregator
   checks every panel prompt). Check results go to no model except, on a tie, the selector, which
   sees only the tied candidates' answers.
 
+### Experience library
+
+`src/fusion/library/` keeps per-project lessons learned from the host's feedback on runs, ported
+from Harness²'s evidence-backed library. It is off unless `library.enabled` is true
+([CONFIGURATION.md](CONFIGURATION.md#experience-library); what is stored:
+[SECURITY.md](../SECURITY.md#experience-library)).
+
+- **Store** (`store.py`). A `Lesson` is `{id, project_key, task_type, cue, lesson, evidence,
+  verdict, confidence}`: when a situation shaped like `cue` comes up, do `lesson`. Lessons,
+  `run_feedback` and `lesson_uses` (which lessons each run's prompt carried) are tables of the run
+  database (migration 6). `project_key` is the first 16 hex digits of the SHA-256 of the resolved
+  project root; the path is not stored. `FusionTools.library` turns the library off for a call
+  whose run database lies inside the project.
+- **Distil** (`distil.py`). `fusion_feedback(run_id, outcome, note)` records the feedback and makes
+  one cheap call (`library.distil_model`, else the task type's judge) that sees the run's redacted
+  request, its answer, the redacted note and this project's lessons for the task type, and returns
+  at most one lesson or `NO_ENTRY`. The prompt carries Harness²'s rules: the cue is the shape of
+  the situation, not this run's facts; the lesson names what to do; refine an existing lesson
+  rather than copy it. An `ignored` outcome without a note teaches nothing and calls no model.
+  The code then applies the evidence rules (`apply_distillation`): each run adds one evidence line
+  (`verdict: run X, answer outcome: note`); a lesson's verdict is the one its non-`confounded`
+  lines share, `confounded` when they conflict, and a lesson resting only on `confounded` evidence
+  is not created, or is deleted when a refinement leaves it so. Confidence is capped at `medium`
+  with one run behind it, `high` needs two that agree, conflicting evidence makes it `low`, and any
+  `confounded` line lowers it a step. The call's cost is added to the run's record
+  (`library_distil` step).
+- **Retrieve** (`retrieve.py`). Before a panel tool runs (ask, review, debug, decide, plan,
+  digest, propose_patch), `retrieve` takes up to `max_lessons` lessons of the project and task
+  type that share words with the request (cue words count double, times a confidence weight; no
+  model call), and `render_lessons` renders them within `max_prompt_tokens` under a header that
+  calls them hypotheses to re-check. The block reaches the panel prompt through
+  `PipelineContext.lessons`, after the context and before the request, outside the files' shared
+  prefix, so prompt caching is unchanged; it is part of the response-cache key and of the
+  budget forecast. The shadow baseline, judge and aggregators do not see it. The run stores the
+  lesson ids (`lesson_ids` in its input, `lesson_uses`), and the response lists them in
+  `lessons_used`, so later feedback on that run is evidence about those lessons.
+
 ### Difficulty routing and the escalation ladder
 
 `strategy: auto` (the default, `budget: medium`) is a `kind: auto` strategy with no members of
@@ -693,7 +731,8 @@ migrations apply atomically (`BEGIN IMMEDIATE`) so concurrent first opens are sa
 - warnings and errors.
 
 The same schema also holds the benchmark tables (`bench_runs`, `bench_items`), used only by
-`bench-results/bench.db`.
+`bench-results/bench.db`, and the experience library's tables (`lessons`, `run_feedback`,
+`lesson_uses`; see [Experience library](#experience-library)).
 
 CLI inspection commands:
 

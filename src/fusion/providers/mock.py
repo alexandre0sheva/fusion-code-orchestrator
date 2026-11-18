@@ -169,6 +169,8 @@ class MockProvider(ModelProvider):
         seed = self._seed(request)
         if request.metadata.get("role") == "selector":
             return self._selector(seed, request)
+        if request.metadata.get("role") == "librarian":
+            return self._librarian(request)
         if request.metadata.get("role") == "difficulty":
             why = f"Some reasoning is needed (mock:{seed})."
             return json.dumps({"level": "normal", "why": why})
@@ -188,6 +190,26 @@ class MockProvider(ModelProvider):
         }
         generator = generators.get(personality, self._coding_reviewer)
         return generator(seed)
+
+    def _librarian(self, request: ModelRequest) -> str:
+        """A lesson distilled from the feedback the prompt reports; NO_ENTRY for ignored answers.
+
+        Offline runs (``FUSION_TEST_MODE``) show the library working end to end without a model.
+        """
+        outcome = re.search(r"^Outcome: (\w+)", request.user_prompt, re.MULTILINE)
+        verdicts = {"used": "helped", "partly": "no_effect", "wrong": "hurt"}
+        verdict = verdicts.get(outcome.group(1) if outcome else "")
+        if verdict is None:
+            return json.dumps({"entry": "NO_ENTRY"})
+        return json.dumps(
+            {
+                "cue": "a task of this type in this project",
+                "lesson": "Re-check the answer against the files given before recommending it.",
+                "verdict": verdict,
+                "confidence": "low",
+                "refines": None,
+            }
+        )
 
     def _panel_answer(self, request: ModelRequest, personality: str, seed: str) -> str:
         """A claims-JSON answer, so offline runs exercise the same path as live structured output.

@@ -101,6 +101,7 @@ async def fanout_to_panel(
     context: str = "",
     file_snippets: list[str] | None = None,
     changed_files: list[str] | None = None,
+    lessons: str = "",
     config: FanoutConfig | None = None,
     gateway: CallGateway | None = None,
     members: Mapping[str, PanelMember] | None = None,
@@ -128,6 +129,7 @@ async def fanout_to_panel(
     (``approaches.assign_approaches``); a hedge or fallback asked for a member keeps both.
     ``self_check`` asks every member to check its answer and report an honest confidence;
     ``checks`` asks every member for check scripts and guardrails with its patch (verified-synth).
+    ``lessons`` is the experience library's block for this request (``fusion.library``).
     Cancelling the caller cancels every call still in flight.
     """
     fanout_config = config or FanoutConfig()
@@ -143,6 +145,7 @@ async def fanout_to_panel(
         context=context,
         file_snippets=file_snippets,
         changed_files=changed_files,
+        lessons=lessons,
         min_successful=min_successful,
         label=label,
         avoid=avoid,
@@ -180,6 +183,7 @@ class _Panel:
         context: str = "",
         file_snippets: list[str] | None = None,
         changed_files: list[str] | None = None,
+        lessons: str = "",
         min_successful: int | None = None,
         label: str = "panel",
         avoid: Collection[str] = (),
@@ -208,6 +212,7 @@ class _Panel:
             context=context,
             file_snippets=file_snippets,
             changed_files=changed_files,
+            lessons=lessons,
         )
         self.user_prompt = prompt.text
         self.shared_prefix = prompt.shared_prefix

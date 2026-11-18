@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from fusion.mcp_server.schemas import (
     CompareToolResult,
+    FeedbackResult,
     FusionToolResult,
     StatsToolResult,
     ToolEnvelope,
@@ -106,11 +107,16 @@ def present_run(
         "halted": output.get("halt_reason"),
         "details_uri": details_uri(run_id),
         "host_tokens_saved_estimate": output.get("host_tokens_saved_estimate"),
+        "lessons_used": output.get("lessons_used") or None,
     }
     if full:
         fields.update({name: output.get(name) for name in _FULL_FIELDS})
         fields["workspace"] = output.get("workspace")
     return FusionToolResult(**hardened(fields))
+
+
+def present_feedback(output: dict[str, Any]) -> FeedbackResult:
+    return FeedbackResult(**hardened(output))
 
 
 def present_stats(output: dict[str, Any]) -> StatsToolResult:

@@ -22,6 +22,7 @@ from fusion.mcp_server.patch import present_patch, present_selection
 from fusion.mcp_server.response import (
     DIGEST_OVERHEAD_TOKENS,
     present_comparison,
+    present_feedback,
     present_run,
     present_stats,
     to_tool_result,
@@ -33,6 +34,8 @@ from fusion.mcp_server.schemas import (
     DecideArchitectureInput,
     DigestInput,
     EvalAnswerInput,
+    FeedbackInput,
+    FeedbackResult,
     FusionAskInput,
     FusionStatsInput,
     FusionToolResult,
@@ -149,6 +152,14 @@ SELECT_PATCH_DESCRIPTION = (
     "its checks on each candidate (and on the code as it is) to get the patch that passes the "
     "most checks the others wrote. Free and instant: no model is called and nothing runs. Only "
     "for that second step."
+)
+FEEDBACK_DESCRIPTION = (
+    "Tell Fusion what became of one of its answers: used, partly, wrong or ignored, with a "
+    "one-line note on why. With the experience library on (library.enabled), one cheap call "
+    "distils at most one per-project lesson from it, which later panel prompts carry as a "
+    "hypothesis; with it off nothing is stored and no model is called. Call it after you "
+    "acted on, or rejected, a Fusion answer, especially a wrong one. Do not call it for runs "
+    "you have not checked. The note is redacted and stays in Fusion's local database."
 )
 STATS_DESCRIPTION = (
     "Show cumulative Fusion usage: money spent against the baseline model's estimated cost, "
@@ -337,6 +348,16 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
     )
     async def fusion_select_patch(input: SelectPatchInput) -> ToolResult:
         return to_tool_result(present_selection(await tools.fusion_select_patch(input)))
+
+    @mcp.tool(
+        description=FEEDBACK_DESCRIPTION,
+        # It writes only to Fusion's own database, never the user's files.
+        annotations=panel_tool("Give feedback on a Fusion answer"),
+        output_schema=FeedbackResult.model_json_schema(),
+    )
+    async def fusion_feedback(input: FeedbackInput, ctx: Context) -> ToolResult:
+        output = await tools.fusion_feedback(input, root=await client_root(ctx))
+        return to_tool_result(present_feedback(output))
 
     @mcp.tool(
         description=STATS_DESCRIPTION,

@@ -132,11 +132,13 @@ class RedactStage(_Stage):
             state.sanitized_primary = primary.text
             state.sanitized_context = context.text
             state.sanitized_snippets = [redact_secrets(s).text for s in ctx.file_snippets]
+            state.sanitized_lessons = redact_secrets(ctx.lessons.text).text if ctx.lessons else ""
             state.redaction_count = primary.redaction_count + context.redaction_count
         else:  # benchmark mode: the task reaches the models exactly as written
             state.sanitized_primary = ctx.primary_content
             state.sanitized_context = ctx.context
             state.sanitized_snippets = list(ctx.file_snippets)
+            state.sanitized_lessons = ctx.lessons.text if ctx.lessons else ""
 
         state.run_id = await self.deps.run_store.acreate_run(
             task_type=ctx.task_type.value,
@@ -170,6 +172,8 @@ class RedactStage(_Stage):
         }
         if ctx.workspace is not None:  # paths and reasons only: the text is in file_snippets
             record["workspace"] = ctx.workspace.model_dump()
+        if ctx.lessons is not None and ctx.lessons.ids:  # ids only: the library keeps the text
+            record["lesson_ids"] = list(ctx.lessons.ids)
         if self.deps.security.log_raw_prompts:
             return record
         record.update(
@@ -332,7 +336,12 @@ class BudgetStage(_Stage):
     async def run(self, state: RunState) -> RunState:
         strategy = state.strategy
         assert strategy is not None
-        parts = [state.sanitized_primary, state.sanitized_context, *state.sanitized_snippets]
+        parts = [
+            state.sanitized_primary,
+            state.sanitized_context,
+            state.sanitized_lessons,
+            *state.sanitized_snippets,
+        ]
         state.prompt_tokens = estimate_tokens("\n".join(p for p in parts if p))
         if strategy.max_cost_usd is None:
             return state
@@ -509,6 +518,7 @@ class PanelStage(_Stage):
             context=state.sanitized_context,
             file_snippets=state.sanitized_snippets,
             changed_files=state.ctx.changed_files,
+            lessons=state.sanitized_lessons,
             config=self._fanout_config(state),
             gateway=state.gateway,
             members={m.model: m for m in state.members},

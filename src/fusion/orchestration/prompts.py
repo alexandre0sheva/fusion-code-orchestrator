@@ -198,13 +198,15 @@ def compose_user_prompt(
     file_snippets: list[str] | None = None,
     changed_files: list[str] | None = None,
     claims: bool = True,
+    lessons: str = "",
 ) -> UserPrompt:
     """Build the user prompt from input components, stable material first.
 
     The files come first and the request near the end: long material before the question is what
     providers recommend, and a prefix that stays the same across calls is what their prompt
     caches reuse. ``claims`` asks for the panel's claim format; the shadow baseline gets the task
-    alone, in free form, so its answer can be compared as plain text.
+    alone, in free form, so its answer can be compared as plain text. ``lessons`` (the experience
+    library's block, already bounded) goes after the context, outside the shared prefix.
     """
     key = canonical_task_key(task_type)
     material = key in _MATERIAL_TASKS
@@ -222,6 +224,8 @@ def compose_user_prompt(
     if files:
         listing = "\n".join(f"- {f}" for f in files)
         rest.append(f"\n## Changed Files\n{wrap_untrusted(listing)}")
+    if lessons:
+        rest.append(f"\n## Lessons From Earlier Runs\n{wrap_untrusted(lessons)}")
     rest.append(f"\n## {'Input' if material else 'Request'}\n{primary}")
     rest.append(
         _CLAIM_RULES

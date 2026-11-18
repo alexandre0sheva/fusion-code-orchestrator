@@ -63,6 +63,7 @@ caller (the caller already has your files and shell). Fusion does not defend aga
 |-------------|--------------|------|
 | Model providers (Anthropic, OpenAI, Google) | The system prompt and the task: the diff, question, context, file snippets and changed-file names, and the project files or `git diff` a call names in `paths`, `globs` or `diff_ref`, after redaction. Later calls also carry model output: refinement (other models' answers), judge, synthesis. The API key goes in a request header, never in a URL | Every run, to the models its strategy names |
 | OpenRouter, and the host it picks for the model | The same as a model provider, for open-weight models and for vendor models whose own key is unset (or whose catalog `route` is `openrouter`). OpenRouter sees every such prompt and answer and forwards them to one of the model's hosts; hosts that may train on prompts are excluded by your account setting and by the `provider.ignore` list on every request ([CONFIGURATION.md](docs/CONFIGURATION.md#openrouter-routes-and-data-policy)); hosts that retain or log prompts are allowed. Headers carry the key and a generic `X-Title`, nothing about you | Only with `OPENROUTER_API_KEY` set |
+| The experience library's distillation model | The run's redacted request, its answer, your redacted feedback note and this project's lessons for the task type; later panel prompts carry up to `library.max_prompt_tokens` of lessons | Only with `library.enabled`, once per `fusion_feedback` call (none for `ignored` without a note) |
 | The baseline and judge models | The task prompt goes to the baseline model; the task and both answers go to the judge model | Only when shadow A/B is on (`FUSION_SHADOW_MODE`) |
 | Provider model-list endpoints | A request carrying your key, no prompt | `fusion doctor --live`, `fusion models check --live` |
 | OpenRouter's public model and provider lists | A plain request with no key and no prompt | `fusion doctor --live`, `fusion models check --live` |
@@ -277,6 +278,20 @@ by `verify`:
   file writes to the copy; there, only the static check validation stands between a hostile
   check and files your account can write. `fusion doctor` says so. Use `verify: host`, or
   `verify.sandbox_enabled: false`, where that is not acceptable.
+
+## Experience library
+
+The library (`library.enabled`, off by default) stores, in the run database in your user data
+directory, each lesson (a one-line situation, a one- or two-sentence action, its verdict,
+confidence and one evidence line per run: run id, outcome and up to 200 characters of your note),
+your feedback on runs (outcome and note) and which lessons each run's prompt carried. Notes,
+lessons and evidence are redacted before they are stored or sent. Projects are told apart by a
+hash of the root path; the path is not stored. Nothing is written inside the project: when the run
+database is inside the project root, the library stays off there, and a test hashes the project
+before and after a learning session. Lessons leave the machine only as prompt context, to the
+distillation model and in later panel prompts, where they are marked as hypotheses to re-check,
+not instructions. A lesson is model-written: `fusion library show` lists its evidence and `fusion
+library forget` deletes one, or a project's all.
 
 ## Known limitations
 

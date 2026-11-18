@@ -41,6 +41,7 @@ def request_key(ctx: PipelineContext, strategy: Strategy) -> str:
         "snippets": [redact_secrets(s).text for s in ctx.file_snippets],
         "changed_files": ctx.changed_files,
         "max_models": ctx.max_models,
+        "lessons": ctx.lessons.text if ctx.lessons else "",
         "strategy": strategy.model_dump(mode="json"),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)

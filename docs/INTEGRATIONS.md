@@ -219,8 +219,8 @@ use that client. `fusion doctor` shows them, with the rest of the setup checks (
 Every tool is annotated `readOnlyHint: true` and `destructiveHint: false` (Fusion changes nothing
 on your machine; it writes only its own run database, and `fusion_propose_patch` runs its checks
 in temporary copies it deletes), `openWorldHint: true` (it calls provider APIs; `fusion_stats` and
-`fusion_select_patch` call none, and those two are `idempotentHint: true`) and `idempotentHint:
-false`. Each has a typed `outputSchema`. The
+`fusion_select_patch` call none, and those two are `idempotentHint: true`; `fusion_feedback` calls
+one only with the experience library on) and `idempotentHint: false`. Each has a typed `outputSchema`. The
 descriptions the client shows the model say when to call the tool, when not to, and that a call
 takes tens of seconds and costs cents.
 
@@ -235,6 +235,7 @@ takes tens of seconds and costs cents.
 | `fusion_digest` | A short answer about material too large to read yourself: what a module does, where something is handled, what a big diff changes | A file you are about to edit; one short file |
 | `fusion_propose_patch` | A bug fix or small change where a wrong patch is costly and checks can tell right from wrong: a patch returned as a diff, never applied ([Patches](#patches)) | Large refactors; edits you can make directly |
 | `fusion_select_patch` | The second step of `verify: "host"`: pick from the results of running the checks yourself (free, no model) | Anything else |
+| `fusion_feedback` | After you acted on or rejected a Fusion answer: `run_id`, `outcome` (`used`, `partly`, `wrong`, `ignored`) and a one-line `note`. With the [experience library](CONFIGURATION.md#experience-library) on, one cheap call distils at most one per-project lesson (the response says whether one was created, updated, dropped or none); off, nothing is stored | Runs you have not checked |
 | `fusion_compare_claude_runs` | Measuring Claude Code + Opus against Claude Code + Fusion | Normal work |
 | `fusion_stats` | Spend, savings and shadow A/B win-rate (free, calls no model) | |
 
@@ -302,6 +303,7 @@ The text content is `display_markdown`; the same record is returned as structure
 | `strategy`, `confidence`, `cost_usd`, `latency_s`, `models_called` | yes | Headline numbers; `cost_usd` is absent when a price is unknown |
 | `warnings` | yes | Timeouts, provider failures, cost-cap shifts, soft-limit notices, project paths not read |
 | `host_tokens_saved_estimate` | yes | Present when the call named `paths`, `globs` or `diff_ref`: tokens the host did not send |
+| `lessons_used` | yes | Present when the [experience library](CONFIGURATION.md#experience-library) added lessons to the panel prompt: their ids. Send `fusion_feedback` for the run so they keep or lose their standing |
 | `partial`, `halted` | yes | `partial`: the soft time limit cut the run short and the answer is the panel digest. `halted`: why there is no answer (`insufficient_context`, `quorum`, `budget`, `timeout`) |
 | `result` | `full` only | Task-specific structured result |
 | `claims`, `agreement` | `full` only | The panel's claims grouped across models; agreement score, evidence rate, calibrated `confidence` |
@@ -312,7 +314,9 @@ The text content is `display_markdown`; the same record is returned as structure
 `fusion_digest` cuts its compact text at `max_answer_tokens` plus about 200 tokens for the
 heading and cost line.
 
-`fusion_stats` returns `display_markdown`, `warnings` and `result`; `fusion_compare_claude_runs`
+`fusion_feedback` returns `recorded`, `action` (`created`, `updated`, `dropped` or `none`), the
+`lesson` it created or updated and `cost_usd`. `fusion_stats` returns `display_markdown`,
+`warnings` and `result`; `fusion_compare_claude_runs`
 adds `evals`.
 
 ### Patches

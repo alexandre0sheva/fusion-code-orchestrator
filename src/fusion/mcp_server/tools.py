@@ -11,7 +11,17 @@ from pathlib import Path
 from typing import Any
 
 from fusion.config.env import is_test_mode
-from fusion.config.loader import load_verify_config
+from fusion.config.loader import LibraryConfig, load_library_config, load_verify_config
+from fusion.config.paths import resolve_db_path
+from fusion.library.distil import (
+    Distillation,
+    apply_distillation,
+    distil,
+    distil_prompt,
+    pick_distil_model,
+)
+from fusion.library.retrieve import LessonBlock, render_lessons, retrieve
+from fusion.library.store import Feedback, Lesson, LibraryStore, Outcome, inside, project_key
 from fusion.mcp_server.patch import patch_output, selection_output
 from fusion.mcp_server.schemas import (
     CompareClaudeRunsInput,
@@ -19,6 +29,7 @@ from fusion.mcp_server.schemas import (
     DecideArchitectureInput,
     DigestInput,
     EvalAnswerInput,
+    FeedbackInput,
     FusionAskInput,
     FusionStatsInput,
     PlanFeatureInput,
@@ -63,7 +74,8 @@ from fusion.orchestration.strategy import BenchmarkOnlyError, Strategy
 from fusion.providers.base import close_providers
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.classifier import TaskType
-from fusion.storage.run_store import RunStore
+from fusion.security.redaction import redact_secrets
+from fusion.storage.run_store import RunRecord, RunStepRecord, RunStore
 from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
 from fusion.verify.propose import (
     Crosschecker,
@@ -225,6 +237,71 @@ def _unique(*lists: list[str]) -> list[str]:
     return list(dict.fromkeys(item for items in lists for item in items))
 
 
+@dataclass
+class Library:
+    """The experience library as one call sees it: open (``store``) or off, and why."""
+
+    config: LibraryConfig
+    project: str  # the project's key (a hash of its root)
+    store: LibraryStore | None = None
+    off_reason: str = ""
+
+
+LIBRARY_OFF = (
+    "The experience library is off, so nothing was recorded. Turn it on with "
+    "`library.enabled: true` in Fusion's config (or FUSION__LIBRARY__ENABLED=true) to have "
+    "Fusion learn per-project lessons from this feedback."
+)
+LIBRARY_INSIDE = (
+    "The experience library is off for this project: Fusion's run database ({db}) is inside the "
+    "project, and lessons are never stored inside a project. Point FUSION_DB_PATH elsewhere (the "
+    "default is the user data directory)."
+)
+LESSONS_NOTE = (
+    "\n\n_Lessons from this project's library were in the panel prompt: {ids}. Send "
+    "fusion_feedback for run `{run_id}` so they keep or lose their standing._"
+)
+_FEEDBACK_SAID = {
+    "created": "Learned a new lesson for this project",
+    "updated": "Refined an existing lesson with this run's evidence",
+    "dropped": "Dropped a lesson: what is left of its evidence is all confounded",
+    "none": "No lesson: this run teaches nothing reusable (NO_ENTRY)",
+}
+
+
+def _feedback_output(
+    input: FeedbackInput,
+    lesson: Lesson | None,
+    action: str,
+    called: Distillation | None,
+    warnings: list[str],
+) -> dict[str, Any]:
+    """The fusion_feedback response (before hardening)."""
+    title = f"## Fusion Feedback (`{input.run_id}`: {input.outcome})"
+    lines = [title, "", f"- {_FEEDBACK_SAID[action]}."]
+    kept = lesson if lesson is not None and action in ("created", "updated") else None
+    if kept is not None:
+        lines += [
+            f"- `{kept.id}`: when {kept.cue}: {kept.lesson}",
+            f"- verdict {kept.verdict}, {kept.confidence} confidence, "
+            f"{len(kept.evidence)} run(s) of evidence",
+        ]
+    cost: float | None = 0.0
+    if called is not None:
+        cost = called.cost_usd if called.cost_known else None
+        money = f"${cost:.4f}" if cost is not None else "cost unknown"
+        lines.append(f"- {money} to distil ({called.model})")
+    return {
+        "display_markdown": "\n".join(lines),
+        "warnings": warnings,
+        "run_id": input.run_id,
+        "recorded": True,
+        "action": action,
+        "lesson": kept.model_dump() if kept is not None else None,
+        "cost_usd": cost,
+    }
+
+
 DIGEST_INSTRUCTIONS = (
     "Answer from the files provided, in at most {tokens} tokens (about {words} words). Be "
     "concrete: name the files, functions and lines that matter. If the material does not "
@@ -269,6 +346,7 @@ class FusionTools:
         self._patch = patch or pipelines["patch"]
         self._db_path = db_path
         self._use_mock = use_mock
+        self._library_store: LibraryStore | None = None  # opened on first use, when enabled
         soft_timeout = soft_timeout_from_env()
         for pipeline in (
             self._code_review,
@@ -284,12 +362,173 @@ class FusionTools:
         """Close provider HTTP clients and the run database; call when the host shuts down."""
         await close_providers(self.providers)
         self.run_store.close()
+        if self._library_store is not None:
+            self._library_store.close()
+
+    # -- the experience library ------------------------------------------------------------
+
+    def library(self, root: Path | None) -> Library:
+        """The library for the project at ``root`` (``default_root()`` when None): open when
+        ``library.enabled`` is set and the run database is outside the project."""
+        base = root or default_root()
+        config = load_library_config()
+        key = project_key(base)
+        if not config.enabled:
+            return Library(config, key, off_reason=LIBRARY_OFF)
+        db = resolve_db_path(self._db_path)
+        if inside(db, base):
+            return Library(config, key, off_reason=LIBRARY_INSIDE.format(db=db))
+        if self._library_store is None:
+            self._library_store = LibraryStore(db_path=db)
+        return Library(config, key, store=self._library_store)
+
+    async def _lessons(
+        self, task_type: TaskType, query: str, root: Path | None
+    ) -> LessonBlock | None:
+        """The lessons that fit this request, rendered within the configured budget; None when
+        the library is off or nothing fits."""
+        lib = self.library(root)
+        if lib.store is None:
+            return None
+        found = await asyncio.to_thread(
+            retrieve,
+            lib.project,
+            task_type.value,
+            query,
+            lib.config.max_lessons,
+            store=lib.store,
+        )
+        block = render_lessons(found, lib.config.max_prompt_tokens)
+        return block if block.ids else None
+
+    async def _noted(self, output: dict[str, Any], lessons: LessonBlock | None) -> dict[str, Any]:
+        """Record which lessons the run carried and say so in the response."""
+        store = self._library_store
+        if lessons is None or store is None:
+            return output
+        run_id = str(output["run_id"])
+        await asyncio.to_thread(store.record_uses, run_id, lessons.ids)
+        output["lessons_used"] = list(lessons.ids)
+        ids = ", ".join(f"`{i}`" for i in lessons.ids)
+        output["display_markdown"] = str(output.get("display_markdown", "")) + (
+            LESSONS_NOTE.format(ids=ids, run_id=run_id)
+        )
+        return output
+
+    async def fusion_feedback(
+        self, input: FeedbackInput, *, root: Path | None = None
+    ) -> dict[str, Any]:
+        """Record what became of a run's answer and distil at most one lesson from it."""
+        lib = self.library(root)
+        store = lib.store
+        if store is None:
+            return {
+                "display_markdown": lib.off_reason,
+                "warnings": [],
+                "run_id": input.run_id,
+                "recorded": False,
+            }
+        record = await asyncio.to_thread(self.run_store.get_run, input.run_id)
+        if record is None:
+            msg = f"No run '{input.run_id}'. Use the run_id of a Fusion tool response."
+            raise ValueError(msg)
+        note = redact_secrets(input.note).text.strip()
+        existing = await asyncio.to_thread(store.lessons, lib.project, record.task_type)
+        used = await asyncio.to_thread(store.lessons_used, input.run_id)
+        warnings: list[str] = []
+        called: Distillation | None = None
+        if input.outcome != "ignored" or note:  # an unexplained "ignored" teaches nothing
+            called = await self._distil(lib, record, input.outcome, note, existing, used, warnings)
+        lesson, action = apply_distillation(
+            called.proposed if called else None,
+            existing=existing,
+            run_id=input.run_id,
+            outcome=input.outcome,
+            note=note,
+            project_key=lib.project,
+            task_type=record.task_type,
+        )
+        if lesson is not None and action in ("created", "updated"):
+            await asyncio.to_thread(store.save, lesson)
+        elif lesson is not None and action == "dropped":
+            await asyncio.to_thread(store.forget, lesson.id)
+        feedback = Feedback(
+            run_id=input.run_id,
+            project_key=lib.project,
+            task_type=record.task_type,
+            outcome=input.outcome,
+            note=note,
+            lesson_id=lesson.id if lesson is not None else None,
+        )
+        await asyncio.to_thread(store.record_feedback, feedback)
+        if called is not None and called.cost_usd:
+            step = RunStepRecord(
+                step_name="library_distil",
+                model_name=called.model,
+                input_tokens=called.input_tokens,
+                output_tokens=called.output_tokens,
+                cost_usd=called.cost_usd,
+                latency_ms=called.latency_ms,
+            )
+            await asyncio.to_thread(self.run_store.add_step, input.run_id, step)
+        return _feedback_output(input, lesson, action, called, warnings)
+
+    async def _distil(
+        self,
+        lib: Library,
+        record: RunRecord,
+        outcome: Outcome,
+        note: str,
+        existing: list[Lesson],
+        used: list[str],
+        warnings: list[str],
+    ) -> Distillation | None:
+        """One cheap call that proposes a lesson; None (with a warning) when no model can."""
+        deps = self._ask.deps
+        try:
+            judge: str | None = deps.routing.get_policy(TaskType(record.task_type)).judge_model
+        except ValueError:
+            judge = None
+        model = pick_distil_model(
+            configured=lib.config.distil_model,
+            judge=judge,
+            judges=deps.registry.by_role("judge"),
+            models=deps.registry.models,
+            providers=deps.providers,
+        )
+        if model is None:
+            warnings.append("No model with a configured provider can distil a lesson")
+            return None
+        stored = record.sanitized_input or {}
+        task = "\n\n".join(
+            str(part) for part in (stored.get("primary_content"), stored.get("context")) if part
+        )
+        called = await distil(
+            model=model,
+            models=deps.registry.models,
+            providers=deps.providers,
+            pricing=deps.pricing,
+            prompt=distil_prompt(
+                task_type=record.task_type,
+                task=task,
+                answer=str((record.output_data or {}).get("final_answer", "")),
+                outcome=outcome,
+                note=note,
+                existing=existing,
+                used=used,
+            ),
+        )
+        warnings.extend(called.warnings)
+        if called.error:
+            warnings.append(f"The lesson could not be distilled: {called.error}")
+        return called
 
     async def fusion_ask(
         self, input: FusionAskInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Answer a general coding task using Fusion as a model-like panel."""
         got = gather_workspace(input, root)
+        lessons = await self._lessons(TaskType.DEFAULT, f"{input.prompt}\n{input.context}", root)
         result = await self._ask.ask(
             PipelineFusionAskInput(
                 prompt=input.prompt,
@@ -304,9 +543,10 @@ class FusionTools:
                 include_raw_outputs=input.include_raw_outputs,
                 shadow_baseline=input.shadow_baseline,
                 workspace=got.report,
+                lessons=lessons,
             )
         )
-        return _with_workspace(result.model_dump(), got)
+        return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
     async def fusion_review_diff(
         self, input: ReviewDiffInput, *, root: Path | None = None
@@ -317,6 +557,8 @@ class FusionTools:
         if not diff.strip():
             msg = f"git diff {input.diff_ref} has no changes under the project root to review"
             raise ValueError(msg)
+        query = f"{input.goals}\n{input.context}\n{diff}"
+        lessons = await self._lessons(TaskType.CODE_REVIEW, query, root)
         result = await self._code_review.review(
             PipelineCodeReviewInput(
                 diff=diff,
@@ -332,9 +574,10 @@ class FusionTools:
                 include_raw_outputs=input.include_raw_outputs,
                 shadow_baseline=input.shadow_baseline,
                 workspace=got.report,
+                lessons=lessons,
             )
         )
-        return _with_workspace(result.model_dump(), got)
+        return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
     async def fusion_debug_error(
         self, input: DebugErrorInput, *, root: Path | None = None
@@ -344,6 +587,7 @@ class FusionTools:
         error = input.error_message
         if input.stack_trace:
             error += f"\n\nStack trace:\n{input.stack_trace}"
+        lessons = await self._lessons(TaskType.DEBUGGING, f"{error}\n{input.context}", root)
         result = await self._debug.debug(
             PipelineDebugInput(
                 error_message=error,
@@ -358,15 +602,18 @@ class FusionTools:
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
                 workspace=got.report,
+                lessons=lessons,
             )
         )
-        return _with_workspace(result.model_dump(), got)
+        return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
     async def fusion_decide_architecture(
         self, input: DecideArchitectureInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Make an architecture decision using multi-model orchestration."""
         got = gather_workspace(input, root)
+        query = "\n".join([input.question, input.constraints, *input.options, input.context])
+        lessons = await self._lessons(TaskType.ARCHITECTURE_DECISION, query, root)
         result = await self._architecture.decide(
             PipelineArchitectureInput(
                 decision_question=input.question,
@@ -380,15 +627,18 @@ class FusionTools:
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
                 workspace=got.report,
+                lessons=lessons,
             )
         )
-        return _with_workspace(result.model_dump(), got)
+        return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
     async def fusion_plan_feature(
         self, input: PlanFeatureInput, *, root: Path | None = None
     ) -> dict[str, Any]:
         """Create an implementation plan using multi-model orchestration."""
         got = gather_workspace(input, root)
+        query = f"{input.feature_description}\n{input.constraints}\n{input.context}"
+        lessons = await self._lessons(TaskType.IMPLEMENTATION_PLAN, query, root)
         result = await self._plan.plan(
             PipelinePlanInput(
                 feature_request=input.feature_description,
@@ -402,9 +652,10 @@ class FusionTools:
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
                 workspace=got.report,
+                lessons=lessons,
             )
         )
-        return _with_workspace(result.model_dump(), got)
+        return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
     async def fusion_digest(
         self, input: DigestInput, *, root: Path | None = None
@@ -417,6 +668,7 @@ class FusionTools:
             raise ValueError(msg.strip())
         tokens = input.max_answer_tokens
         rule = DIGEST_INSTRUCTIONS.format(tokens=tokens, words=int(tokens * 0.75))
+        lessons = await self._lessons(TaskType.DEFAULT, f"{input.question}\n{input.context}", root)
         result = await self._ask.ask(
             PipelineFusionAskInput(
                 prompt=f"{input.question}\n\n{rule}",
@@ -429,9 +681,10 @@ class FusionTools:
                 detail=input.detail,
                 shadow_baseline=input.shadow_baseline,
                 workspace=got.report,
+                lessons=lessons,
             )
         )
-        return _with_workspace(result.model_dump(), got)
+        return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
     async def fusion_propose_patch(
         self, input: ProposePatchInput, *, root: Path | None = None
@@ -467,6 +720,7 @@ class FusionTools:
         elif mode == "host":
             checker = host_crosschecker(files, seen=seen)
         default = PATCH_STRATEGY if mode != "none" else UNVERIFIED_PATCH_STRATEGY
+        lessons = await self._lessons(TaskType.DEFAULT, f"{input.task}\n{input.context}", base)
         ctx = PipelineContext(
             task_type=TaskType.DEFAULT,
             primary_content=patch_prompt(input.task, input.tests_cmd),
@@ -480,6 +734,7 @@ class FusionTools:
             expects_patch=True,
             crosscheck=checker,
             workspace=got.report,
+            lessons=lessons,
         )
         planned = self._patch.deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
         settled = resolve_aggregator(
@@ -490,7 +745,7 @@ class FusionTools:
             result = await self._patch.run(ctx)
         except BenchmarkOnlyError as exc:
             raise ValueError(str(exc)) from exc
-        return patch_output(
+        output = patch_output(
             result,
             seen=seen,
             files=files,
@@ -500,6 +755,7 @@ class FusionTools:
             notes=notes,
             detail=input.detail,
         )
+        return await self._noted(output, lessons)
 
     async def fusion_select_patch(self, input: SelectPatchInput) -> dict[str, Any]:
         """Pick among a host-mode proposal's candidates from the host's check results. Free."""

@@ -51,6 +51,7 @@ SECTIONS = frozenset(
         "approaches",
         "baselines",
         "verify",
+        "library",
     }
 )
 ENV_PREFIX = "FUSION__"

@@ -127,3 +127,12 @@ verify:
   max_copy_files: 5000       # a bigger project is not copied: verify falls back to "host"
   max_copy_bytes: 67108864   # 64 MB
   max_file_bytes: 4194304    # 4 MB; a bigger file is left out of the copy
+
+# The experience library: lessons distilled from runs you gave feedback on (fusion_feedback),
+# kept per project in Fusion's own database (never inside the project) and added to later panel
+# prompts as hypotheses to re-check. Off until you turn it on.
+library:
+  enabled: false
+  max_lessons: 3             # lessons retrieved into one panel prompt
+  max_prompt_tokens: 300     # how much prompt they may take, in all
+  distil_model: null         # catalog alias that writes lessons; null: the task's judge model

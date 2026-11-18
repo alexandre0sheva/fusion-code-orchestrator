@@ -41,6 +41,8 @@ ARGUMENTS: dict[str, dict[str, Any]] = {
     "fusion_propose_patch": {"task": "Fix the bug", "paths": ["pyproject.toml"], "verify": "none"},
     # needs a host-mode run to pick from: called in test_propose_patch.py, listed here
     "fusion_select_patch": {"run_id": "r", "results": {"a": {"a/x": "pass"}}},
+    # the library is off by default: the reply says so, stores nothing and calls no model
+    "fusion_feedback": {"run_id": "r", "outcome": "used"},
     "fusion_compare_claude_runs": {
         "task_prompt": "Fix the bug",
         "opus_output": "Changed the loop bound.",

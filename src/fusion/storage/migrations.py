@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -106,6 +106,42 @@ _MIGRATIONS: dict[int, str] = {
 
     CREATE INDEX IF NOT EXISTS idx_bench_items_arm ON bench_items(run_id, arm);
     CREATE INDEX IF NOT EXISTS idx_bench_runs_created_at ON bench_runs(created_at);
+    """,
+    # The experience library (``fusion.library``): lessons keyed by a hash of the project root,
+    # the host's feedback on runs, and which lessons each run's prompt carried.
+    6: """
+    CREATE TABLE IF NOT EXISTS lessons (
+        id TEXT PRIMARY KEY,
+        project_key TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        cue TEXT NOT NULL,
+        lesson TEXT NOT NULL,
+        evidence_json TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        confidence TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS run_feedback (
+        run_id TEXT PRIMARY KEY,
+        project_key TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        lesson_id TEXT,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS lesson_uses (
+        run_id TEXT NOT NULL,
+        lesson_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (run_id, lesson_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_key, task_type);
+    CREATE INDEX IF NOT EXISTS idx_lesson_uses_lesson ON lesson_uses(lesson_id);
     """,
 }
 

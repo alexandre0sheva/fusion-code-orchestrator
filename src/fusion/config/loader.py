@@ -50,6 +50,8 @@ __all__ = [
     "load_model_registry",
     "load_routing_policies",
     "load_verify_config",
+    "LibraryConfig",
+    "load_library_config",
 ]
 
 _CONFIG_DIR = Path(__file__).parent
@@ -448,6 +450,26 @@ def load_verify_config() -> VerifyConfig:
         return VerifyConfig.model_validate(resolved.data.get("verify") or {})
     except ValidationError as exc:
         raise format_validation_error(exc, section_prefix="verify", resolved=resolved) from exc
+
+
+class LibraryConfig(BaseModel):
+    """``library``: the per-project experience library (lessons learned from run feedback)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False  # opt-in: nothing is stored and no lesson is retrieved until true
+    max_lessons: int = Field(default=3, ge=1, le=10)  # lessons retrieved into one panel prompt
+    max_prompt_tokens: int = Field(default=300, ge=50, le=1000)  # their size in the prompt
+    distil_model: str | None = None  # catalog alias; None: the task type's judge model
+
+
+def load_library_config() -> LibraryConfig:
+    """The ``library`` section of the layered configuration."""
+    resolved = resolve_config()
+    try:
+        return LibraryConfig.model_validate(resolved.data.get("library") or {})
+    except ValidationError as exc:
+        raise format_validation_error(exc, section_prefix="library", resolved=resolved) from exc
 
 
 def load_baseline(path: Path | None = None, catalog: Catalog | None = None) -> BaselineConfig:

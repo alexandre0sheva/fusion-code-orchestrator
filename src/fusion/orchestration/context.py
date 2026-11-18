@@ -17,6 +17,7 @@ from fusion.evals.schemas import (
     HybridEvalResult,
     ModelResponseEval,
 )
+from fusion.library.retrieve import LessonBlock
 from fusion.orchestration.aggregate import resolve_aggregator
 from fusion.orchestration.approaches import Approach
 from fusion.orchestration.budget_guard import BudgetGuard, BudgetReport, Preflight
@@ -87,6 +88,9 @@ class PipelineContext:
     # What the tool read from the user's project for this run (files, a git diff) and what it
     # refused; stored with the run's input. None when the caller pasted everything.
     workspace: WorkspaceReport | None = None
+    # Lessons the experience library retrieved for this request (``fusion.library``): added to
+    # the panel prompt as hypotheses, and their ids stored with the run. None when it is off.
+    lessons: LessonBlock | None = None
 
 
 @dataclass
@@ -149,6 +153,7 @@ class RunState:
     sanitized_primary: str = ""
     sanitized_context: str = ""
     sanitized_snippets: list[str] = field(default_factory=list)
+    sanitized_lessons: str = ""  # the library's lessons block, as the panel prompt carries it
     redaction_count: int = 0
     prompt_tokens: int = 0  # estimated size of the task prompt, for cost forecasts
 

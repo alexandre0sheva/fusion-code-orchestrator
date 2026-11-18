@@ -1,8 +1,9 @@
 """The ``fusion`` command: the root app, its global options, and the commands that need no module.
 
 The rest lives next to what it does: ``run_cmds`` (ask, review-diff, debug, decide, plan,
-eval-answer), ``runs_cmds``, ``config_cmds``, ``doctor``, ``models_cmd``, ``fusion.bench.cli`` and
-``fusion.install.cli``. ``fusion.cli.app`` re-exports ``app`` for older imports.
+eval-answer), ``runs_cmds``, ``library_cmds``, ``config_cmds``, ``doctor``, ``models_cmd``,
+``fusion.bench.cli`` and ``fusion.install.cli``. ``fusion.cli.app`` re-exports ``app`` for older
+imports.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from fusion.cli.common import (
     err_console,
 )
 from fusion.cli.config_cmds import config_app, strategies_app
+from fusion.cli.library_cmds import library_app
 from fusion.cli.models_cmd import models_app
 from fusion.cli.runs_cmds import runs_app
 from fusion.config import paths as fusion_paths
@@ -89,6 +91,7 @@ app = typer.Typer(
     cls=_FusionGroup,
 )
 app.add_typer(runs_app, name="runs")
+app.add_typer(library_app, name="library")
 app.add_typer(config_app, name="config")
 app.add_typer(strategies_app, name="strategies")
 app.add_typer(models_app, name="models")

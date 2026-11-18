@@ -12,6 +12,7 @@ from fusion.evals.schemas import (
     ModelResponseEval,
     OutcomeEvalResult,
 )
+from fusion.library.retrieve import LessonBlock
 from fusion.orchestration.claims import AgreementReport, ClaimCluster
 from fusion.routing.budget import BudgetLevel
 from fusion.routing.policy import RoutingDecision
@@ -77,6 +78,7 @@ class CodeReviewInput(BaseModel):
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
     workspace: WorkspaceReport | None = None
+    lessons: LessonBlock | None = None
 
 
 class FusionAskInput(BaseModel):
@@ -94,6 +96,7 @@ class FusionAskInput(BaseModel):
     include_raw_outputs: bool = False
     shadow_baseline: bool | None = None
     workspace: WorkspaceReport | None = None
+    lessons: LessonBlock | None = None
 
 
 class FusionAskOutput(BaseModel):
@@ -165,6 +168,7 @@ class DebugInput(BaseModel):
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
     workspace: WorkspaceReport | None = None
+    lessons: LessonBlock | None = None
 
 
 class DebugOutput(BaseModel):
@@ -205,6 +209,7 @@ class ArchitectureDecisionInput(BaseModel):
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
     workspace: WorkspaceReport | None = None
+    lessons: LessonBlock | None = None
 
 
 class ArchitectureDecisionOutput(BaseModel):
@@ -247,6 +252,7 @@ class ImplementationPlanInput(BaseModel):
     detail: Detail = "compact"
     shadow_baseline: bool | None = None
     workspace: WorkspaceReport | None = None
+    lessons: LessonBlock | None = None
 
 
 class ImplementationPlanOutput(BaseModel):

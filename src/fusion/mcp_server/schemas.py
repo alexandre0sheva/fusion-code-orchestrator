@@ -259,6 +259,26 @@ class SelectPatchInput(BaseModel):
     )
 
 
+class FeedbackInput(BaseModel):
+    """Input for fusion_feedback: what became of one run's answer."""
+
+    run_id: str = Field(description="The run_id of the Fusion response the feedback is about")
+    outcome: Literal["used", "partly", "wrong", "ignored"] = Field(
+        description=(
+            "used: you acted on the answer as given; partly: you used some of it; wrong: it was "
+            "wrong or misleading; ignored: you did not use it"
+        )
+    )
+    note: str = Field(
+        default="",
+        max_length=2000,
+        description=(
+            "One or two sentences on why: what was wrong or missing, or what made it useful. "
+            "The library learns from this, so name the kind of mistake, not secrets"
+        ),
+    )
+
+
 class EvalAnswerInput(BaseModel):
     """Input for fusion_eval_answer tool."""
 
@@ -398,6 +418,13 @@ class FusionToolResult(ToolEnvelope):
         default=None,
         description="Tokens you did not have to send because Fusion read the files or diff itself",
     )
+    lessons_used: list[str] | None = Field(
+        default=None,
+        description=(
+            "Ids of the experience library's lessons the panel prompt carried (library.enabled); "
+            "send fusion_feedback on this run so they keep or lose their standing"
+        ),
+    )
     # detail="full" only
     workspace: dict[str, Any] | None = Field(
         default=None, description="What was read from the project and what was skipped, and why"
@@ -458,6 +485,9 @@ class PatchToolResult(ToolEnvelope):
     host_tokens_saved_estimate: int | None = Field(
         default=None, description="Tokens you did not send because Fusion read the files itself"
     )
+    lessons_used: list[str] | None = Field(
+        default=None, description="Ids of the experience library's lessons the prompt carried"
+    )
 
 
 class SelectPatchResult(ToolEnvelope):
@@ -469,6 +499,22 @@ class SelectPatchResult(ToolEnvelope):
     reason: str = Field(default="", description="Why it was picked")
     scores: dict[str, float] = Field(default_factory=dict, description="Each candidate's score")
     apply: str = Field(default="", description="How to apply the patch")
+
+
+class FeedbackResult(ToolEnvelope):
+    """Result of fusion_feedback."""
+
+    run_id: str
+    recorded: bool = Field(description="False when the experience library is off or refused")
+    action: Literal["created", "updated", "dropped", "none"] = Field(
+        default="none", description="What the feedback did to the project's lessons"
+    )
+    lesson: dict[str, Any] | None = Field(
+        default=None, description="The lesson created or updated: cue, lesson, verdict, evidence"
+    )
+    cost_usd: float | None = Field(
+        default=None, description="What distilling the lesson cost; null if unknown"
+    )
 
 
 class StatsToolResult(ToolEnvelope):

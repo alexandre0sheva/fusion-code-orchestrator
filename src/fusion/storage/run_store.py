@@ -269,6 +269,38 @@ class RunStore:
         finally:
             self._release(conn)
 
+    def add_step(self, run_id: str, step: RunStepRecord) -> None:
+        """Record a call made for a run after it finished (the experience library's distillation)
+        and add its cost to the run's total, so ``fusion stats`` counts it."""
+        conn = self._acquire()
+        try:
+            conn.execute(
+                """
+                INSERT INTO run_steps
+                (run_id, step_name, model_name, provider, input_tokens, output_tokens,
+                 cost_usd, latency_ms, eval_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    step.step_name,
+                    step.model_name,
+                    step.provider,
+                    step.input_tokens,
+                    step.output_tokens,
+                    step.cost_usd,
+                    step.latency_ms,
+                    json.dumps(step.eval_data),
+                ),
+            )
+            conn.execute(
+                "UPDATE runs SET total_cost_usd = COALESCE(total_cost_usd, 0) + ? WHERE run_id=?",
+                (step.cost_usd, run_id),
+            )
+            conn.commit()
+        finally:
+            self._release(conn)
+
     def get_run(self, run_id: str) -> RunRecord | None:
         conn = self._acquire()
         try:
