@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Team directory</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Team directory</h1>
+    <div class="table-wrap" role="region" aria-labelledby="cap" tabindex="0">
+      <table id="people">
+        <caption id="cap">People, their team and tickets closed this quarter</caption>
+        <thead>
+          <tr>
+            <th scope="col" aria-sort="ascending"><button type="button" data-col="0">Name</button></th>
+            <th scope="col"><button type="button" data-col="1">Team</button></th>
+            <th scope="col"><button type="button" data-col="2">Tickets closed</button></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Ada Lovelace</th>
+            <td>Engineering</td>
+            <td>42</td>
+          </tr>
+          <tr>
+            <th scope="row">Grace Hopper</th>
+            <td>Research</td>
+            <td>37</td>
+          </tr>
+          <tr>
+            <th scope="row">Edsger Dijkstra</th>
+            <td>Research</td>
+            <td>29</td>
+          </tr>
+          <tr>
+            <th scope="row">Margaret Hamilton</th>
+            <td>Engineering</td>
+            <td>51</td>
+          </tr>
+          <tr>
+            <th scope="row">Alan Turing</th>
+            <td>Operations</td>
+            <td>33</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

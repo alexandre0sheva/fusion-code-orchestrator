@@ -1,0 +1,58 @@
+id: real-toml-inline-bool-brace
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-toml
+- parsing
+source:
+  repo: toml
+  url: https://github.com/uiri/toml
+  commit: 1f14df1fa3ad759190c4b85dfa36ff6086a9d340
+  parent: f83c9cdc8f420cb784ea6af8ad524c7bf86d4f18
+  committed: '2018-12-31'
+  licence: MIT
+  upstream_files:
+  - toml/__init__.py
+  - toml/decoder.py
+  - toml/encoder.py
+  - toml/ordered.py
+  - toml/tz.py
+  upstream_test: tests/test_api.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_api.py::test__dict
+- tests/test_hidden_api.py::test_array_sep
+- tests/test_hidden_api.py::test_bug_144
+- tests/test_hidden_api.py::test_bug_148
+- tests/test_hidden_api.py::test_bug_196
+- tests/test_hidden_api.py::test_bug_black637
+- tests/test_hidden_api.py::test_circular_ref
+- tests/test_hidden_api.py::test_commutativity
+- tests/test_hidden_api.py::test_decimal
+- tests/test_hidden_api.py::test_dict_decoder
+- tests/test_hidden_api.py::test_dump
+- tests/test_hidden_api.py::test_exceptions
+- tests/test_hidden_api.py::test_inline_dict
+- tests/test_hidden_api.py::test_ordered
+- tests/test_hidden_api.py::test_tuple
+solution_summary: Compare the trailing value stripped of spaces when checking for true and false while
+  splitting inline-table pairs
+flaws: []
+fail_to_pass:
+- tests/test_hidden_api.py::test_bug_black637

@@ -1,0 +1,47 @@
+id: perf-max-subarray
+category: performance
+difficulty: medium
+split: dev
+tags:
+- python
+- performance
+- dynamic-programming
+expected_pass:
+- tests.test_hidden.HiddenTests.test_all_negative_returns_the_largest_element
+- tests.test_hidden.HiddenTests.test_single_element
+- tests.test_hidden.HiddenTests.test_empty_is_an_error
+- tests.test_hidden.HiddenTests.test_best_run_at_the_end
+- tests.test_hidden.HiddenTests.test_floats
+- tests.test_hidden.HiddenTests.test_zeros_and_negatives
+solution_summary: 'Kadane''s algorithm: carry the best sum of a run ending at each
+  element'
+flaws:
+- summary: Take the maximum over every (start, end) pair of prefix-sum differences
+- summary: Kadane's algorithm that lets the running sum fall back to zero, so an all-negative
+    list returns 0
+perf:
+  sizes:
+  - 700
+  - 1400
+  - 2800
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

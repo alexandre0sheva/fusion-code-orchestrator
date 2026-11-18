@@ -1,0 +1,21 @@
+id: coding-lru-cache
+difficulty: medium
+split: dev
+tags:
+- python
+- data-structures
+solution_summary: Keep entries in an OrderedDict, move a key to the end on get and
+  put, and pop the first entry when over capacity
+flaws:
+- summary: 'Evict in insertion order: get does not refresh recency'
+- summary: Treat a falsy stored value as a miss and let membership checks refresh
+    recency
+expected_pass:
+- tests.test_hidden.LRUCacheTests.test_capacity_must_be_positive
+- tests.test_hidden.LRUCacheTests.test_capacity_one
+- tests.test_hidden.LRUCacheTests.test_contains_does_not_refresh
+- tests.test_hidden.LRUCacheTests.test_eviction_order
+- tests.test_hidden.LRUCacheTests.test_falsy_values_are_stored
+- tests.test_hidden.LRUCacheTests.test_get_default
+- tests.test_hidden.LRUCacheTests.test_get_refreshes_recency
+- tests.test_hidden.LRUCacheTests.test_update_existing_does_not_evict_and_refreshes

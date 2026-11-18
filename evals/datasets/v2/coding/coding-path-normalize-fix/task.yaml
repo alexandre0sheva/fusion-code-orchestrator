@@ -1,0 +1,21 @@
+id: coding-path-normalize-fix
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- text
+solution_summary: Remember whether the path is absolute, keep leading .. segments
+  on relative paths, drop them at the root of absolute ones, and return . for nothing
+flaws:
+- summary: Stay absolute only for absolute input and ignore .. above the root, but
+    drop leading .. on relative paths
+- summary: Keep .. on relative paths and handle the root but never return a dot for
+    an empty relative result
+expected_pass:
+- tests.test_hidden.NormalizeTests.test_absolute_paths
+- tests.test_hidden.NormalizeTests.test_dotdot_above_the_root_is_dropped
+- tests.test_hidden.NormalizeTests.test_leading_dotdot_is_kept_on_relative_paths
+- tests.test_hidden.NormalizeTests.test_names_that_merely_contain_dots
+- tests.test_hidden.NormalizeTests.test_nothing_left_is_dot
+- tests.test_hidden.NormalizeTests.test_relative_paths

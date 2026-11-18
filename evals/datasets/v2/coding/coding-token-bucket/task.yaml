@@ -1,0 +1,22 @@
+id: coding-token-bucket
+difficulty: medium
+split: test
+tags:
+- python
+- concurrency
+solution_summary: Refill by elapsed time times rate, capped at capacity, on every
+  call, remembering the time of the last refill
+flaws:
+- summary: Refill from the time of construction on every call without moving the last-refill
+    time, so tokens are counted twice
+- summary: Refill correctly but never cap the bucket at its capacity
+expected_pass:
+- tests.test_hidden.TokenBucketTests.test_bad_cost
+- tests.test_hidden.TokenBucketTests.test_drains_and_refuses
+- tests.test_hidden.TokenBucketTests.test_refill_is_capped_at_capacity
+- tests.test_hidden.TokenBucketTests.test_refills_with_time
+- tests.test_hidden.TokenBucketTests.test_refused_request_takes_nothing
+- tests.test_hidden.TokenBucketTests.test_repeated_reads_do_not_add_tokens
+- tests.test_hidden.TokenBucketTests.test_starts_full
+- tests.test_hidden.TokenBucketTests.test_validation
+- tests.test_hidden.TokenBucketTests.test_wait_time

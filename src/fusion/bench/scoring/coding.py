@@ -60,7 +60,9 @@ _UNITTEST_END = re.compile(
 _PYTEST_LINE = re.compile(
     r"^(?P<id>\S+::\S+)\s+(?P<status>PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS)\b"
 )
-_PYTEST_SUMMARY = re.compile(r"^(?P<status>PASSED|FAILED|ERROR)\s+(?P<id>\S+::\S+)")
+# ``-rA`` summary lines: the whole node id, which may hold spaces inside ``[...]`` parameters,
+# up to the `` - message`` a failure adds.
+_PYTEST_SUMMARY = re.compile(r"^(?P<status>PASSED|FAILED|ERROR)\s+(?P<id>\S+::.+?)(?: - .*)?$")
 _CACHE_LIMIT = 4096
 _SLOTS = threading.BoundedSemaphore(max(2, min(os.cpu_count() or 4, 8)))  # sandboxes at once
 _outcomes: dict[str, CodingOutcome] = {}
@@ -90,7 +92,11 @@ def parse_test_results(output: str) -> dict[str, str]:
     pending: str | None = None
     for raw in output.splitlines():
         line = raw.rstrip()
-        match = _PYTEST_LINE.match(line) or _PYTEST_SUMMARY.match(line)
+        summary = _PYTEST_SUMMARY.match(line)
+        if summary:  # the summary has the full id: it wins over a ``-v`` line
+            found[summary.group("id")] = _PYTEST_KIND[summary.group("status")]
+            continue
+        match = _PYTEST_LINE.match(line)  # an id with a space never matches: the summary has it
         if match:
             found.setdefault(match.group("id"), _PYTEST_KIND[match.group("status")])
             continue

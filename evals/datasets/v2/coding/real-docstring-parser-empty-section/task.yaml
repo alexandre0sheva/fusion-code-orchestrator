@@ -1,0 +1,84 @@
+id: real-docstring-parser-empty-section
+category: coding
+provenance: real-repo
+difficulty: easy
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-docstring-parser
+- parsing
+source:
+  repo: docstring_parser
+  url: https://github.com/rr-/docstring_parser
+  commit: e4ce80a48be6c8c88465dc78efa71695a7c551ad
+  parent: 86046124555fc68c0537d2545771c3d36e5001e3
+  committed: '2021-07-21'
+  licence: MIT
+  upstream_files:
+  - docstring_parser/__init__.py
+  - docstring_parser/common.py
+  - docstring_parser/google.py
+  - docstring_parser/numpydoc.py
+  - docstring_parser/parser.py
+  - docstring_parser/py.typed
+  - docstring_parser/rest.py
+  upstream_test: docstring_parser/tests/test_google.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_google.py::test_attributes
+- tests/test_hidden_google.py::test_broken_arguments
+- tests/test_hidden_google.py::test_broken_meta
+- tests/test_hidden_google.py::test_default_args
+- tests/test_hidden_google.py::test_empty_example
+- tests/test_hidden_google.py::test_examples
+- tests/test_hidden_google.py::test_google_parser
+- tests/test_hidden_google.py::test_long_description[Short description\nLong description-Short description-Long
+  description-False]
+- tests/test_hidden_google.py::test_long_description[Short description\n\nLong description-Short description-Long
+  description-True]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n            Long
+  description\n            -Short description-Long description-False]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n            Long
+  description\n            Second line\n            -Short description-Long description\nSecond line-False]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n\n            Long
+  description\n            -Short description-Long description-True]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n\n            Long
+  description\n            Second line\n            -Short description-Long description\nSecond line-True]
+- tests/test_hidden_google.py::test_long_description[\nShort description\nLong description\n-Short description-Long
+  description-False]
+- tests/test_hidden_google.py::test_meta_newlines[\n            Args:\n                asd:\n            -None-None-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[\n            Short description\n            Args:\n                asd:\n            -Short
+  description-None-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[source1-Short description-Long description-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[source2-Short description-First line\n    Second line-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[source3-Short description-First line\n    Second line-True-False]
+- tests/test_hidden_google.py::test_meta_newlines[source4-Short description-First line\n    Second line-True-True]
+- tests/test_hidden_google.py::test_meta_with_multiline_description
+- tests/test_hidden_google.py::test_multiple_meta
+- tests/test_hidden_google.py::test_params
+- tests/test_hidden_google.py::test_raises
+- tests/test_hidden_google.py::test_returns
+- tests/test_hidden_google.py::test_short_description[-None]
+- tests/test_hidden_google.py::test_short_description[Short description-Short description]
+- tests/test_hidden_google.py::test_short_description[\n   Short description\n-Short description]
+- tests/test_hidden_google.py::test_short_description[\n-None]
+- tests/test_hidden_google.py::test_short_description[\nShort description\n-Short description]
+- tests/test_hidden_google.py::test_unknown_meta
+solution_summary: Accept a zero-length indentation match when measuring a section's indent, so an empty
+  section does not crash
+flaws: []
+fail_to_pass:
+- tests/test_hidden_google.py::test_empty_example

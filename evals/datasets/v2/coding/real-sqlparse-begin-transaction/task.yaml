@@ -1,0 +1,105 @@
+id: real-sqlparse-begin-transaction
+category: coding
+provenance: real-repo
+difficulty: hard
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-sqlparse
+- sql
+- splitting
+source:
+  repo: sqlparse
+  url: https://github.com/andialbrecht/sqlparse
+  commit: 5ca50a2ee9b39e9efeea33e01f132d628144fb69
+  parent: acd8e5817b5be5f9b9a7b159c1bacc45179f4e44
+  committed: '2025-11-29'
+  licence: BSD-3-Clause
+  upstream_files:
+  - sqlparse/__init__.py
+  - sqlparse/__main__.py
+  - sqlparse/cli.py
+  - sqlparse/engine/__init__.py
+  - sqlparse/engine/filter_stack.py
+  - sqlparse/engine/grouping.py
+  - sqlparse/engine/statement_splitter.py
+  - sqlparse/exceptions.py
+  - sqlparse/filters/__init__.py
+  - sqlparse/filters/aligned_indent.py
+  - sqlparse/filters/others.py
+  - sqlparse/filters/output.py
+  - sqlparse/filters/reindent.py
+  - sqlparse/filters/right_margin.py
+  - sqlparse/filters/tokens.py
+  - sqlparse/formatter.py
+  - sqlparse/keywords.py
+  - sqlparse/lexer.py
+  - sqlparse/py.typed
+  - sqlparse/sql.py
+  - sqlparse/tokens.py
+  - sqlparse/utils.py
+  upstream_test: tests/test_split.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_split.py::test_split_backslash
+- tests/test_hidden_split.py::test_split_begin_end_procedure
+- tests/test_hidden_split.py::test_split_begin_end_semicolons
+- tests/test_hidden_split.py::test_split_begin_transaction
+- tests/test_hidden_split.py::test_split_begin_transaction_formatted
+- tests/test_hidden_split.py::test_split_begintag
+- tests/test_hidden_split.py::test_split_begintag_2
+- tests/test_hidden_split.py::test_split_casewhen
+- tests/test_hidden_split.py::test_split_casewhen_procedure
+- tests/test_hidden_split.py::test_split_comment_end_of_line
+- tests/test_hidden_split.py::test_split_comment_with_umlaut
+- tests/test_hidden_split.py::test_split_create_function[function.sql]
+- tests/test_hidden_split.py::test_split_create_function[function_psql.sql]
+- tests/test_hidden_split.py::test_split_create_function[function_psql2.sql]
+- tests/test_hidden_split.py::test_split_create_function[function_psql3.sql]
+- tests/test_hidden_split.py::test_split_create_function[function_psql4.sql]
+- tests/test_hidden_split.py::test_split_cursor_declare
+- tests/test_hidden_split.py::test_split_dashcomments
+- tests/test_hidden_split.py::test_split_dashcomments_eol[select foo; -- comment\n]
+- tests/test_hidden_split.py::test_split_dashcomments_eol[select foo; -- comment\r\n]
+- tests/test_hidden_split.py::test_split_dashcomments_eol[select foo; -- comment\r]
+- tests/test_hidden_split.py::test_split_dashcomments_eol[select foo; -- comment]
+- tests/test_hidden_split.py::test_split_dropif
+- tests/test_hidden_split.py::test_split_encoding_parsestream
+- tests/test_hidden_split.py::test_split_go[SELECT * FROM foo;\nGO-2]
+- tests/test_hidden_split.py::test_split_go[USE foo;\nGO 2\nSELECT 1;-3]
+- tests/test_hidden_split.py::test_split_go[USE foo;\nGO\nSELECT 1;\nGO-4]
+- tests/test_hidden_split.py::test_split_if_exists_in_begin_end
+- tests/test_hidden_split.py::test_split_if_function
+- tests/test_hidden_split.py::test_split_ignores_empty_newlines
+- tests/test_hidden_split.py::test_split_multiple_case_in_begin
+- tests/test_hidden_split.py::test_split_mysql_handler_for
+- tests/test_hidden_split.py::test_split_quotes_with_new_line
+- tests/test_hidden_split.py::test_split_semicolon
+- tests/test_hidden_split.py::test_split_simple
+- tests/test_hidden_split.py::test_split_stream
+- tests/test_hidden_split.py::test_split_strip_semicolon[  select * from foo;\n\nselect * from bar;\n\n\n\n-expected3]
+- tests/test_hidden_split.py::test_split_strip_semicolon[select * from foo-expected1]
+- tests/test_hidden_split.py::test_split_strip_semicolon[select * from foo; select * from bar;-expected2]
+- tests/test_hidden_split.py::test_split_strip_semicolon[select * from foo;-expected0]
+- tests/test_hidden_split.py::test_split_strip_semicolon[select * from foo\n\n;  bar-expected4]
+- tests/test_hidden_split.py::test_split_strip_semicolon_procedure
+- tests/test_hidden_split.py::test_split_unicode_parsestream
+solution_summary: In the statement splitter, treat BEGIN followed by a transaction keyword (TRANSACTION,
+  WORK, TRAN, DEFERRED, ...) as a statement, not a block opener, and skip newlines when looking for it
+flaws: []
+fail_to_pass:
+- tests/test_hidden_split.py::test_split_begin_transaction
+- tests/test_hidden_split.py::test_split_begin_transaction_formatted

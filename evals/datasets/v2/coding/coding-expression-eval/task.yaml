@@ -1,0 +1,26 @@
+id: coding-expression-eval
+difficulty: hard
+split: test
+tags:
+- python
+- parsing
+- algorithms
+solution_summary: 'A recursive-descent parser: expression over terms over unary over
+  power over atoms, with ** right-associative and binding tighter than a unary minus
+  on its left'
+flaws:
+- summary: Make ** left-associative and let a unary minus bind tighter than **, so
+    2 ** 3 ** 2 is 64 and -2 ** 2 is 4
+- summary: Evaluate with a loop over tokens that stops at the first thing it does
+    not understand, so trailing text and a second operand are ignored
+expected_pass:
+- tests.test_hidden.EvaluateTests.test_decimals_and_whitespace
+- tests.test_hidden.EvaluateTests.test_division_by_zero
+- tests.test_hidden.EvaluateTests.test_left_associativity
+- tests.test_hidden.EvaluateTests.test_power_binds_tighter_than_multiplication
+- tests.test_hidden.EvaluateTests.test_power_is_right_associative
+- tests.test_hidden.EvaluateTests.test_precedence
+- tests.test_hidden.EvaluateTests.test_returns_a_float
+- tests.test_hidden.EvaluateTests.test_syntax_errors
+- tests.test_hidden.EvaluateTests.test_unary_minus_and_power
+- tests.test_hidden.EvaluateTests.test_unary_operators

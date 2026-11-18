@@ -56,8 +56,9 @@ packages = ["src/fusion"]
 # carries them inside the package so `uvx --from git+... fusion install ...` can find them.
 [tool.hatch.build.targets.wheel.force-include]
 "integrations" = "fusion/_integrations"
-# The benchmark dataset, so `fusion bench --dataset v1` works from a wheel or `uvx --from git+...`.
+# The benchmark datasets, so `fusion bench --dataset v2` works from a wheel or `uvx --from git+...`.
 "evals/datasets/v1" = "fusion/bench/datasets/v1"
+"evals/datasets/v2" = "fusion/bench/datasets/v2"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -79,6 +80,9 @@ extend-exclude = [
     "evals/datasets/v1/coding",
     "evals/datasets/v1/frontend",
     "evals/datasets/v1/performance",
+    "evals/datasets/v2/coding",
+    "evals/datasets/v2/frontend",
+    "evals/datasets/v2/performance",
 ]
 
 [tool.ruff.lint]

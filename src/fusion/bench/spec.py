@@ -78,12 +78,12 @@ CATEGORY_TASK_TYPE: dict[str, TaskType] = {
 
 # Places a bare dataset name ("toy") is looked up, after the path as given.
 DATASET_DIRS = (
-    Path(__file__).parent / "datasets",  # packaged: ``toy``, and ``v1`` in a wheel
+    Path(__file__).parent / "datasets",  # packaged: ``toy``, and ``v1``, ``v2`` in a wheel
     Path(__file__).parent / "datasets" / "v1",  # packaged tasks by name: ``coding``
     Path("evals") / "datasets" / "bench",
     Path("evals") / "bench",
     Path("evals") / "datasets" / "v1",  # tasks of the shipped dataset by name: ``coding``
-    Path("evals") / "datasets",  # and the dataset itself: ``v1``
+    Path("evals") / "datasets",  # and the datasets themselves: ``v1``, ``v2``
 )
 _SUFFIXES = (".jsonl", ".yaml", ".yml")
 
@@ -552,6 +552,8 @@ class BenchConfig(BaseModel):
     max_usd: float = Field(gt=0)
     concurrency: int = Field(default=8, ge=1)
     judge_models: list[str] = Field(default_factory=list)  # catalog aliases for LLM scorers
+    # Refuse the study unless every judge's vendor serves no arm (``fusion.bench.judges``).
+    neutral_judges: bool = False
     mock: bool = False  # run on simulated providers: free, deterministic, no API keys
     cache: bool = True  # reuse provider responses from earlier runs
     redact: bool = False  # keep secret redaction on (off in benchmark mode by default)
@@ -621,7 +623,8 @@ def read_rows(path: Path) -> list[Any]:
 def dataset_sources(path: Path) -> list[Path]:
     """The files and coding-task directories a dataset is made of, in a stable order.
 
-    A directory holding ``task.yaml`` is one coding task and nothing under it is read as rows.
+    A directory holding ``task.yaml`` is one coding task and nothing under it is read as rows. A
+    file whose name starts with ``_`` is the dataset's own metadata (``datasets.manifest``).
     """
     if path.is_file() or is_task_dir(path):
         return [path]
@@ -636,7 +639,11 @@ def dataset_sources(path: Path) -> list[Path]:
             else:
                 kept.append(name)
         dirs[:] = kept
-        found.extend(here / n for n in sorted(names) if Path(n).suffix in _SUFFIXES)
+        found.extend(
+            here / n
+            for n in sorted(names)
+            if Path(n).suffix in _SUFFIXES and not n.startswith("_")  # ``_x``: dataset metadata
+        )
     return sorted(found)
 
 

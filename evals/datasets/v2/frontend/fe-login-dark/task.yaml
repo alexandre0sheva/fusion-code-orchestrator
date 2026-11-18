@@ -1,0 +1,68 @@
+id: fe-login-dark
+category: frontend
+difficulty: medium
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- dark-theme
+expected_pass:
+- tests.test_hidden.HiddenTests.test_fields_are_labelled_and_have_autocomplete
+- tests.test_hidden.HiddenTests.test_dark_theme_keeps_enough_contrast
+- tests.test_hidden.HiddenTests.test_focus_is_styled_and_not_removed
+- tests.test_hidden.HiddenTests.test_show_password_toggle
+- tests.test_hidden.HiddenTests.test_heading_and_landmark
+- tests.test_hidden.HiddenTests.test_submit_and_forgot_link
+- tests.test_hidden.HiddenTests.test_fits_small_screens
+solution_summary: A dark card with light text, a bright focus ring, labelled fields
+  with autocomplete and a script-driven show-password toggle
+flaws:
+- summary: Dim grey text on the dark card and the focus outline removed
+- summary: The same dark card, but the heading is an h2 with no main landmark and
+    the link colour is too dim
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a centred dark card with a clear heading, full-width primary button
+    and a quiet secondary link
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: high-contrast text, a bright focus ring, helpful autocomplete, the
+    show-password toggle works
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

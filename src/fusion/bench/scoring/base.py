@@ -120,9 +120,9 @@ class ScoreEnv:
     gateway: CallGateway
     judge_models: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)  # judge calls that failed, for the details
-    # Providers that serve the arm being scored: a judge from one of them is not impartial, so the
-    # agentic judge leaves it out (the cross-family rule).
-    exclude_providers: set[str] = field(default_factory=set)
+    # Vendors whose models serve the arm being scored: a judge from one of them is not impartial,
+    # so the agentic judge leaves it out (the cross-family rule).
+    exclude_vendors: set[str] = field(default_factory=set)
     # Where screenshots and other evidence files are kept, and the evaluators that make them.
     artifacts_dir: Path | None = None
     evaluators: EvaluatorSet | None = None

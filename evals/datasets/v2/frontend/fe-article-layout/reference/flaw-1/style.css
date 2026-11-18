@@ -1,0 +1,92 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1b1f24;
+  background: #ffffff;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: #0b4fd6;
+}
+
+:focus-visible {
+  outline: 3px solid #0b5fff;
+  outline-offset: 2px;
+}
+
+.container {
+  width: min(100% - 2rem, 70rem);
+  margin-inline: auto;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.2rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  color: #ffffff;
+  background: #0b5fff;
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.post {
+  margin-inline: auto;
+  padding-block: 2rem;
+}
+
+.post h1 {
+  margin-bottom: 0.25rem;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  line-height: 1.2;
+}
+
+.byline {
+  margin-top: 0;
+  color: #46515c;
+}
+
+figure {
+  margin: 1.5rem 0;
+}
+
+figure img {
+  width: 100%;
+  background: #dfe6ee;
+}
+
+figcaption {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  color: #46515c;
+}
+
+blockquote {
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  border-left: 4px solid #0b5fff;
+  font-style: italic;
+}

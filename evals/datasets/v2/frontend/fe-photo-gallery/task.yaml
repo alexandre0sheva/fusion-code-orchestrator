@@ -1,0 +1,67 @@
+id: fe-photo-gallery
+category: frontend
+difficulty: hard
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- images
+- dialog
+- grid
+expected_pass:
+- tests.test_hidden.HiddenTests.test_six_figures_with_photos_and_captions
+- tests.test_hidden.HiddenTests.test_every_photo_file_is_used_and_exists
+- tests.test_hidden.HiddenTests.test_photos_reserve_space_and_load_lazily
+- tests.test_hidden.HiddenTests.test_a_responsive_grid
+- tests.test_hidden.HiddenTests.test_each_photo_has_a_view_larger_button
+- tests.test_hidden.HiddenTests.test_a_named_dialog_viewer_with_a_close_button
+- tests.test_hidden.HiddenTests.test_the_viewer_opens_modally_from_a_script
+- tests.test_hidden.HiddenTests.test_one_h1_a_main_landmark_and_focus_style
+solution_summary: "Six figures with described, sized, lazy images and captions in a 1-2-3 column grid; View larger buttons open a named dialog with showModal"
+flaws:
+- summary: "Bare linked images without alt text, captions, buttons or a dialog viewer"
+- summary: "The full gallery and viewer with pale grey captions and a positive tabindex on the Close button"
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: "a calm grid of equal photos with short bold captions and a large modal viewer"
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: "the grid steps from one to three columns, buttons and Close are easy to reach, the dialog has a dim backdrop"
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

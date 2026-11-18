@@ -23,12 +23,20 @@ import json
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
+from fusion.bench.datasets.coding import CATEGORIES as EXECUTABLE
+from fusion.bench.datasets.manifest import (
+    check_review,
+    check_splits,
+    load_manifest,
+    load_review,
+    load_splits,
+)
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoringError, get_scorer
 from fusion.bench.scoring.artifact import answer_tree, assess, shared_evaluators, workspace
 from fusion.bench.scoring.calibration import seeded_pair
@@ -44,6 +52,11 @@ from fusion.bench.spec import (
 )
 from fusion.orchestration.ledger import CallGateway, RunLedger
 from fusion.telemetry.cost import PricingRegistry
+from fusion.verify.synthesis import (
+    EvidenceLeakError,
+    assert_no_grader_material,
+    grader_material,
+)
 
 __all__ = [
     "KNOWN_LANGUAGES",
@@ -54,6 +67,7 @@ __all__ = [
     "validate_dataset",
 ]
 
+CATEGORIES = ("code_review", "debugging", "architecture", "planning", *EXECUTABLE)
 KNOWN_LANGUAGES = frozenset({"python", "typescript", "javascript", "go", "rust", "java", "ruby"})
 _SECRETS = {
     "AWS access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -63,13 +77,17 @@ _SECRETS = {
     "Slack token": re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
     "Google API key": re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
 }
+# A hidden line this long in a prompt is a leak; a shorter one is a name the prompt must give
+# anyway (``parse_duration(text)``).
+_LEAK_MIN_CHARS = 32
 _SEEDED_GOOD_MIN = 0.9  # the answer written from the truth must score at least this...
 _SEEDED_FLAWED_MAX = 0.5  # ...and its flawed twin at most this, or the truth cannot be scored
 
 
 @dataclass(frozen=True)
 class Rules:
-    """What must hold. The release numbers are the roadmap's promise for the v1 dataset."""
+    """What must hold. The release numbers default to the roadmap's promise for the v1 dataset;
+    a dataset's ``_dataset.yaml`` (``release:``) states its own (``datasets.manifest``)."""
 
     release: bool = False
     min_total: int = 100
@@ -88,6 +106,9 @@ class Rules:
     run_code: bool = True  # run each coding task's solution, flaws and tests (under a second each)
     min_lines: int = 30  # a review's diff, a debugging task's code, trace and logs
     max_lines: int = 400
+    min_each_category: int = 0  # every category of the seven, executable ones included
+    min_real_repo: int = 0  # real-repo tasks (upstream bugs with their fix and tests)
+    min_real_repo_per_split: int = 0
 
 
 @dataclass
@@ -108,6 +129,7 @@ class DatasetStats(BaseModel):
     languages: dict[str, int] = Field(default_factory=dict)
     clean_reviews: int = 0
     reviews: int = 0
+    real_repo: dict[str, int] = Field(default_factory=dict)  # split -> real-repo tasks
     lines: dict[str, list[int]] = Field(default_factory=dict)  # category -> [min, mean, max]
 
 
@@ -186,6 +208,15 @@ def _check_task(task: BenchTask, rules: Rules, add: Any) -> None:
     for kind, pattern in _SECRETS.items():
         if pattern.search(_text_of(task)):
             add("error", where, f"looks like it contains a secret ({kind}); use a placeholder")
+    if task.expects_patch:  # what grades the answer never reaches the model
+        material = {
+            source: [line for line in lines if len(line) >= _LEAK_MIN_CHARS]
+            for source, lines in grader_material(task.truth, task.files).items()
+        }
+        try:
+            assert_no_grader_material(task.prompt, material)
+        except EvidenceLeakError as exc:
+            add("error", where, f"the prompt shows hidden material: {exc}")
     if task.category == "code_review" and "bugs" in task.truth:
         truth = ReviewTruth.model_validate(task.truth)
         diff = _diff_lines(task.context)
@@ -288,7 +319,7 @@ def _check_coding_task(
     for n, flaw in enumerate(truth.flaws, 1):
         if not flaw.summary:
             found.append(("error", f"flaw {n} has no summary"))
-    if not truth.flaws:
+    if not truth.flaws and "real-repo" not in task.tags:  # upstream bugs come with no wrong fix
         found.append(("warning", "no flaws: nothing shows that the tests reject a wrong fix"))
     right = run_hidden_tests(task, truth.solution)
     if not right.applied:
@@ -496,6 +527,22 @@ def _check_coverage(tasks: list[BenchTask], stats: DatasetStats, rules: Rules, a
                     category,
                     f"{have} {difficulty} tasks; at least {rules.min_per_difficulty} needed",
                 )
+    if rules.min_each_category:
+        for category in CATEGORIES:
+            n = stats.by_category.get(category, 0)
+            if n < rules.min_each_category:
+                add("error", category, f"{n} tasks; at least {rules.min_each_category} needed")
+    real = sum(stats.real_repo.values())
+    if real < rules.min_real_repo:
+        add("error", "dataset", f"{real} real-repo tasks; at least {rules.min_real_repo} needed")
+    for split in ("dev", "test"):
+        have = stats.real_repo.get(split, 0)
+        if have < rules.min_real_repo_per_split:
+            add(
+                "error",
+                "dataset",
+                f"{have} real-repo {split} tasks; at least {rules.min_real_repo_per_split} needed",
+            )
     if len(stats.languages) < rules.min_languages:
         add(
             "error",
@@ -535,6 +582,7 @@ def _stats(tasks: list[BenchTask]) -> DatasetStats:
     reviews = [t for t in tasks if t.category == "code_review"]
     stats.reviews = len(reviews)
     stats.clean_reviews = sum(1 for t in reviews if t.truth.get("bugs") == [])
+    stats.real_repo = dict(Counter(t.split or "none" for t in tasks if "real-repo" in t.tags))
     return stats
 
 
@@ -547,10 +595,22 @@ def validate_dataset(path: str | Path, rules: Rules | None = None) -> Report:
         report.issues.append(Issue(level, where, message))
 
     root = resolve_dataset(path)
+    lock = review = None
+    try:
+        manifest = load_manifest(root)
+        lock, review = load_splits(root), load_review(root)
+    except DatasetError as exc:
+        add("error", str(root), str(exc))
+        manifest = None
+    if rules.release and manifest is not None:
+        rules = replace(rules, **manifest.release)
     tasks: list[BenchTask] = []
     try:
         for source, index, row in iter_rows(root):
             where = f"{source.name}:{index}" if source.is_file() else source.name
+            real = source.is_dir() and "real-repo" in row.get("tags", [])
+            if real and not (source / "LICENSE").is_file():
+                add("error", where, "a real-repo task needs the upstream LICENSE beside it")
             try:
                 tasks.append(BenchTask.model_validate(row))
             except ValidationError as exc:
@@ -578,6 +638,14 @@ def validate_dataset(path: str | Path, rules: Rules | None = None) -> Report:
     if rules.run_code:
         _check_coding([t for t in tasks if t.expects_patch], rules, add)
     _check_splits(tasks, rules, add)
+    if lock is not None:
+        for task_id, problem in check_splits(lock, tasks):
+            add("error", task_id, problem)
+    elif rules.release and any(t.split for t in tasks) and manifest is not None:
+        add("error", "dataset", "the split is not frozen (fusion bench dataset freeze)")
+    if review is not None:
+        for level, where, problem in check_review(review, tasks, release=rules.release):
+            add(level, where, problem)
     report.tasks = tasks
     report.stats = _stats(tasks)
     if rules.release:

@@ -1,0 +1,24 @@
+id: coding-cart-money-fix
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- money
+- multi-file
+solution_summary: Do the money arithmetic in Decimal across both modules, compound
+  discounts on the unrounded amount, and round half up once at the end
+flaws:
+- summary: Use Decimal everywhere but round after each discount, so compounding discounts
+    drift by a cent
+- summary: Use Decimal and round once but with the default banker's rounding
+expected_pass:
+- tests.test_hidden.CartTests.test_discount_edges
+- tests.test_hidden.CartTests.test_discounts_compound_without_intermediate_rounding
+- tests.test_hidden.CartTests.test_empty_cart
+- tests.test_hidden.CartTests.test_one_discount
+- tests.test_hidden.CartTests.test_price_types
+- tests.test_hidden.CartTests.test_pricing_functions_keep_full_precision
+- tests.test_hidden.CartTests.test_quantity_validation
+- tests.test_hidden.CartTests.test_rounding_is_half_up
+- tests.test_hidden.CartTests.test_total_is_a_two_place_decimal

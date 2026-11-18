@@ -1,0 +1,24 @@
+id: coding-event-emitter
+difficulty: medium
+split: test
+tags:
+- python
+- design
+solution_summary: Keep entries per event, snapshot them at emit, drop a once-entry
+  before calling it, run every handler and re-raise the first error at the end
+flaws:
+- summary: Call handlers straight from the live list and stop at the first exception
+- summary: Remove a once handler only after calling it, so a nested emit calls it
+    again
+expected_pass:
+- tests.test_hidden.EventEmitterTests.test_a_failing_handler_does_not_stop_the_rest
+- tests.test_hidden.EventEmitterTests.test_events_are_separate
+- tests.test_hidden.EventEmitterTests.test_handlers_added_during_emit_wait_for_the_next_emit
+- tests.test_hidden.EventEmitterTests.test_handlers_removed_during_emit_still_run_in_it
+- tests.test_hidden.EventEmitterTests.test_off_can_remove_a_once_handler
+- tests.test_hidden.EventEmitterTests.test_off_removes_the_earliest_registration
+- tests.test_hidden.EventEmitterTests.test_off_unknown_is_harmless
+- tests.test_hidden.EventEmitterTests.test_once_is_removed_before_it_is_called
+- tests.test_hidden.EventEmitterTests.test_once_runs_once
+- tests.test_hidden.EventEmitterTests.test_order_arguments_and_count
+- tests.test_hidden.EventEmitterTests.test_same_handler_twice_runs_twice

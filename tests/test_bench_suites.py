@@ -16,7 +16,8 @@ from typer.testing import CliRunner
 
 from _bench import config, sim_env, write_dataset
 from fusion.bench.arms import arm_book, resolve_arm
-from fusion.bench.runner import run_bench
+from fusion.bench.judges import arm_aliases
+from fusion.bench.runner import build_env, run_bench
 from fusion.bench.spec import BenchConfig, BenchTask, load_dataset, select_tasks
 from fusion.bench.spend import SpendLedger
 from fusion.bench.suite import SUITES_DIR, list_suites, load_suite
@@ -27,21 +28,23 @@ from fusion.config.layers import ConfigError
 from fusion.config.loader import EarlyReturn, FanoutConfig
 from fusion.orchestration.stages import PanelStage
 from fusion.orchestration.strategy import FanoutOverride, load_strategy_book
+from fusion.routing.policy import RoutingPolicy
 
 runner = CliRunner()
-SUITES = ("ablation", "headline", "latency")
+SUITES = ("ablation", "headline", "latency", "ablation-v3", "headline-v3", "latency-v3")
+V3 = ("ablation-v3", "headline-v3", "latency-v3")  # on dataset v2, for roadmap Task 16
 
 
 def _bench_config(name: str) -> BenchConfig:
     data = dict(load_suite(name).config)
-    data["dataset"] = "evals/datasets/v1"
+    data["dataset"] = f"evals/datasets/{data['dataset']}"
     return BenchConfig.model_validate(data)
 
 
 # ------------------------------------------------------------------------------- the files
 
 
-def test_the_packaged_suites_are_the_three_the_roadmap_names() -> None:
+def test_the_packaged_suites_are_the_ones_the_roadmap_names() -> None:
     assert {s.name for s in list_suites()} == set(SUITES)
     assert {p.stem for p in SUITES_DIR.glob("*.yaml")} == set(SUITES)
     for suite in list_suites():
@@ -120,20 +123,20 @@ def test_a_suite_only_asks_for_tasks_that_exist_and_stays_in_its_split(name: str
     chosen = select_tasks(tasks, cfg.limit, cfg.seed, cfg.quota)
     assert len(chosen) == sum(cfg.quota.values())
     assert {t.split for t in chosen} <= {cfg.split, None}
-    assert {"coding", "frontend", "performance"} <= set(cfg.quota) or name == "latency"
+    assert {"coding", "frontend", "performance"} <= set(cfg.quota) or name.startswith("latency")
 
 
-def test_the_dev_and_test_subsets_do_not_share_a_task() -> None:
-    dev = select_tasks(
-        load_dataset("evals/datasets/v1", "dev"), None, 0, _bench_config("ablation").quota
-    )
-    test = select_tasks(
-        load_dataset("evals/datasets/v1", "test"), None, 100, _bench_config("headline").quota
-    )
+@pytest.mark.parametrize(
+    ("tune", "final"), [("ablation", "headline"), ("ablation-v3", "headline-v3")]
+)
+def test_the_dev_and_test_subsets_do_not_share_a_task(tune: str, final: str) -> None:
+    tuning, held_out = _bench_config(tune), _bench_config(final)
+    dev = select_tasks(load_dataset(tuning.dataset, "dev"), None, tuning.seed, tuning.quota)
+    test = select_tasks(load_dataset(held_out.dataset, "test"), None, held_out.seed, held_out.quota)
     assert not {t.id for t in dev} & {t.id for t in test}
 
 
-@pytest.mark.parametrize("name", SUITES)
+@pytest.mark.parametrize("name", SUITES[:3])
 def test_a_suite_keeps_the_money_inside_the_roadmaps_stage_budgets(name: str) -> None:
     cfg = _bench_config(name)
     budgets = {"ablation": 6.0, "latency": 6.0, "headline": 11.0}
@@ -151,12 +154,89 @@ def test_a_suite_file_can_be_given_by_path_and_a_wrong_name_lists_the_real_ones(
         "description: x\nstage: s\ndataset: toy\narms: [{name: a, strategy: solo-haiku}]\n"
     )
     assert load_suite(str(mine)).arms == ["a"]
-    with pytest.raises(ConfigError, match="ablation, headline, latency"):
+    with pytest.raises(ConfigError, match="ablation-v3, ablation, headline-v3, headline"):
         load_suite("nope")
     bad = tmp_path / "bad.yaml"
     bad.write_text("- just a list\n")
     with pytest.raises(ConfigError, match="'arms' list"):
         load_suite(str(bad))
+
+
+# ------------------------------------------------------------------------- the v3 suites (v2 data)
+
+
+def test_the_v3_suites_run_on_dataset_v2() -> None:
+    for name in V3:
+        assert load_suite(name).config["dataset"] == "v2"
+
+
+def test_ablation_v3_has_every_comparison_the_roadmap_lists() -> None:
+    cfg = _bench_config("ablation-v3")
+    book = arm_book(load_strategy_book(), cfg.arms)
+    arms = [a.name for a in cfg.arms]
+    assert arms[0] == "nano"  # the baseline: every other arm changes one thing from it
+    strategies = {a.name: a.strategy for a in cfg.arms}
+    # nano vs open vs mixed vs mid panels
+    assert [strategies[a] for a in ("nano", "open", "mixed", "mid")] == [
+        "panel-nano",
+        "panel-open",
+        "panel-mixed",
+        "panel-mid",
+    ]
+    assert book.get("lenses-off").lenses == "off" and book.get("nano").lenses != "off"
+    # llm (nano) vs select vs vote vs digest
+    assert book.get("nano").aggregator == "llm"
+    assert [book.get(a).aggregator for a in ("select", "vote", "digest")] == [
+        "select",
+        "vote",
+        "digest",
+    ]
+    thresholds = [book.get(a).cascade.agreement_threshold for a in arms if a.startswith("cascade-")]
+    assert min(thresholds) == 0.5 and max(thresholds) == 0.9  # the 0.5-0.9 sweep
+    assert book.get("verified-synth").aggregator == "verified-synth"
+    assert (
+        strategies["auto-route"] == "auto" and strategies["auto-route-frontier"] == "auto-frontier"
+    )
+    assert cfg.split == "dev"
+
+
+def test_headline_v3_is_on_the_held_out_split_and_latency_v3_has_thirty_tasks() -> None:
+    headline = _bench_config("headline-v3")
+    assert headline.split == "test"
+    assert [a.name for a in headline.arms][:4] == [
+        "solo-opus",
+        "solo-sol",
+        "solo-haiku",
+        "solo-luna",
+    ]
+    latency = _bench_config("latency-v3")
+    assert latency.cache is False and not latency.judge_models
+    chosen = select_tasks(load_dataset(latency.dataset, "dev"), None, latency.seed, latency.quota)
+    assert len(chosen) >= 30
+
+
+@pytest.mark.parametrize("name", ["ablation-v3", "headline-v3"])
+def test_the_v3_studies_are_judged_by_neutral_judges(name: str, tmp_path: Path) -> None:
+    cfg = _bench_config(name)
+    assert cfg.neutral_judges and cfg.judge_models
+    catalog = load_catalog()
+    env = build_env(cfg.model_copy(update={"mock": True}), [], results_dir=tmp_path)
+    book = arm_book(env.book, cfg.arms)
+    routing = RoutingPolicy(env.routing_config, registry=env.registry, strategies=book)
+    arm_vendors = {
+        catalog.models[m].vendor for a in cfg.arms for m in arm_aliases(book.get(a.name), routing)
+    }
+    judge_vendors = {catalog.models[j].vendor for j in cfg.judge_models}
+    assert judge_vendors and not judge_vendors & arm_vendors
+    assert all(catalog.models[j].provider == "openrouter" for j in cfg.judge_models)
+
+
+def test_the_v3_suites_fit_task_16s_budget() -> None:
+    # Task 16's share is about $7 (what the $15 leaves after Tasks 13-15); the caps keep to it.
+    caps = [_bench_config(name).max_usd for name in V3]
+    assert sum(caps) <= 7.1
+    for name in V3:
+        assert _bench_config(name).spend_stop_usd == 14.5
 
 
 # ------------------------------------------------------------------------------- the planner

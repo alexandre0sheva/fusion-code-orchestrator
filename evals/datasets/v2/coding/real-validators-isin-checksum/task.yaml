@@ -1,0 +1,100 @@
+id: real-validators-isin-checksum
+category: coding
+provenance: real-repo
+difficulty: hard
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-validators
+- checksum
+- finance
+source:
+  repo: validators
+  url: https://github.com/python-validators/validators
+  commit: 474496de3e47579b0301c7567eeba50d0db25159
+  parent: 70de324322def13a49a93d222f798ec1ab700885
+  committed: '2026-06-19'
+  licence: MIT
+  upstream_files:
+  - src/validators/__init__.py
+  - src/validators/_extremes.py
+  - src/validators/_tld.txt
+  - src/validators/between.py
+  - src/validators/card.py
+  - src/validators/country.py
+  - src/validators/cron.py
+  - src/validators/crypto_addresses/__init__.py
+  - src/validators/crypto_addresses/bsc_address.py
+  - src/validators/crypto_addresses/btc_address.py
+  - src/validators/crypto_addresses/eth_address.py
+  - src/validators/crypto_addresses/trx_address.py
+  - src/validators/domain.py
+  - src/validators/email.py
+  - src/validators/encoding.py
+  - src/validators/finance.py
+  - src/validators/hashes.py
+  - src/validators/hostname.py
+  - src/validators/i18n/__init__.py
+  - src/validators/i18n/es.py
+  - src/validators/i18n/fi.py
+  - src/validators/i18n/fr.py
+  - src/validators/i18n/ind.py
+  - src/validators/i18n/ru.py
+  - src/validators/iban.py
+  - src/validators/ip_address.py
+  - src/validators/length.py
+  - src/validators/mac_address.py
+  - src/validators/py.typed
+  - src/validators/slug.py
+  - src/validators/uri.py
+  - src/validators/url.py
+  - src/validators/utils.py
+  - src/validators/uuid.py
+  upstream_test: tests/test_finance.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_cusip[00^^^1234]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_cusip[912796T67]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_cusip[912796T68]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_cusip[XCVF]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[00^^^1234]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[010378331005]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[A000009]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[GB0002634947]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[US0004026251]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[US0378331006]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[XCVF]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_sedol[00^^^1234]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_sedol[0540526]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_sedol[A000009]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_sedol[XCVF]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_cusip[912796X20]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_cusip[912796X38]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_cusip[912796x20]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_isin[DE000BAY0017]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_isin[GB0002634946]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_isin[US0004026250]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_isin[US0378331005]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_sedol[0263494]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_sedol[0540528]
+- tests/test_hidden_finance.py::test_returns_true_on_valid_sedol[B000009]
+solution_summary: Reimplement the ISO 6166 check - numeric check digit, letters expanded to two-digit
+  values (A=10..Z=35), then a right-to-left Luhn sum over the digits
+flaws: []
+fail_to_pass:
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[GB0002634947]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[US0004026251]
+- tests/test_hidden_finance.py::test_returns_failed_validation_on_invalid_isin[US0378331006]

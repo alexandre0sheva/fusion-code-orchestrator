@@ -1,0 +1,24 @@
+id: coding-query-string-fix
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- parsing
+solution_summary: Split pairs on &, split each on the first = only, percent-decode
+  with + as space, collect repeated keys in order, and skip empty pairs
+flaws:
+- summary: Collect repeated keys and tolerate missing values but never decode percent
+    escapes or plus signs
+- summary: Decode with unquote_plus but split on every equals sign and keep only the
+    last value of a repeated key
+expected_pass:
+- tests.test_hidden.ParseQueryTests.test_an_encoded_ampersand_stays_in_the_value
+- tests.test_hidden.ParseQueryTests.test_empty_pairs_are_skipped
+- tests.test_hidden.ParseQueryTests.test_invalid_escapes_are_left_alone
+- tests.test_hidden.ParseQueryTests.test_leading_question_mark
+- tests.test_hidden.ParseQueryTests.test_only_the_first_equals_splits
+- tests.test_hidden.ParseQueryTests.test_parameter_without_a_value
+- tests.test_hidden.ParseQueryTests.test_percent_decoding_and_plus
+- tests.test_hidden.ParseQueryTests.test_repeated_keys_collect_values_in_order
+- tests.test_hidden.ParseQueryTests.test_utf8_and_keys_are_decoded

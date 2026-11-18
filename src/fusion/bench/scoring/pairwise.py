@@ -4,8 +4,8 @@
   both times has a verdict; one that names a different answer each time (it follows the position)
   has none, and counts as a tie, so position bias cancels instead of deciding the result.
 * **Ties.** A judge may call a tie; so does a judge whose two orderings disagree.
-* **Cross-family rule.** A judge must not come from a provider that serves either arm, since
-  models favour their own family's answers. Pass the arms' providers as ``exclude_providers``;
+* **Cross-family rule.** A judge must not come from a vendor whose models serve either arm, since
+  models favour their own family's answers. Pass the arms' vendors as ``exclude_vendors``;
   ``cross_family=False`` turns the rule off. With no eligible judge the comparison raises
   ``NoEligibleJudgeError`` rather than quietly using a conflicted one.
 * **Several judges** each give a verdict and the answer with more votes wins; equal votes tie.
@@ -33,7 +33,7 @@ __all__ = [
     "Side",
     "Verdict",
     "eligible_judges",
-    "providers_of",
+    "vendors_of",
 ]
 
 Side = Literal["a", "b", "tie"]
@@ -65,22 +65,23 @@ class PairwiseResult(BaseModel):
         return {"a": 1.0, "b": 0.0, "tie": 0.5}[self.winner]
 
 
-def providers_of(aliases: Iterable[str], models: Mapping[str, ModelEntry]) -> set[str]:
-    """The providers behind some catalog aliases (an arm's members and aggregator)."""
-    return {models[a].provider for a in aliases if a in models}
+def vendors_of(aliases: Iterable[str], models: Mapping[str, ModelEntry]) -> set[str]:
+    """The vendors behind some catalog aliases (an arm's members and aggregator): who made each
+    model, whichever API serves it (``ModelEntry.vendor``)."""
+    return {models[a].vendor for a in aliases if a in models}
 
 
 def eligible_judges(
     judges: list[str],
     models: Mapping[str, ModelEntry],
-    exclude_providers: set[str],
+    exclude_vendors: set[str],
     *,
     cross_family: bool = True,
 ) -> tuple[list[str], list[str]]:
     """``(usable judges, judges removed by the cross-family rule)``."""
     if not cross_family:
         return list(judges), []
-    usable = [j for j in judges if j in models and models[j].provider not in exclude_providers]
+    usable = [j for j in judges if j in models and models[j].vendor not in exclude_vendors]
     return usable, [j for j in judges if j not in usable]
 
 
@@ -107,7 +108,7 @@ class PairwiseJudge:
         answer_b: str,
         env: ScoreEnv,
         *,
-        exclude_providers: set[str] | None = None,
+        exclude_vendors: set[str] | None = None,
         judges: list[str] | None = None,
     ) -> PairwiseResult:
         """Compare two answers to ``task``. ``judges`` defaults to ``env.judge_models``."""
@@ -115,12 +116,12 @@ class PairwiseJudge:
         usable, excluded = eligible_judges(
             judges if judges is not None else env.judge_models,
             env.gateway.models,
-            exclude_providers or set(),
+            exclude_vendors or set(),
             cross_family=self.cross_family,
         )
         if not usable:
             why = (
-                f"every judge ({', '.join(excluded)}) shares a provider with an arm"
+                f"every judge ({', '.join(excluded)}) shares a vendor with an arm"
                 if excluded
                 else "no judge models are named"
             )

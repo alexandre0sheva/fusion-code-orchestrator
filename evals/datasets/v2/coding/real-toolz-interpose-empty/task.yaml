@@ -1,0 +1,103 @@
+id: real-toolz-interpose-empty
+category: coding
+provenance: real-repo
+difficulty: easy
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-toolz
+- iterators
+source:
+  repo: toolz
+  url: https://github.com/pytoolz/toolz
+  commit: d2eba0374a452c2b18fe188b04527e22bda3548c
+  parent: 55ce42dc3b6f786ed9d4e38633cc5cfe3622a526
+  committed: '2026-09-18'
+  licence: BSD-3-Clause
+  upstream_files:
+  - toolz/__init__.py
+  - toolz/_signatures.py
+  - toolz/compatibility.py
+  - toolz/curried/__init__.py
+  - toolz/curried/exceptions.py
+  - toolz/curried/operator.py
+  - toolz/dicttoolz.py
+  - toolz/functoolz.py
+  - toolz/itertoolz.py
+  - toolz/recipes.py
+  - toolz/sandbox/__init__.py
+  - toolz/sandbox/core.py
+  - toolz/sandbox/parallel.py
+  - toolz/utils.py
+  upstream_test: toolz/tests/test_itertoolz.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_itertoolz.py::test_accumulate
+- tests/test_hidden_itertoolz.py::test_accumulate_works_on_consumable_iterables
+- tests/test_hidden_itertoolz.py::test_concat
+- tests/test_hidden_itertoolz.py::test_concatv
+- tests/test_hidden_itertoolz.py::test_cons
+- tests/test_hidden_itertoolz.py::test_count
+- tests/test_hidden_itertoolz.py::test_diff
+- tests/test_hidden_itertoolz.py::test_drop
+- tests/test_hidden_itertoolz.py::test_first
+- tests/test_hidden_itertoolz.py::test_frequencies
+- tests/test_hidden_itertoolz.py::test_get
+- tests/test_hidden_itertoolz.py::test_getter
+- tests/test_hidden_itertoolz.py::test_groupby
+- tests/test_hidden_itertoolz.py::test_groupby_non_callable
+- tests/test_hidden_itertoolz.py::test_interleave
+- tests/test_hidden_itertoolz.py::test_interpose
+- tests/test_hidden_itertoolz.py::test_interpose_empty
+- tests/test_hidden_itertoolz.py::test_isdistinct
+- tests/test_hidden_itertoolz.py::test_isiterable
+- tests/test_hidden_itertoolz.py::test_iterate
+- tests/test_hidden_itertoolz.py::test_join
+- tests/test_hidden_itertoolz.py::test_join_double_repeats
+- tests/test_hidden_itertoolz.py::test_join_missing_element
+- tests/test_hidden_itertoolz.py::test_key_as_getter
+- tests/test_hidden_itertoolz.py::test_last
+- tests/test_hidden_itertoolz.py::test_left_outer_join
+- tests/test_hidden_itertoolz.py::test_mapcat
+- tests/test_hidden_itertoolz.py::test_merge_sorted
+- tests/test_hidden_itertoolz.py::test_nth
+- tests/test_hidden_itertoolz.py::test_outer_join
+- tests/test_hidden_itertoolz.py::test_partition
+- tests/test_hidden_itertoolz.py::test_partition_all
+- tests/test_hidden_itertoolz.py::test_peek
+- tests/test_hidden_itertoolz.py::test_peekn
+- tests/test_hidden_itertoolz.py::test_pluck
+- tests/test_hidden_itertoolz.py::test_random_sample
+- tests/test_hidden_itertoolz.py::test_reduce_by_callable_default
+- tests/test_hidden_itertoolz.py::test_reduce_by_init
+- tests/test_hidden_itertoolz.py::test_reduceby
+- tests/test_hidden_itertoolz.py::test_remove
+- tests/test_hidden_itertoolz.py::test_rest
+- tests/test_hidden_itertoolz.py::test_right_outer_join
+- tests/test_hidden_itertoolz.py::test_second
+- tests/test_hidden_itertoolz.py::test_sliding_window
+- tests/test_hidden_itertoolz.py::test_sliding_window_of_short_iterator
+- tests/test_hidden_itertoolz.py::test_tail
+- tests/test_hidden_itertoolz.py::test_take
+- tests/test_hidden_itertoolz.py::test_take_nth
+- tests/test_hidden_itertoolz.py::test_topk
+- tests/test_hidden_itertoolz.py::test_topk_is_stable
+- tests/test_hidden_itertoolz.py::test_unique
+solution_summary: Catch StopIteration from the first next() and return an empty iterator for an empty
+  sequence
+flaws: []
+fail_to_pass:
+- tests/test_hidden_itertoolz.py::test_interpose_empty

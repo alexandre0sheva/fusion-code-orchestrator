@@ -18,6 +18,11 @@ the tests tell a right fix from a wrong one) and for simulated models; no real m
 the truth. A directory is a task when it holds ``task.yaml``; nothing below it is read as dataset
 rows, so a task's own YAML or JSONL files are just files.
 
+``provenance`` is ``synthetic`` (the default: written for this project, tagged ``synthetic`` and
+``llm-authored``) or ``real-repo``: an upstream bug of an open-source project, with a ``source``
+block (``SOURCE_KEYS``), its licence text in ``LICENSE`` next to ``task.yaml`` (not shown to the
+model), and the tags ``real-repo`` and ``repo:<name>``.
+
 ``category`` in ``task.yaml`` is ``coding`` (the default), ``frontend`` or ``performance``. The
 last two are scored on more than their hidden tests (``fusion.bench.scoring.artifact``) and add
 ``hard_gates``, ``soft_criteria``, ``evaluators``, ``perf`` and ``site`` (``ArtifactTruth``),
@@ -39,6 +44,7 @@ __all__ = [
     "DEFAULT_TEST_COMMAND",
     "HELPERS_DIR",
     "PATCH_REQUEST",
+    "SOURCE_KEYS",
     "TASK_FILE",
     "CodingTaskError",
     "is_task_dir",
@@ -64,6 +70,9 @@ PATCH_REQUEST = _PATCH_FORMAT % "file.py" + _PYTHON_ONLY
 HELPERS_DIR: Final = Path(__file__).parent / "helpers"
 ARTIFACT_MANIFEST_KEYS = ("evaluators", "hard_gates", "soft_criteria", "perf", "site")
 CATEGORIES = ("coding", "frontend", "performance")
+# Where a real-repo task comes from: the project, its URL, the fixing commit and its parent (the
+# buggy state the task shows), and the licence the vendored files are under (LICENSE beside them).
+SOURCE_KEYS = ("repo", "url", "commit", "parent", "licence")
 _SKIP_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 _SKIP_SUFFIXES = {".pyc", ".pyo"}
 _SKIP_NAMES = {".DS_Store"}
@@ -111,6 +120,24 @@ def _overlay_diff(files: dict[str, str], folder: Path) -> str:
         return ""
     after = {**files, **_read_tree(folder)}
     return diff_files(files, after)
+
+
+def _provenance_tags(path: Path, manifest: dict[str, Any]) -> list[str]:
+    """``synthetic`` tasks were written for this project by an LLM; a ``real-repo`` task is an
+    upstream bug and its fix, with a ``source`` block saying where it comes from."""
+    provenance = str(manifest.get("provenance") or "synthetic")
+    if provenance == "synthetic":
+        return ["synthetic", "llm-authored"]
+    if provenance != "real-repo":
+        msg = f"{path / TASK_FILE}: provenance must be synthetic or real-repo"
+        raise CodingTaskError(msg)
+    source = manifest.get("source")
+    missing = [k for k in SOURCE_KEYS if not isinstance(source, dict) or not source.get(k)]
+    if missing:
+        msg = f"{path / TASK_FILE}: a real-repo task needs source.{', source.'.join(missing)}"
+        raise CodingTaskError(msg)
+    assert isinstance(source, dict)
+    return ["real-repo", f"repo:{source['repo']}"]
 
 
 def load_task_dir(path: Path) -> dict[str, Any]:
@@ -162,7 +189,7 @@ def load_task_dir(path: Path) -> dict[str, Any]:
         "flaws": flaws,
     }
     truth.update({k: manifest[k] for k in ARTIFACT_MANIFEST_KEYS if k in manifest})
-    tags = [*(manifest.get("tags") or []), "synthetic", "llm-authored"]
+    tags = [*(manifest.get("tags") or []), *_provenance_tags(path, manifest)]
     row: dict[str, Any] = {
         "id": str(manifest.get("id") or path.name),
         "category": category,

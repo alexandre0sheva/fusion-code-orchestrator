@@ -1,0 +1,25 @@
+id: coding-wordcount-fix
+difficulty: easy
+split: dev
+tags:
+- python
+- bug-fix
+- text
+solution_summary: Lower-case the text, find words with a letters-and-inner-apostrophes
+  regex, and sort by count descending then word ascending
+flaws:
+- summary: Lower-case and split with the \w+ pattern, which keeps digits and underscores
+    inside words and breaks apostrophes
+- summary: Extract words correctly but return most_common order, so ties follow first
+    appearance
+expected_pass:
+- tests.test_hidden.TopWordsTests.test_apostrophes_inside_words
+- tests.test_hidden.TopWordsTests.test_case_is_ignored
+- tests.test_hidden.TopWordsTests.test_digits_and_underscores_separate_words
+- tests.test_hidden.TopWordsTests.test_empty_and_zero
+- tests.test_hidden.TopWordsTests.test_n_limits_and_exceeds
+- tests.test_hidden.TopWordsTests.test_negative_n
+- tests.test_hidden.TopWordsTests.test_punctuation_is_not_part_of_a_word
+- tests.test_hidden.TopWordsTests.test_quotes_around_words_are_not_apostrophes
+- tests.test_hidden.TopWordsTests.test_result_is_a_list_of_tuples
+- tests.test_hidden.TopWordsTests.test_ties_are_alphabetical

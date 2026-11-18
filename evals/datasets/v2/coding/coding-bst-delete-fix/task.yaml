@@ -1,0 +1,22 @@
+id: coding-bst-delete-fix
+difficulty: hard
+split: dev
+tags:
+- python
+- bug-fix
+- data-structures
+solution_summary: Replace a two-child node with its in-order predecessor and delete
+  that predecessor from the left subtree, and count only new keys on insert
+flaws:
+- summary: Fix the duplicate count on insert but still leave the replacement key behind
+    in the left subtree after a two-child delete
+- summary: Fix the delete by removing the replacement from the left subtree but count
+    every insert, duplicates included
+expected_pass:
+- tests.test_hidden.BSTTests.test_agrees_with_a_set_under_random_operations
+- tests.test_hidden.BSTTests.test_delete_a_node_with_two_children
+- tests.test_hidden.BSTTests.test_delete_leaf_and_one_child
+- tests.test_hidden.BSTTests.test_delete_missing
+- tests.test_hidden.BSTTests.test_delete_the_root_with_two_children
+- tests.test_hidden.BSTTests.test_delete_until_empty
+- tests.test_hidden.BSTTests.test_insert_reports_new_keys_and_len_counts_them

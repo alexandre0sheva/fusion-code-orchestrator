@@ -194,7 +194,7 @@ async def test_judges_that_share_a_provider_with_the_arm_are_skipped_with_a_note
         {"claude-haiku": lambda r, i: submit({}), "gemini-flash": lambda r, i: submit({})}
     )
     env.evaluators = offline_kit()
-    env.exclude_providers = {"anthropic"}
+    env.exclude_vendors = {"anthropic"}
     result = await ArtifactScorer().score(task, answer(solution_patch(task)), env)
     assert provider.requests == []
     assert (

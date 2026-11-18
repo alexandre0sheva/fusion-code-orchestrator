@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -19,13 +20,22 @@ from fusion.bench.calibrate import default_mock_judges, run_artifact_calibration
 from fusion.bench.datasets.build import (
     AUTHORING_DIR,
     CATEGORY_FILES,
+    DATASET_DIR,
     AuthoringError,
     compile_dir,
     render_jsonl,
     write_compiled,
 )
 from fusion.bench.datasets.generate import Generated, run_generation
+from fusion.bench.datasets.manifest import (
+    REVIEW_FILE,
+    freeze_splits,
+    load_splits,
+    review_progress,
+    update_review,
+)
 from fusion.bench.datasets.validate import Rules, validate_dataset
+from fusion.bench.judges import check_neutral_judges
 from fusion.bench.meta import RunMeta, load_meta, reconstruct_meta
 from fusion.bench.plan import BenchPlan, make_plan
 from fusion.bench.recommend import recommend
@@ -48,6 +58,7 @@ from fusion.bench.scoring.calibration import (
 from fusion.bench.spec import (
     BenchConfig,
     BenchTask,
+    DatasetError,
     load_dataset,
     resolve_dataset,
     select_tasks,
@@ -189,10 +200,13 @@ def _spend_left(cfg: BenchConfig, env: BenchEnv) -> float | None:
 def _plan_for(cfg: BenchConfig, env: BenchEnv, tasks: list[BenchTask]) -> BenchPlan:
     book = arm_book(env.book, cfg.arms)
     routing = RoutingPolicy(env.routing_config, registry=env.registry, strategies=book)
+    strategies = {a.name: book.get(a.name) for a in cfg.arms}
+    if cfg.neutral_judges:
+        check_neutral_judges(cfg.judge_models, strategies, routing, env.registry.models)
     return make_plan(
         cfg,
         tasks,
-        {a.name: book.get(a.name) for a in cfg.arms},
+        strategies,
         routing=routing,
         registry=env.registry,
         pricing=env.pricing,
@@ -366,7 +380,7 @@ def _print_gate(gate: JudgeGate | None) -> None:
         for reason in gate.reasons:
             console.print(f"  - {reason}")
         console.print(
-            "Calibrate them with: fusion bench calibrate-judge --artifacts --dataset v1 "
+            "Calibrate them with: fusion bench calibrate-judge --artifacts --dataset v2 "
             "--judge-models <judges>"
         )
         return
@@ -1055,6 +1069,13 @@ def dataset_stats_cmd(path: _DatasetPath) -> None:
     console.print(table)
     if stats.languages:
         console.print("Languages: " + ", ".join(f"{k} {v}" for k, v in stats.languages.items()))
+    if stats.real_repo:
+        console.print(
+            f"Real-repo tasks: {sum(stats.real_repo.values())} "
+            + "("
+            + ", ".join(f"{n} {s}" for s, n in sorted(stats.real_repo.items()))
+            + ")"
+        )
     if stats.reviews:
         console.print(
             f"Clean code-review tasks: {stats.clean_reviews} of {stats.reviews} "
@@ -1062,12 +1083,48 @@ def dataset_stats_cmd(path: _DatasetPath) -> None:
         )
 
 
+@dataset_app.command("freeze")
+def dataset_freeze_cmd(
+    path: _DatasetPath,
+    add: Annotated[
+        bool, typer.Option("--add", help="Take new tasks into an existing frozen split")
+    ] = False,
+) -> None:
+    """Freeze the dev/test split (``_splits.json``) before any live run; it never changes after."""
+    root = resolve_dataset(path)
+    try:
+        before = load_splits(root)
+        lock = freeze_splits(root, load_dataset(root), add=add)
+    except DatasetError as exc:
+        err.print(str(exc), markup=False)
+        raise typer.Exit(1) from exc
+    new = len(lock.splits) - (len(before.splits) if before else 0)
+    counts = Counter(lock.splits.values())
+    console.print(
+        f"Split frozen on {lock.frozen_on}: {counts['dev']} dev, {counts['test']} test"
+        + (f" ({new} added)" if before else "")
+    )
+
+
+@dataset_app.command("review")
+def dataset_review_cmd(path: _DatasetPath) -> None:
+    """Create or refresh the owner's review checklist (``_review.yaml``) and show its progress."""
+    root = resolve_dataset(path)
+    try:
+        sheet = update_review(root, load_dataset(root))
+    except DatasetError as exc:
+        err.print(str(exc), markup=False)
+        raise typer.Exit(1) from exc
+    progress = review_progress(sheet)
+    console.print(f"{root / REVIEW_FILE}: " + ", ".join(f"{n} {d}" for d, n in progress.items()))
+
+
 @dataset_app.command("build")
 def dataset_build_cmd(
     authoring: Annotated[
         Path, typer.Option(help="Directory of authoring YAML files")
     ] = AUTHORING_DIR,
-    out: Annotated[Path, typer.Option(help="Where the JSONL goes")] = Path("evals/datasets/v1"),
+    out: Annotated[Path, typer.Option(help="Where the JSONL goes")] = DATASET_DIR,
     check: Annotated[
         bool, typer.Option("--check", help="Write nothing; fail if the JSONL is out of date")
     ] = False,

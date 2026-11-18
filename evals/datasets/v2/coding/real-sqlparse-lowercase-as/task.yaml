@@ -1,0 +1,161 @@
+id: real-sqlparse-lowercase-as
+category: coding
+provenance: real-repo
+difficulty: easy
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-sqlparse
+- sql
+- case-insensitivity
+source:
+  repo: sqlparse
+  url: https://github.com/andialbrecht/sqlparse
+  commit: 111b35cffcfe44b16fbdd27507f165bafd52a2a1
+  parent: f80af6a4007f11ada847218df8c29dc859238290
+  committed: '2026-07-22'
+  licence: BSD-3-Clause
+  upstream_files:
+  - sqlparse/__init__.py
+  - sqlparse/__main__.py
+  - sqlparse/cli.py
+  - sqlparse/engine/__init__.py
+  - sqlparse/engine/filter_stack.py
+  - sqlparse/engine/grouping.py
+  - sqlparse/engine/statement_splitter.py
+  - sqlparse/exceptions.py
+  - sqlparse/filters/__init__.py
+  - sqlparse/filters/aligned_indent.py
+  - sqlparse/filters/others.py
+  - sqlparse/filters/output.py
+  - sqlparse/filters/reindent.py
+  - sqlparse/filters/right_margin.py
+  - sqlparse/filters/tokens.py
+  - sqlparse/formatter.py
+  - sqlparse/keywords.py
+  - sqlparse/lexer.py
+  - sqlparse/py.typed
+  - sqlparse/sql.py
+  - sqlparse/tokens.py
+  - sqlparse/utils.py
+  upstream_test: tests/test_grouping.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_grouping.py::test_aliased_column_without_as
+- tests/test_hidden_grouping.py::test_aliased_function_without_as
+- tests/test_hidden_grouping.py::test_aliased_literal_without_as
+- tests/test_hidden_grouping.py::test_begin
+- tests/test_hidden_grouping.py::test_compare_expr[select a from b where c < current_timestamp
+- tests/test_hidden_grouping.py::test_compare_expr[select a from b where c < d + e-Identifier-Identifier]
+- tests/test_hidden_grouping.py::test_compare_expr[select a from b where c < d + interval '1 day'-Identifier-TypedLiteral]
+- tests/test_hidden_grouping.py::test_compare_expr[select a from b where c < d + interval '6' month-Identifier-TypedLiteral]
+- tests/test_hidden_grouping.py::test_comparison_with_floats
+- tests/test_hidden_grouping.py::test_comparison_with_functions
+- tests/test_hidden_grouping.py::test_comparison_with_keywords
+- tests/test_hidden_grouping.py::test_comparison_with_parenthesis
+- tests/test_hidden_grouping.py::test_comparison_with_strings[!=]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[!~~]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[<=]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[<]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[=]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[>=]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[>]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[ILIKE]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[LIKE]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[NOT ILIKE]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[NOT LIKE]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[~]
+- tests/test_hidden_grouping.py::test_comparison_with_strings[~~]
+- tests/test_hidden_grouping.py::test_comparison_with_typed_literal
+- tests/test_hidden_grouping.py::test_forloops[FOREACH]
+- tests/test_hidden_grouping.py::test_forloops[FOR]
+- tests/test_hidden_grouping.py::test_group_identifier_list[foo, bar]
+- tests/test_hidden_grouping.py::test_group_identifier_list[sum(a) as x, b as y]
+- tests/test_hidden_grouping.py::test_group_identifier_list[sum(a), sum(b)]
+- tests/test_hidden_grouping.py::test_group_identifier_list[sum(a)/count(b) as x, y]
+- tests/test_hidden_grouping.py::test_group_identifier_list[sum(a)::integer as x, y]
+- tests/test_hidden_grouping.py::test_group_identifier_list[sum(a)::integer, b]
+- tests/test_hidden_grouping.py::test_group_identifier_list[sum(a)::integer/count(b) as x, y]
+- tests/test_hidden_grouping.py::test_grouping_alias
+- tests/test_hidden_grouping.py::test_grouping_alias_case
+- tests/test_hidden_grouping.py::test_grouping_alias_ctas
+- tests/test_hidden_grouping.py::test_grouping_alias_ctas_lowercase_as
+- tests/test_hidden_grouping.py::test_grouping_alias_returns_none[foo.bar]
+- tests/test_hidden_grouping.py::test_grouping_alias_returns_none[x / y]
+- tests/test_hidden_grouping.py::test_grouping_alias_returns_none[x > y]
+- tests/test_hidden_grouping.py::test_grouping_alias_returns_none[x, y]
+- tests/test_hidden_grouping.py::test_grouping_as_cte
+- tests/test_hidden_grouping.py::test_grouping_assignment[foo := 1;]
+- tests/test_hidden_grouping.py::test_grouping_assignment[foo := 1]
+- tests/test_hidden_grouping.py::test_grouping_comparison_exclude
+- tests/test_hidden_grouping.py::test_grouping_create_table
+- tests/test_hidden_grouping.py::test_grouping_function
+- tests/test_hidden_grouping.py::test_grouping_function_not_in
+- tests/test_hidden_grouping.py::test_grouping_identifer_as[foo as (select *)]
+- tests/test_hidden_grouping.py::test_grouping_identifer_as[foo as(select *)]
+- tests/test_hidden_grouping.py::test_grouping_identifier_as_invalid
+- tests/test_hidden_grouping.py::test_grouping_identifier_function
+- tests/test_hidden_grouping.py::test_grouping_identifier_invalid
+- tests/test_hidden_grouping.py::test_grouping_identifier_invalid_in_middle
+- tests/test_hidden_grouping.py::test_grouping_identifier_list
+- tests/test_hidden_grouping.py::test_grouping_identifier_list_case
+- tests/test_hidden_grouping.py::test_grouping_identifier_list_other
+- tests/test_hidden_grouping.py::test_grouping_identifier_list_subquery
+- tests/test_hidden_grouping.py::test_grouping_identifier_list_with_inline_comments
+- tests/test_hidden_grouping.py::test_grouping_identifier_list_with_order
+- tests/test_hidden_grouping.py::test_grouping_identifier_name_wildcard
+- tests/test_hidden_grouping.py::test_grouping_identifier_wildcard
+- tests/test_hidden_grouping.py::test_grouping_identifiers
+- tests/test_hidden_grouping.py::test_grouping_identifiers_with_operators
+- tests/test_hidden_grouping.py::test_grouping_idlist_function
+- tests/test_hidden_grouping.py::test_grouping_nested_identifier_with_order
+- tests/test_hidden_grouping.py::test_grouping_operation[foo + 100]
+- tests/test_hidden_grouping.py::test_grouping_operation[foo*100]
+- tests/test_hidden_grouping.py::test_grouping_operation[foo+100]
+- tests/test_hidden_grouping.py::test_grouping_parenthesis
+- tests/test_hidden_grouping.py::test_grouping_subquery_no_parens
+- tests/test_hidden_grouping.py::test_grouping_typecast[select (current_database())::information_schema.sql_identifier-information_schema.sql_identifier]
+- tests/test_hidden_grouping.py::test_grouping_typecast[select foo::integer from bar-integer]
+- tests/test_hidden_grouping.py::test_grouping_typed_literal[x > DATE '2020-01-01']
+- tests/test_hidden_grouping.py::test_grouping_typed_literal[x > TIMESTAMP '2020-01-01 00:00:00']
+- tests/test_hidden_grouping.py::test_grouping_varchar
+- tests/test_hidden_grouping.py::test_grouping_where
+- tests/test_hidden_grouping.py::test_grouping_where_union[select 1 where 1 = 2 union all select 2]
+- tests/test_hidden_grouping.py::test_grouping_where_union[select 1 where 1 = 2 union select 2]
+- tests/test_hidden_grouping.py::test_identifier_consumes_ordering
+- tests/test_hidden_grouping.py::test_identifier_with_op_trailing_ws
+- tests/test_hidden_grouping.py::test_identifier_with_operators
+- tests/test_hidden_grouping.py::test_identifier_with_string_literals
+- tests/test_hidden_grouping.py::test_into_kw_ends_where_clause
+- tests/test_hidden_grouping.py::test_keyword_followed_by_parenthesis
+- tests/test_hidden_grouping.py::test_like_and_ilike_comparison
+- tests/test_hidden_grouping.py::test_nested_begin
+- tests/test_hidden_grouping.py::test_nested_for
+- tests/test_hidden_grouping.py::test_qualified_function
+- tests/test_hidden_grouping.py::test_returning_kw_ends_where_clause
+- tests/test_hidden_grouping.py::test_simple_identifiers[1 as f]
+- tests/test_hidden_grouping.py::test_simple_identifiers[1/2 as f]
+- tests/test_hidden_grouping.py::test_simple_identifiers[1/2 f]
+- tests/test_hidden_grouping.py::test_simple_identifiers[1<2 as f]
+- tests/test_hidden_grouping.py::test_simple_identifiers[1<2 f]
+- tests/test_hidden_grouping.py::test_simple_identifiers[foo as f]
+- tests/test_hidden_grouping.py::test_simple_identifiers[foo f]
+- tests/test_hidden_grouping.py::test_statement_get_type
+solution_summary: Compare the keyword case-insensitively (value.upper() == 'AS') when deciding whether
+  to skip function grouping
+flaws: []
+fail_to_pass:
+- tests/test_hidden_grouping.py::test_grouping_alias_ctas_lowercase_as

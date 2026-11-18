@@ -1,0 +1,115 @@
+id: real-cachetools-cached-copy
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-cachetools
+- decorators
+- copy
+source:
+  repo: cachetools
+  url: https://github.com/tkem/cachetools
+  commit: 163d67d7b16287fb30a2986fd35898092a4d475c
+  parent: 56e0fd5c73ecc8a203618290238431b2f4e79570
+  committed: '2026-11-15'
+  licence: MIT
+  upstream_files:
+  - src/cachetools/__init__.py
+  - src/cachetools/_cached.py
+  - src/cachetools/_cachedmethod.py
+  - src/cachetools/_decorator.py
+  - src/cachetools/_descriptor.py
+  - src/cachetools/func.py
+  - src/cachetools/keys.py
+  - src/cachetools/py.typed
+  upstream_test: tests/test_cached.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_cached.py::CacheWrapperTest::test_autospec
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_attributes
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_attributes_cond
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_attributes_lock
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_clear
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_clear_cond
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_clear_lock
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_cond
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_cond_error
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_cond_error_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_cond_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_lock
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_lock_cond
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_lock_cond_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_lock_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_method
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_repr
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_typed
+- tests/test_hidden_cached.py::CacheWrapperTest::test_decorator_wrapped
+- tests/test_hidden_cached.py::CacheWrapperTest::test_self_keyword
+- tests/test_hidden_cached.py::CacheWrapperTest::test_stacked_decorators
+- tests/test_hidden_cached.py::CacheWrapperTest::test_zero_size_cache_decorator
+- tests/test_hidden_cached.py::CacheWrapperTest::test_zero_size_cache_decorator_cond
+- tests/test_hidden_cached.py::CacheWrapperTest::test_zero_size_cache_decorator_cond_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_zero_size_cache_decorator_info
+- tests/test_hidden_cached.py::CacheWrapperTest::test_zero_size_cache_decorator_lock
+- tests/test_hidden_cached.py::CacheWrapperTest::test_zero_size_cache_decorator_lock_info
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_attributes
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_attributes_cond
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_attributes_lock
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_clear
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_clear_cond
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_clear_lock
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_cond
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_cond_error
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_cond_error_info
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_info
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_lock
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_lock_cond
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_repr
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_typed
+- tests/test_hidden_cached.py::CustomCacheTest::test_decorator_wrapped
+- tests/test_hidden_cached.py::DictTest::test_decorator
+- tests/test_hidden_cached.py::DictTest::test_decorator_attributes
+- tests/test_hidden_cached.py::DictTest::test_decorator_attributes_cond
+- tests/test_hidden_cached.py::DictTest::test_decorator_attributes_lock
+- tests/test_hidden_cached.py::DictTest::test_decorator_clear
+- tests/test_hidden_cached.py::DictTest::test_decorator_clear_cond
+- tests/test_hidden_cached.py::DictTest::test_decorator_clear_lock
+- tests/test_hidden_cached.py::DictTest::test_decorator_cond
+- tests/test_hidden_cached.py::DictTest::test_decorator_cond_error
+- tests/test_hidden_cached.py::DictTest::test_decorator_cond_error_info
+- tests/test_hidden_cached.py::DictTest::test_decorator_info
+- tests/test_hidden_cached.py::DictTest::test_decorator_lock
+- tests/test_hidden_cached.py::DictTest::test_decorator_lock_cond
+- tests/test_hidden_cached.py::DictTest::test_decorator_repr
+- tests/test_hidden_cached.py::DictTest::test_decorator_typed
+- tests/test_hidden_cached.py::DictTest::test_decorator_wrapped
+- tests/test_hidden_cached.py::InvalidCacheTest::test_decorator
+- tests/test_hidden_cached.py::InvalidCacheTest::test_decorator_info
+- tests/test_hidden_cached.py::InvalidCacheTest::test_decorator_info_no_len
+- tests/test_hidden_cached.py::PickleTest::test_copy
+- tests/test_hidden_cached.py::PickleTest::test_copy_partial
+- tests/test_hidden_cached.py::PickleTest::test_pickle
+- tests/test_hidden_cached.py::PickleTest::test_pickle_method
+solution_summary: Give the @cached wrapper __copy__ and __deepcopy__ that return the wrapper itself, as
+  functools.lru_cache does
+flaws: []
+fail_to_pass:
+- tests/test_hidden_cached.py::PickleTest::test_copy_partial

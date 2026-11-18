@@ -15,7 +15,6 @@ from typer.testing import CliRunner
 from fusion.bench import cli as cli_module
 from fusion.bench.cli import bench_app
 from fusion.bench.datasets.build import (
-    AUTHORING_DIR,
     AuthoringError,
     compile_dir,
     compile_item,
@@ -34,7 +33,7 @@ from fusion.telemetry.cost import PricingRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
 V1 = ROOT / "evals" / "datasets" / "v1"
-AUTHORING = ROOT / AUTHORING_DIR
+AUTHORING = ROOT / "evals" / "datasets" / "authoring" / "v1"
 
 REVIEW: dict[str, Any] = {
     "id": "r1",

@@ -1,0 +1,26 @@
+# Is Fusion's default as fast as one frontier model, and which latency control pays off? On
+# dataset v2's dev split, at least 30 tasks. Wall time is the measurement, so the response cache
+# is off (a replayed call has no real latency) and nothing is judged.
+#
+#   fusion bench run --suite latency-v3 --max-usd 2.35
+description: >-
+  Opus 5.5 alone against strategy auto (the default), the panel default and the panel default with
+  Luna at effort none, on 30 dev tasks with the response cache off.
+stage: tune on dev
+dataset: v2
+split: dev
+quota: {code_review: 8, debugging: 8, architecture: 7, planning: 7}
+repeats: 1
+seed: 0
+max_usd: 2.35
+spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
+concurrency: 4
+cache: false
+judge_models: []
+arms:
+  - {name: solo-opus, strategy: solo-opus}
+  - {name: auto-route, strategy: auto}
+  - {name: default, strategy: panel-duo}
+  - name: luna-none
+    strategy: panel-duo
+    overrides: {members: [{model: claude-haiku}, {model: gpt-luna, reasoning_effort: none}]}

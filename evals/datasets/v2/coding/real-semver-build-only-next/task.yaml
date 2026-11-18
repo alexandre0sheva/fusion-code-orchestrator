@@ -1,0 +1,93 @@
+id: real-semver-build-only-next
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-semver
+- versions
+source:
+  repo: python-semver
+  url: https://github.com/python-semver/python-semver
+  commit: 4e09ef0e4c94314731f960d4ce763a2da2e096f1
+  parent: a8bb4f89fc010b367d0925dc4da72c883d2d15d3
+  committed: '2026-07-15'
+  licence: BSD-3-Clause
+  upstream_files:
+  - src/semver/__about__.py
+  - src/semver/__init__.py
+  - src/semver/__main__.py
+  - src/semver/_deprecated.py
+  - src/semver/_types.py
+  - src/semver/cli.py
+  - src/semver/py.typed
+  - src/semver/version.py
+  upstream_test: tests/test_parsing.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- -o
+- pythonpath=tests
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_parsing.py::test_equal_versions_have_equal_hashes
+- tests/test_hidden_parsing.py::test_next_version_with_invalid_parts
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.1.4+build.5-patch-0.1.5]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.1.4-prerelease-0.1.5-rc.1]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.1.5-rc.1-prerelease-0.1.5-rc.2]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.1.5-rc.2-patch-0.1.5]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.2.0-rc.1-minor-0.2.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.2.0-rc.1-patch-0.2.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.2.5-rc.1-minor-0.3.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0+build.5-major-2.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0+build.5-patch-1.0.1]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0-rc.1-major-1.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0-rc.1-minor-1.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0-rc.1-patch-1.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.4-rc.1-major-2.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.1.0-rc.1-major-2.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.1.4-rc.1-major-2.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.0+build.5-minor-1.3.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.3+build.5-patch-1.2.4]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.3-major-2.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.3-rc.1+build.5-patch-1.2.3]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.3-rc.1+build.5-prerelease-1.2.3-rc.2]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.3.1-minor-1.4.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.3.2-patch-1.3.3]
+- tests/test_hidden_parsing.py::test_parse_method_for_version_info
+- tests/test_hidden_parsing.py::test_parse_version_info_str_hash
+- tests/test_hidden_parsing.py::test_should_parse_version[0.0.0-0foo.1+build.1-expected4]
+- tests/test_hidden_parsing.py::test_should_parse_version[0.0.0-0foo.1-expected3]
+- tests/test_hidden_parsing.py::test_should_parse_version[0.1.0-0f-expected2]
+- tests/test_hidden_parsing.py::test_should_parse_version[1.2.3-alpha-1+build.11.e0f985a-expected1]
+- tests/test_hidden_parsing.py::test_should_parse_version[1.2.3-alpha.1.2+build.11.e0f985a-expected0]
+- tests/test_hidden_parsing.py::test_should_parse_version_with_optional_minor_and_patch[0-0foo.1+build.1-expected4]
+- tests/test_hidden_parsing.py::test_should_parse_version_with_optional_minor_and_patch[0-0foo.1-expected3]
+- tests/test_hidden_parsing.py::test_should_parse_version_with_optional_minor_and_patch[0.1-0f-expected2]
+- tests/test_hidden_parsing.py::test_should_parse_version_with_optional_minor_and_patch[1-alpha-1+build.11.e0f985a-expected1]
+- tests/test_hidden_parsing.py::test_should_parse_version_with_optional_minor_and_patch[1.2-alpha.1.2+build.11.e0f985a-expected0]
+- tests/test_hidden_parsing.py::test_should_parse_zero_prerelease[1.2.3-rc.0+build.0-expected0]
+- tests/test_hidden_parsing.py::test_should_parse_zero_prerelease[1.2.3-rc.0.0+build.0-expected1]
+- tests/test_hidden_parsing.py::test_should_raise_value_error_for_zero_prefixed_versions[01.2.3]
+- tests/test_hidden_parsing.py::test_should_raise_value_error_for_zero_prefixed_versions[1.02.3]
+- tests/test_hidden_parsing.py::test_should_raise_value_error_for_zero_prefixed_versions[1.2.03]
+solution_summary: Finalize (strip instead of bump) only when the version has a prerelease; build metadata
+  alone does not count
+flaws: []
+fail_to_pass:
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[0.1.4+build.5-patch-0.1.5]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0+build.5-major-2.0.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.0.0+build.5-patch-1.0.1]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.0+build.5-minor-1.3.0]
+- tests/test_hidden_parsing.py::test_next_version_with_versioninfo[1.2.3+build.5-patch-1.2.4]

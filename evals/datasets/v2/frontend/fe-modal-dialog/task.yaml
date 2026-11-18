@@ -1,0 +1,69 @@
+id: fe-modal-dialog
+category: frontend
+difficulty: hard
+split: dev
+tags:
+- html
+- css
+- javascript
+- frontend
+- dialogs
+expected_pass:
+- tests.test_hidden.HiddenTests.test_uses_the_dialog_element_with_a_name
+- tests.test_hidden.HiddenTests.test_opener_announces_a_dialog
+- tests.test_hidden.HiddenTests.test_script_opens_it_modally_and_restores_focus
+- tests.test_hidden.HiddenTests.test_form_closes_the_dialog
+- tests.test_hidden.HiddenTests.test_email_is_labelled_and_required
+- tests.test_hidden.HiddenTests.test_cancel_and_subscribe_buttons_are_named
+- tests.test_hidden.HiddenTests.test_focus_is_visible_and_layout_fluid
+solution_summary: A native dialog with aria-labelledby, showModal, a method=dialog
+  form and focus returned to the opener
+flaws:
+- summary: 'A div pretending to be a modal: no dialog element, no showModal and no
+    focus handling'
+- summary: A native dialog whose Cancel button has pale blue text and an opener with
+    a positive tabindex
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a centred card dialog over a dimmed backdrop, primary and secondary
+    buttons aligned right
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: the native dialog behaviour (Escape, focus trap), focus returns to
+    the opener, Cancel skips validation
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

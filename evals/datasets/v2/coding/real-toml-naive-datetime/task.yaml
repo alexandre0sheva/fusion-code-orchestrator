@@ -1,0 +1,56 @@
+id: real-toml-naive-datetime
+category: coding
+provenance: real-repo
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-toml
+- datetime
+- round-trip
+source:
+  repo: toml
+  url: https://github.com/uiri/toml
+  commit: 349ab7054edd462f6a90d90dc2aa0639229c69a3
+  parent: 1ef2eadd317172c9d3d51c30c7e424a99ce47a05
+  committed: '2018-09-14'
+  licence: MIT
+  upstream_files:
+  - toml/__init__.py
+  - toml/decoder.py
+  - toml/encoder.py
+  - toml/ordered.py
+  - toml/tz.py
+  upstream_test: tests/test_api.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_api.py::test__dict
+- tests/test_hidden_api.py::test_array_sep
+- tests/test_hidden_api.py::test_bug_144
+- tests/test_hidden_api.py::test_bug_148
+- tests/test_hidden_api.py::test_bug_196
+- tests/test_hidden_api.py::test_commutativity
+- tests/test_hidden_api.py::test_dict_decoder
+- tests/test_hidden_api.py::test_dump
+- tests/test_hidden_api.py::test_exceptions
+- tests/test_hidden_api.py::test_inline_dict
+- tests/test_hidden_api.py::test_ordered
+- tests/test_hidden_api.py::test_tuple
+solution_summary: When the sub-second part has no offset, keep the whole part as the fraction and leave
+  the datetime naive instead of building a TomlTz from an unset value
+flaws: []
+fail_to_pass:
+- tests/test_hidden_api.py::test_bug_196

@@ -1,0 +1,68 @@
+id: real-markupsafe-missing-placeholder
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-markupsafe
+- strings
+- formatting
+source:
+  repo: markupsafe
+  url: https://github.com/pallets/markupsafe
+  commit: 3d809aed7b7b6af5c371bab68666857087335af9
+  parent: 37c44e554b1b05f8cec09424ad6057b79a0d88b0
+  committed: '2021-06-11'
+  licence: BSD-3-Clause
+  upstream_files:
+  - src/markupsafe/__init__.py
+  - src/markupsafe/_native.py
+  - src/markupsafe/py.typed
+  upstream_test: tests/test_markupsafe.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_markupsafe.py::test_adding[markupsafe._native]
+- tests/test_hidden_markupsafe.py::test_complex_custom_formatting
+- tests/test_hidden_markupsafe.py::test_custom_formatting
+- tests/test_hidden_markupsafe.py::test_dict_interpol
+- tests/test_hidden_markupsafe.py::test_escape_return_type[markupsafe._native]
+- tests/test_hidden_markupsafe.py::test_escape_silent[markupsafe._native]
+- tests/test_hidden_markupsafe.py::test_escaping[markupsafe._native]
+- tests/test_hidden_markupsafe.py::test_format
+- tests/test_hidden_markupsafe.py::test_formatting_empty
+- tests/test_hidden_markupsafe.py::test_formatting_with_objects
+- tests/test_hidden_markupsafe.py::test_html_interop
+- tests/test_hidden_markupsafe.py::test_missing_interpol[42]
+- tests/test_hidden_markupsafe.py::test_missing_interpol[args2]
+- tests/test_hidden_markupsafe.py::test_missing_interpol[foo]
+- tests/test_hidden_markupsafe.py::test_mul
+- tests/test_hidden_markupsafe.py::test_soft_str[markupsafe._native]
+- tests/test_hidden_markupsafe.py::test_soft_unicode_deprecated[markupsafe._native]
+- tests/test_hidden_markupsafe.py::test_splitting
+- tests/test_hidden_markupsafe.py::test_string_interpolation[%.2f-3.14-3.14]
+- tests/test_hidden_markupsafe.py::test_string_interpolation[%i-3.14-3]
+- tests/test_hidden_markupsafe.py::test_string_interpolation[<em>%(username)s</em>-data1-<em>&lt;bad user&gt;</em>]
+- tests/test_hidden_markupsafe.py::test_string_interpolation[<em>%s</em>-<bad user>-<em>&lt;bad user&gt;</em>]
+- tests/test_hidden_markupsafe.py::test_tuple_interpol
+- tests/test_hidden_markupsafe.py::test_type_behavior
+- tests/test_hidden_markupsafe.py::test_unescape
+solution_summary: In Markup.__mod__, wrap a single non-mapping argument in a one-element tuple so str
+  % raises TypeError when the format has no placeholder; keep tuples and mappings as they are
+flaws: []
+fail_to_pass:
+- tests/test_hidden_markupsafe.py::test_missing_interpol[42]
+- tests/test_hidden_markupsafe.py::test_missing_interpol[foo]

@@ -1,0 +1,28 @@
+id: coding-calc-negative-fix
+difficulty: hard
+split: test
+tags:
+- python
+- bug-fix
+- parsing
+- multi-file
+solution_summary: Tokenize numbers without a sign and let the parser handle unary
+  plus and minus, and build left-associative chains for + - and * / with loops instead
+  of right recursion
+flaws:
+- summary: Fix the tokenizer so numbers carry no sign and add unary operators, but
+    keep the right-recursive chains so 10 - 4 - 3 is still 9
+- summary: Make the chains left-associative with loops but leave the tokenizer gluing
+    a minus sign onto the number after it
+expected_pass:
+- tests.test_hidden.EvaluateTests.test_decimals
+- tests.test_hidden.EvaluateTests.test_division_by_zero
+- tests.test_hidden.EvaluateTests.test_division_is_left_associative
+- tests.test_hidden.EvaluateTests.test_precedence_and_parentheses
+- tests.test_hidden.EvaluateTests.test_returns_a_float
+- tests.test_hidden.EvaluateTests.test_spacing_never_matters
+- tests.test_hidden.EvaluateTests.test_subtraction_is_left_associative
+- tests.test_hidden.EvaluateTests.test_syntax_errors
+- tests.test_hidden.EvaluateTests.test_unary_binds_tighter_than_multiplication
+- tests.test_hidden.EvaluateTests.test_unary_minus
+- tests.test_hidden.EvaluateTests.test_unary_plus

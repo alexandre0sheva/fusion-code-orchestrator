@@ -1,0 +1,18 @@
+id: coding-roman-numerals
+difficulty: easy
+split: test
+tags:
+- python
+solution_summary: Greedy conversion over the subtractive value table, and a regex
+  for the canonical form when parsing
+flaws:
+- summary: Parse by summing symbol values with a subtractive rule but accept any ordering,
+    so non-canonical numerals are valid
+- summary: Convert without the subtractive forms, so four is IIII and nine is VIIII
+expected_pass:
+- tests.test_hidden.RomanTests.test_from_roman_is_case_insensitive
+- tests.test_hidden.RomanTests.test_known_values
+- tests.test_hidden.RomanTests.test_non_canonical_is_rejected
+- tests.test_hidden.RomanTests.test_out_of_range
+- tests.test_hidden.RomanTests.test_round_trip
+- tests.test_hidden.RomanTests.test_wrong_type

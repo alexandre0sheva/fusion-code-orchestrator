@@ -1,0 +1,24 @@
+id: coding-token-expiry-fix
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- datetime
+solution_summary: Normalise naive and aware datetimes to UTC, default now to the current
+  UTC time, and treat a token as expired at exactly issued_at plus ttl
+flaws:
+- summary: Default now to the current UTC time and compare aware datetimes, but keep
+    the strict greater-than so the deadline instant is still valid
+- summary: Fix the boundary and the default now but only add the UTC zone to naive
+    values, never converting other timezones
+expected_pass:
+- tests.test_hidden.ExpiryTests.test_before_at_and_after_the_deadline
+- tests.test_hidden.ExpiryTests.test_default_now_is_the_current_utc_time
+- tests.test_hidden.ExpiryTests.test_expires_at_is_utc_aware
+- tests.test_hidden.ExpiryTests.test_naive_issue_time_is_taken_as_utc
+- tests.test_hidden.ExpiryTests.test_naive_now_is_taken_as_utc
+- tests.test_hidden.ExpiryTests.test_negative_ttl
+- tests.test_hidden.ExpiryTests.test_now_in_another_timezone
+- tests.test_hidden.ExpiryTests.test_other_timezones_are_converted
+- tests.test_hidden.ExpiryTests.test_zero_ttl_expires_immediately

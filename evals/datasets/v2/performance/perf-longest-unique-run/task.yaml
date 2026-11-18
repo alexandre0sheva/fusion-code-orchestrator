@@ -1,0 +1,46 @@
+id: perf-longest-unique-run
+category: performance
+difficulty: hard
+split: test
+tags:
+- python
+- performance
+- sliding-window
+- strings
+expected_pass:
+- tests.test_hidden.HiddenTests.test_window_never_moves_back
+- tests.test_hidden.HiddenTests.test_run_in_the_middle
+- tests.test_hidden.HiddenTests.test_first_of_equal_runs
+- tests.test_hidden.HiddenTests.test_repeat_inside_the_window
+- tests.test_hidden.HiddenTests.test_empty_string
+- tests.test_hidden.HiddenTests.test_spaces_and_unicode_count
+solution_summary: "Sliding window: remember each character's last index and move the left edge past a repeat, never backwards"
+flaws:
+- summary: "Rescan the slice of the current run for every new character (correct, still quadratic or worse)"
+- summary: "Sliding window that jumps the left edge to after any earlier occurrence, even one already left behind"
+perf:
+  sizes:
+  - 750
+  - 1500
+  - 3000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

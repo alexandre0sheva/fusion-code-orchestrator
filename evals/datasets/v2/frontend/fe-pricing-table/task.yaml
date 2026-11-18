@@ -1,0 +1,69 @@
+id: fe-pricing-table
+category: frontend
+difficulty: medium
+split: dev
+tags:
+- html
+- css
+- javascript
+- frontend
+- marketing
+expected_pass:
+- tests.test_hidden.HiddenTests.test_three_plans_with_names_and_prices
+- tests.test_hidden.HiddenTests.test_each_plan_lists_at_least_three_features
+- tests.test_hidden.HiddenTests.test_choose_links_name_their_plan
+- tests.test_hidden.HiddenTests.test_exactly_one_recommended_plan
+- tests.test_hidden.HiddenTests.test_the_prices_are_the_briefed_ones
+- tests.test_hidden.HiddenTests.test_cards_adapt_to_the_screen
+- tests.test_hidden.HiddenTests.test_heading_levels
+solution_summary: Three article cards in an auto-fit grid, plan-specific link names
+  and a single Recommended badge
+flaws:
+- summary: Every call to action just says Choose and two plans carry the Recommended
+    badge
+- summary: The right cards with a pale grey per-month label and a hidden h4 that skips
+    two heading levels
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: three equal cards, the recommended one visually emphasised with a badge
+    and border, price large, features as a list, calls to action aligned at the bottom
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: plan choice links are distinguishable, prices are scannable, cards
+    stack neatly on a phone
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

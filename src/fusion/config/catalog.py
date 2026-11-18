@@ -206,6 +206,15 @@ class ModelEntry(BaseModel):
             ),
         )
 
+    @property
+    def vendor(self) -> str:
+        """Who made the model, whichever API serves it: the provider of a direct API, or the
+        owner in an OpenRouter ID (``qwen/qwen3.8-flash`` is ``qwen``). The cross-family rule
+        and neutral judges compare vendors, so all OpenRouter models are not one family."""
+        if self.provider == "openrouter" and "/" in self.model_id:
+            return self.model_id.split("/", 1)[0].lower()
+        return self.provider
+
     def price_at(self, on: date | None = None) -> PriceSchedule | None:
         """The base (short-prompt) price in effect on a date, or None if none applies."""
         return self.price_for(on, 0)

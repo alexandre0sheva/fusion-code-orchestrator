@@ -16,7 +16,7 @@ Every call and result is logged to the verdict's ``trail``.
 ``PairwiseJudge``). The judge sees paths relative to each output's root, never a local path, arm
 or model name.
 
-**Cross-family, several judges.** Judges whose provider serves an arm are excluded; at least
+**Cross-family, several judges.** Judges whose vendor serves an arm are excluded; at least
 ``min_judges`` (2) must remain. Scores are averaged and disagreement is flagged.
 
 **Rubric and gates.** The harness, not the judge, decides the hard gates (from evidence). The
@@ -757,7 +757,7 @@ async def agentic_judge(
     *,
     env: ScoreEnv,
     evaluators: EvaluatorSet | None = None,
-    exclude_providers: set[str] | None = None,
+    exclude_vendors: set[str] | None = None,
     cross_family: bool = True,
     min_judges: int = 2,
     max_steps: int = DEFAULT_MAX_STEPS,
@@ -779,12 +779,12 @@ async def agentic_judge(
         raise ScoringError(msg)
     began = time.monotonic()
     usable, excluded = eligible_judges(
-        judge_models, env.gateway.models, exclude_providers or set(), cross_family=cross_family
+        judge_models, env.gateway.models, exclude_vendors or set(), cross_family=cross_family
     )
     if len(usable) < min_judges:
         why = (
             f"{len(usable)} eligible judge(s) of {len(judge_models)} named; {min_judges} needed"
-            + (f" ({', '.join(excluded)} share a provider with an arm)" if excluded else "")
+            + (f" ({', '.join(excluded)} share a vendor with an arm)" if excluded else "")
         )
         raise NoEligibleJudgeError(f"cannot judge '{task.id}': {why}")
     criteria = criteria_for(task)

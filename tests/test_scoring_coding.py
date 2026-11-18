@@ -89,6 +89,19 @@ def test_pytest_output_is_read() -> None:
     }
 
 
+def test_a_pytest_parameter_id_with_spaces_is_read_whole_from_the_summary() -> None:
+    out = (
+        "tests/test_x.py::test_p[a b-1] FAILED [ 50%]\n"
+        "tests/test_x.py::test_q[1-2] PASSED [100%]\n"
+        "FAILED tests/test_x.py::test_p[a b-1] - AssertionError: assert 1 == 2\n"
+        "PASSED tests/test_x.py::test_q[1-2]\n"
+    )
+    assert parse_test_results(out) == {
+        "tests/test_x.py::test_p[a b-1]": "failed",
+        "tests/test_x.py::test_q[1-2]": "passed",
+    }
+
+
 # -- scoring a patch -------------------------------------------------------------------------------
 
 

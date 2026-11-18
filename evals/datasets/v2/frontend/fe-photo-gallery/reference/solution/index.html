@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Six places, one summer · Travel notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Six places, one summer</h1>
+    <p class="intro">Photos from a summer on the road. Choose a photo to see it larger.</p>
+    <div class="gallery">
+      <figure>
+        <img src="photos/p1.svg" alt="Fishing boats moored in a calm harbour under an orange dawn sky" width="800" height="600" loading="lazy">
+        <figcaption>Harbour at dawn</figcaption>
+        <button class="view" type="button" data-photo="1">View larger<span class="visually-hidden">: Harbour at dawn</span></button>
+      </figure>
+      <figure>
+        <img src="photos/p2.svg" alt="A cobbled square ringed by painted houses and a clock tower" width="800" height="600" loading="lazy">
+        <figcaption>Old town square</figcaption>
+        <button class="view" type="button" data-photo="2">View larger<span class="visually-hidden">: Old town square</span></button>
+      </figure>
+      <figure>
+        <img src="photos/p3.svg" alt="A narrow road winding up between snowy peaks" width="800" height="600" loading="lazy">
+        <figcaption>Mountain pass</figcaption>
+        <button class="view" type="button" data-photo="3">View larger<span class="visually-hidden">: Mountain pass</span></button>
+      </figure>
+      <figure>
+        <img src="photos/p4.svg" alt="Lantern-lit food stalls crowded with people at night" width="800" height="600" loading="lazy">
+        <figcaption>Night market</figcaption>
+        <button class="view" type="button" data-photo="4">View larger<span class="visually-hidden">: Night market</span></button>
+      </figure>
+      <figure>
+        <img src="photos/p5.svg" alt="A white lighthouse on a cliff above a rough sea" width="800" height="600" loading="lazy">
+        <figcaption>Lighthouse cliffs</figcaption>
+        <button class="view" type="button" data-photo="5">View larger<span class="visually-hidden">: Lighthouse cliffs</span></button>
+      </figure>
+      <figure>
+        <img src="photos/p6.svg" alt="A straight empty road across red desert towards low hills" width="800" height="600" loading="lazy">
+        <figcaption>Desert road</figcaption>
+        <button class="view" type="button" data-photo="6">View larger<span class="visually-hidden">: Desert road</span></button>
+      </figure>
+    </div>
+    <dialog id="viewer" aria-labelledby="viewer-title">
+      <h2 id="viewer-title">Photo</h2>
+      <img id="viewer-image" src="photos/p1.svg" alt="" width="800" height="600">
+      <button class="btn" id="viewer-close" type="button">Close</button>
+    </dialog>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

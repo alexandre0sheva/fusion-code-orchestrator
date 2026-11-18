@@ -1,0 +1,67 @@
+id: fe-faq-accordion
+category: frontend
+difficulty: easy
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- disclosure
+expected_pass:
+- tests.test_hidden.HiddenTests.test_five_expandable_questions
+- tests.test_hidden.HiddenTests.test_each_question_has_a_summary_and_an_answer
+- tests.test_hidden.HiddenTests.test_works_without_script_or_click_handlers
+- tests.test_hidden.HiddenTests.test_one_h1_and_a_main_landmark
+- tests.test_hidden.HiddenTests.test_summaries_show_keyboard_focus
+- tests.test_hidden.HiddenTests.test_fluid_layout
+solution_summary: 'Native details and summary elements: keyboard and screen-reader
+  support with no script'
+flaws:
+- summary: Clickable divs with an inline onclick handler instead of details elements
+- summary: Real details elements with pale grey question text and a positive tabindex
+    on the first one
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a narrow readable column of five divided questions, bold question text,
+    quiet answers
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: large tap targets, a visible focus ring on questions, the expanded
+    answer reads clearly
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

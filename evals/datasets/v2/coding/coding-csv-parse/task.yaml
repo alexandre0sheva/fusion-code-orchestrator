@@ -1,0 +1,25 @@
+id: coding-csv-parse
+difficulty: hard
+split: dev
+tags:
+- python
+- parsing
+solution_summary: A character state machine with an in-quotes state, doubled-quote
+  escapes, and record breaks only outside quotes
+flaws:
+- summary: Split the text on newlines and commas, ignoring quoting entirely
+- summary: Handle quoted fields but treat a doubled quote as the end of the field
+    and never raise on bad quoting
+expected_pass:
+- tests.test_hidden.ParseCsvTests.test_blank_line_is_a_record
+- tests.test_hidden.ParseCsvTests.test_empty_fields
+- tests.test_hidden.ParseCsvTests.test_empty_text
+- tests.test_hidden.ParseCsvTests.test_escaped_quote
+- tests.test_hidden.ParseCsvTests.test_fields_are_not_trimmed
+- tests.test_hidden.ParseCsvTests.test_quote_inside_unquoted_field_is_literal
+- tests.test_hidden.ParseCsvTests.test_quoted_commas_and_newlines
+- tests.test_hidden.ParseCsvTests.test_quoted_empty_field
+- tests.test_hidden.ParseCsvTests.test_simple_records
+- tests.test_hidden.ParseCsvTests.test_text_after_closing_quote
+- tests.test_hidden.ParseCsvTests.test_trailing_newline_adds_no_record
+- tests.test_hidden.ParseCsvTests.test_unterminated_quote

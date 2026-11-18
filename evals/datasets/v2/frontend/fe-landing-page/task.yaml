@@ -1,0 +1,68 @@
+id: fe-landing-page
+category: frontend
+difficulty: easy
+split: dev
+tags:
+- html
+- css
+- javascript
+- frontend
+- landing-page
+expected_pass:
+- tests.test_hidden.HiddenTests.test_title_and_language
+- tests.test_hidden.HiddenTests.test_one_h1_and_a_free_trial_call_to_action
+- tests.test_hidden.HiddenTests.test_three_feature_cards_with_headings
+- tests.test_hidden.HiddenTests.test_landmarks
+- tests.test_hidden.HiddenTests.test_navigation_has_three_named_links
+- tests.test_hidden.HiddenTests.test_layout_adapts_to_small_screens
+- tests.test_hidden.HiddenTests.test_headings_do_not_skip_levels
+solution_summary: 'A semantic landing page: landmarks, one h1, three feature cards
+  in an auto-fit grid and a fluid layout'
+flaws:
+- summary: A fixed-width desktop layout with no viewport meta tag and no media query
+- summary: All the structure, but a pale grey subheading on white and a positive tabindex
+    on the call to action
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a hero with headline, subheading and a prominent call to action; three
+    feature cards; header and footer as briefed; calm blue palette
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: comfortable spacing and type scale, a clearly primary call to action,
+    cards that reflow without squeezing
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

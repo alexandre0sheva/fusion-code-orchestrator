@@ -225,8 +225,16 @@ at 0.4. If no item can be decided (no judge, no keywords) the task errors rather
 **Pairwise judge** (`PairwiseJudge`, used for A/B comparisons between arms). Every judge sees both
 orderings; a judge that names a different answer in each (it followed the position) is a tie, and
 the rate is reported as position bias. Equal judge votes tie. **Cross-family rule:** a judge may not
-come from a provider that serves either arm (models favour their own family); with none left the
-comparison refuses. Cost is the scorer's, never the arms'.
+come from a vendor whose models serve either arm (models favour their own family); with none left
+the comparison refuses. The vendor is the model's maker, whichever API serves it
+(`ModelEntry.vendor`: Claude through OpenRouter is Anthropic, `qwen/qwen3.8-flash` is Qwen), so an
+open-weight panel excludes only its own makers' judges. Cost is the scorer's, never the arms'.
+
+**Neutral judges.** `neutral_judges: true` in a study (the `*-v3` suites set it) refuses to plan or
+run it unless every judge's vendor is on no arm: not among the members and aggregators of any arm,
+on every rung `strategy: auto` may climb (`fusion.bench.judges`). Then every task of every arm is
+judged by the same impartial judges, instead of the cross-family rule dropping a judge per arm. A
+same-tier spare that stands in for a failed member is not known in advance and is not checked.
 
 **Calibrating judges.** Before trusting a judge, measure it:
 
@@ -243,6 +251,15 @@ always-"A" judge scores κ ≈ 0), agreement between judges and κ per pair. Rep
 `bench-results/calibration/`; a live calibration is forecast first, refuses to exceed `--max-usd`
 or the live-spend cap, and records its spend.
 
+**The v2 calibration (2026-11-18, live, $0.197 of Task 14's $1).** Candidates were OpenRouter models
+from vendors on no 0.3.0 panel. Text judges, on the 60 seeded pairs of the v2 dev split, both
+orderings: MiMo-V2.6 Flash 97% accuracy (3 failed calls of 120), Muse Ember 93% (6), MiMo-V2.6 Pro 93%
+(7), Hy4 Flash 75% (24 failed calls, so ties), no order flips. The agentic judge (`--artifacts
+--cases-per-set 4`, 8 frontend and performance cases): MiMo Pro 100%, Muse Ember 88%, MiMo Flash 62%
+(below the 80% floor, so a study that names it gets no headline verdict). The `*-v3` suites
+therefore use **MiMo Pro and Muse Ember** (Xiaomi and Meta, on no arm). With two judges a rubric item
+split 1-1 counts as not met. The report does not keep why a call failed (an error or no JSON).
+
 **Caveats.** The seeded pairs are *easy* by construction (a judge that fails them is unusable; one
 that passes may still fail on subtle differences), and an LLM judge validated on them can still
 favour verbose or confident answers. Keyword and word-overlap checks reward wording the truth
@@ -251,6 +268,28 @@ points. Simulated judges (`--mock`) follow assumed skill and position-bias numbe
 test the harness, not any real model.
 
 ### Datasets
+
+**`evals/datasets/v2/`** is the dataset of the 0.3.0 studies (the `*-v3` suites): every `v1` task
+with its id and split, three more frontend and three more performance tasks, and 34 **real-repo**
+coding tasks, upstream bugs of small open-source projects scored by the maintainers' own tests
+([Dataset D](../evals/datasets/README.md#dataset-d-real-repo-coding-tasks-v2)): 197 tasks, at least
+15 per category. Its split was **frozen before any live run** (`_splits.json`, written by `fusion
+bench dataset freeze`; validation fails if a task moves or is not in it, and `freeze --add` takes in
+a new one), its release promise is data (`_dataset.yaml`, read by `validate --release`), and
+`_review.yaml` is the owner's review checklist (`fusion bench dataset review`), described in
+[evals/datasets/README.md](../evals/datasets/README.md#the-owners-review). Files whose names start
+with `_` are never read as tasks.
+
+```bash
+uv run fusion bench dataset validate evals/datasets/v2 --release   # also the frozen split and the review sheet
+uv run fusion bench dataset freeze evals/datasets/v2 [--add]       # freeze the split (once), or take in new tasks
+uv run fusion bench dataset review evals/datasets/v2               # create or refresh the review sheet
+```
+
+A real-repo task runs `pytest` over `tests/` in the sandbox (the parent commit's test file is the
+visible test, the fix commit's is the hidden one), and is solved when every hidden test that passes
+with the upstream fix passes (fail-to-pass and pass-to-pass). The rest of this section describes
+`v1`, whose tasks `v2` contains unchanged.
 
 `evals/datasets/v1/` is the ground-truth dataset the 0.2.0 study runs on: 157 tasks, 25 each of
 `code_review`, `debugging`, `architecture` and `planning` (in three difficulties, with code tasks in
@@ -280,13 +319,17 @@ uv run fusion bench dataset build --generate 10 --category debugging --model cla
 
 `validate` always checks each row's schema, unique ids and prompts, that bug files and line numbers
 are inside the files supplied (and on added lines of the diff), that no string looks like a secret,
-that a licence note sits next to the dataset, and that an answer written from a task's own truth
+that a licence note sits next to the dataset (and a `LICENSE` beside each real-repo task), that no
+prompt repeats a line of 32 or more characters from the hidden tests or the reference solution,
+and that an answer written from a task's own truth
 scores at least 0.9 under its offline scorer and a flawed one at most 0.5, and it **runs every
 executable task** (see below; about 15 seconds for the 33 coding tasks, a minute for the 12
 performance tasks, whose timings are taken one at a time). `--release` adds the published dataset's
 promise: at least 100 tasks, 25 per text category, at least 30 coding tasks and 12 each of frontend
 and performance, 8 per split (4 for frontend and performance) and 3 per difficulty in each
-category, three languages, 20% clean reviews, and 30 to 400 lines per review diff or debugging task. Tasks are written as YAML (code review diffs mark each seeded bug with `«id»`, and the compiler
+category, three languages, 20% clean reviews, and 30 to 400 lines per review diff or debugging task;
+a dataset's `_dataset.yaml` replaces these numbers with its own (v2: 120 tasks, 15 per category, 30
+real-repo tasks). Tasks are written as YAML (code review diffs mark each seeded bug with `«id»`, and the compiler
 computes the line numbers), compiled to JSONL, and a test fails when the two differ. `--generate`
 has a model draft candidates into `evals/datasets/authoring/candidates/` for a person to review; it
 is forecast, held to `--max-usd` and the live-spend cap, and recorded in the spend ledger.
@@ -468,7 +511,7 @@ that inspects the outputs with read-only tools, then rules:
 - **Blind:** outputs are labelled `A`/`B` with a seeded random assignment that is recorded, and
   *both* orderings run, so a judge that names the same position twice is a tie and is reported as
   position bias. The judge sees paths relative to each output, never a local path, an arm or a model.
-- **Cross-family, several judges:** a judge from a provider that serves the arm is left out (the
+- **Cross-family, several judges:** a judge from a vendor that serves the arm is left out (the
   arm's members and its named aggregator), at least two must remain, and per-criterion scores are
   averaged with disagreement above 0.3 flagged. Only a vision-capable judge (`supports_vision`) is
   offered screenshots; with none, the verdict says so.
@@ -530,6 +573,16 @@ keeping the reserve. The planner prices a suite's design against what is left be
 | `ablation` | tune on `dev` | panel size 1/2/3/5, refinement, a strong synthesizer, and the cascade threshold (0.5 and 0.7; more if money remains). The 0.2.0 self-mixture arms (one model sampled at several temperatures) were removed in 0.3.0 | about $4.80 |
 | `latency` | tune on `dev` | whether early return, hedging or a cascade shortens the wait; the response cache is off, since a replayed call has no real latency | about $1.20 |
 | `headline` | final, on `test` | Opus 5.5, Sol, Haiku and Luna alone against the default panel and the best variant, two repeats | about $11 |
+| `ablation-v3` | tune on v2 `dev` | nano, open-weight, mixed and mid panels; lenses on and off; `llm`, `select`, `vote` and `digest` aggregation; the cascade at 0.5 and 0.9; `verified-synth`; `auto` with the frontier rung off and on; 9 tasks, neutral judges | $3.40 |
+| `latency-v3` | tune on v2 `dev` | Opus 5.5 alone against `auto`, the panel default and Luna at effort none, on 30 text tasks, cache off | $2.35 |
+| `headline-v3` | final, on v2 `test` | Opus 5.5, Sol, Haiku and Luna alone against `auto` and the best ablation variant (a placeholder until Task 16 freezes it), 10 tasks, neutral judges | $1.35 |
+
+The `*-v3` suites are the 0.3.0 study (roadmap Task 16) on dataset v2; the others are the 0.2.0
+studies on v1, kept to reproduce them. The v3 caps add up to $7.10 (the planner expects $7.00),
+Task 16's share of the $15. They are small because a real-repo coding task shows a whole package
+(up to about 50,000 tokens): with the quotas as written a run draws two coding tasks, and one of
+them can cost as much as the five text tasks of the same arm. Widen the quotas if the runs come in
+under the forecast (the planner has been about three times pessimistic for `auto`).
 
 The procedure that keeps the result honest:
 
@@ -550,10 +603,10 @@ A suite's estimate comes from the planner, which assumes 1,500-token answers; th
 higher for models that think at length (Opus 5.5 with adaptive thinking), and the caps hold either
 way: a run stops cleanly, resumable, when the next job's worst case would not fit. Stopping early
 leaves whole tasks for every arm (repeats first, then tasks), so the arms stay paired. **Judges:**
-every vendor has a model on a panel, so no judge is cross-family with every arm; the suites use the
-cheapest (`gpt-luna`) for the rubric items the keywords cannot settle, and the agentic judge of
-frontend and performance tasks, which needs a judge from no arm's vendor, is skipped for panels
-(those tasks keep their measured scores). Say so whenever quoting a score.
+the 0.2.0 suites use `gpt-luna`, whose vendor sits on a panel, for the rubric items the keywords
+cannot settle, and their agentic judge of frontend and performance tasks is skipped for panels
+(those tasks keep their measured scores); say so whenever quoting one of their scores. The `*-v3`
+suites use the [neutral judges](#scoring) MiMo Pro and Muse Ember, from vendors on no arm.
 
 ### Tuning the prompts (`fusion tune`)
 

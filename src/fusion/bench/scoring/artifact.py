@@ -214,7 +214,7 @@ class ArtifactScorer:
                 "absolute",
                 env=env,
                 evaluators=evaluators,
-                exclude_providers=env.exclude_providers,
+                exclude_vendors=env.exclude_vendors,
                 max_steps=DEFAULT_MAX_STEPS,
             )
         except NoEligibleJudgeError as exc:

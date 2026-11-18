@@ -1,0 +1,65 @@
+id: fe-not-found
+category: frontend
+difficulty: easy
+split: dev
+tags:
+- html
+- css
+- frontend
+- forms
+- navigation
+expected_pass:
+- tests.test_hidden.HiddenTests.test_heading_says_the_page_was_not_found
+- tests.test_hidden.HiddenTests.test_search_form_sends_a_get_to_search
+- tests.test_hidden.HiddenTests.test_search_field_is_labelled
+- tests.test_hidden.HiddenTests.test_search_has_a_submit_button
+- tests.test_hidden.HiddenTests.test_link_back_home
+- tests.test_hidden.HiddenTests.test_popular_pages_in_a_navigation_landmark
+- tests.test_hidden.HiddenTests.test_main_landmark_and_focus_style
+- tests.test_hidden.HiddenTests.test_fluid_layout
+solution_summary: "One h1, a labelled search field in a GET form to /search, a home link and the popular pages in a nav"
+flaws:
+- summary: "A placeholder instead of a label and the popular links in a plain div, not a navigation landmark"
+- summary: "The right structure with pale grey explanation text and a positive tabindex on the search field"
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: "a narrow calm column: heading, one explaining sentence, a search row, a home link and a short list"
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: "the search row wraps on a phone, a visible focus ring, links that read as links"
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

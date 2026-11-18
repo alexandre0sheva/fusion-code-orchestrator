@@ -1,0 +1,23 @@
+id: coding-toposort
+difficulty: medium
+split: test
+tags:
+- python
+- algorithms
+solution_summary: Kahn's algorithm with a heap so ties go to the alphabetically smallest
+  ready node, and a cycle when nodes are left over
+flaws:
+- summary: Depth-first search in dictionary order, so ties are broken by insertion
+    order instead of by name
+- summary: Kahn's algorithm that silently returns the nodes it could order when there
+    is a cycle
+expected_pass:
+- tests.test_hidden.ToposortTests.test_chain
+- tests.test_hidden.ToposortTests.test_cycle
+- tests.test_hidden.ToposortTests.test_cycle_beside_valid_nodes
+- tests.test_hidden.ToposortTests.test_diamond
+- tests.test_hidden.ToposortTests.test_duplicate_dependencies_and_no_mutation
+- tests.test_hidden.ToposortTests.test_empty_graph
+- tests.test_hidden.ToposortTests.test_nodes_that_only_appear_as_dependencies_are_included
+- tests.test_hidden.ToposortTests.test_self_dependency_is_a_cycle
+- tests.test_hidden.ToposortTests.test_ties_go_to_the_smallest_name

@@ -1,0 +1,95 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #1b1f24;
+  background: #ffffff;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: #0b4fd6;
+}
+
+:focus-visible {
+  outline: 3px solid #0b5fff;
+  outline-offset: 2px;
+}
+
+.container {
+  width: min(100% - 2rem, 70rem);
+  margin-inline: auto;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.2rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  color: #ffffff;
+  background: #0b5fff;
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 3rem;
+  padding: 0;
+  list-style: none;
+}
+
+.product {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid #d7dce1;
+  border-radius: 0.6rem;
+}
+
+.product img {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #eef1f4;
+  object-fit: cover;
+}
+
+.product h2 {
+  margin: 0.25rem 0 0;
+  font-size: 1.05rem;
+}
+
+.price {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  color: #a9b2bb;
+  background: #ffffff;
+}
+
+.product .btn {
+  margin-top: auto;
+}

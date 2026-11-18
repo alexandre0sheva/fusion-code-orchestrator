@@ -3,15 +3,50 @@
 Canonical for where the benchmark data comes from: provenance, validity limits, licence and the
 guidelines for writing tasks.
 
-Two kinds live here.
+Three kinds live here.
 
-- **`v1/`: the ground-truth benchmark dataset** that `fusion bench` studies run on. Methodology,
-  scoring and commands are in [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#datasets). It has
-  three parts: text tasks scored by keywords and judges (Dataset A, the rest of this file),
-  [executable coding tasks](#dataset-b-executable-coding-tasks) scored by running tests (`v1/coding/`)
-  and [frontend and performance tasks](#dataset-c-frontend-and-performance-tasks) scored on what the
-  answer builds (`v1/frontend/`, `v1/performance/`).
+- **`v2/`: the ground-truth benchmark dataset** the 0.3.0 studies run on (the `*-v3` suites).
+  Methodology, scoring and commands are in [docs/BENCHMARKING.md](../../docs/BENCHMARKING.md#datasets).
+  It holds every `v1` task with its id and split, three more frontend and three more performance
+  tasks, and [real-repo coding tasks](#dataset-d-real-repo-coding-tasks-v2): upstream bugs with
+  their fix and tests. [Below](#v2-at-a-glance).
+- **`v1/`: the 0.2.0 dataset**, kept as it was for the 0.2.0 results. It has three parts: text tasks
+  scored by keywords and judges (Dataset A), [executable coding tasks](#dataset-b-executable-coding-tasks)
+  scored by running tests (`v1/coding/`) and [frontend and performance tasks](#dataset-c-frontend-and-performance-tasks)
+  scored on what the answer builds (`v1/frontend/`, `v1/performance/`).
 - `*_cases.jsonl`: the older, unscored cases used by `evals/runners/run_offline_eval.py`.
+
+## `v2` at a glance
+
+197 tasks: Datasets A to C as in `v1` (100 text tasks, 33 synthetic coding tasks), 15 frontend and
+15 performance tasks (`fe-not-found`, `fe-settings-tabs`, `fe-photo-gallery`, `perf-count-pairs-diff`,
+`perf-top-k-words` and `perf-longest-unique-run` are new), and 34 real-repo coding tasks from 15
+open-source projects (Dataset D), so 67 coding tasks in all. Every category has at least 15 tasks.
+Three files beside the tasks (a file whose name starts with `_` is never read as a task):
+
+- `_dataset.yaml`: the release promise `validate --release` holds the dataset to (at least 120
+  tasks, 15 per category, 30 real-repo tasks with 12 in each split, among others).
+- `_splits.json`: the split, **frozen on 2026-11-18 before any live run** (108 dev, 89 test;
+  real-repo tasks 18 dev, 16 test). A task that changes split, or is not in the file, fails
+  validation; `fusion bench dataset freeze --add` takes in a new task with the split it declares.
+  `v1` tasks keep their split, so nothing tuned in 0.2.0 or 0.3.0 moved to `test`.
+- `_review.yaml`: the [owner's review](#the-owners-review) of every task.
+
+```bash
+uv run fusion bench dataset validate evals/datasets/v2 --release   # runs every executable task (minutes)
+uv run fusion bench dataset stats evals/datasets/v2
+uv run fusion bench dataset build --check                          # v2 JSONL matches authoring/v2
+uv run fusion bench dataset review evals/datasets/v2               # refresh the review sheet, show progress
+```
+
+## The owner's review
+
+No task of `v1` was reviewed by a person. `v2/_review.yaml` lists every task with a `decision`
+(`pending`, `accept`, `fix`, `drop`) and a `note`; the owner fills it in, using the guidelines in
+this file. `fusion bench dataset review` adds new tasks as `pending` and never changes a decision.
+`validate` warns while tasks are pending or marked `fix` (the note says what to fix), and fails
+`--release` while a task marked `drop` is still in the dataset; once it is deleted its entry stays
+as the record. Until the sheet is complete, every caveat below about unreviewed tasks holds.
 
 ## `v1` at a glance
 
@@ -31,9 +66,10 @@ uv run fusion bench dataset build --check                          # JSONL match
 
 ## Provenance and validity: read this before quoting a number
 
-**Every task is synthetic.** They were written by an LLM (Claude), not collected from real
-repositories, incidents or design reviews, and have **not yet been independently reviewed by a
-person** (`llm-authored` is in every task's tags; reviewers remove no tag, they edit the source and
+**Every task except the real-repo coding tasks is synthetic.** They were written by an LLM
+(Claude), not collected from real repositories, incidents or design reviews, and have **not yet been
+independently reviewed by a person** (for `v2`, [the owner's review](#the-owners-review) is where
+that happens) (`llm-authored` is in every task's tags; reviewers remove no tag, they edit the source and
 record the review in the change). What that implies:
 
 - Bugs, traces and logs are plausible, not observed. A seeded defect is real in the code shown, but
@@ -200,9 +236,80 @@ noisy to decide is a warning.
 5. Offline, no secrets, no real people or companies. Add the task to `dev` or `test`, never both,
    with its own starter file contents (the validator rejects file sets shared between splits).
 
+## Dataset D: real-repo coding tasks (v2)
+
+`v2/coding/real-*/` holds 34 bugs fixed upstream in small, permissively licensed, pure-Python
+projects. Each is the buggy state of the project (the fix commit's parent) and the fix, in the
+coding-task layout above, with these differences:
+
+- `task.yaml` says `provenance: real-repo` and has a `source` block: `repo`, `url`, the fixing
+  `commit` and its `parent` (full hashes), `committed` (date), `licence` (SPDX), the vendored
+  `upstream_files`, the `upstream_test` and, where something had to stand in for a file the
+  upstream build generates, `adapted`. `LICENSE` beside it is the project's licence text; the model
+  does not see it. Tags are `real-repo` and `repo:<name>` instead of `synthetic` and `llm-authored`.
+- `repo/` is the project's package (or the modules the tests need) at the parent commit, plus the
+  parent's version of the test file the fix changed (the visible tests) and any test helpers it
+  imports. `reference/solution/` is the fix commit's version of the source files it changed.
+- The hidden tests are the **upstream test file at the fix commit** (`tests/test_hidden_<name>.py`),
+  run with pytest over `tests/`. `expected_pass` is every hidden test that passes with the fix in
+  the bench sandbox: the ones the fix makes pass (`fail_to_pass`, recorded in `task.yaml`, 79 in
+  all) and the ones that passed before and still must (pass-to-pass). A task counts as solved only
+  when all of them pass, as in SWE-bench. Upstream tests that fail even with the fix in the
+  sandbox (they need data files, `numpy` or another package that is not installed) are left out.
+- `prompt.md` is a bug report written for this project (by Claude, from the commit, its message and
+  its tests): the symptom, an example and what must keep working, never the fix. Examples are not
+  copied from the hidden tests (`validate` rejects a prompt that repeats a hidden line). No issue
+  text was copied.
+- There are no flaws (no plausible wrong fixes); `validate` does not ask for them here.
+
+| Project | Licence | Tasks | Fix commits |
+|---|---|---|---|
+| [boltons](https://github.com/mahmoud/boltons) | BSD-3-Clause | 1 | 2026-09-07 |
+| [cachetools](https://github.com/tkem/cachetools) | MIT | 3 | 2026-06-24 to 2026-11-15 |
+| [dacite](https://github.com/konradhalas/dacite) | MIT | 3 | 2020-11-27 to 2022-12-21 |
+| [docstring_parser](https://github.com/rr-/docstring_parser) | MIT | 2 | 2021-07-21 to 2026-06-30 |
+| [funcy](https://github.com/Suor/funcy) | BSD-3-Clause | 1 | 2026-09-09 |
+| [humanize](https://github.com/python-humanize/humanize) | MIT | 4 | 2026-06-30 to 2026-09-16 |
+| [inflection](https://github.com/jpvanhal/inflection) | MIT | 2 | 2020-04-06 to 2020-04-07 |
+| [markupsafe](https://github.com/pallets/markupsafe) | BSD-3-Clause | 1 | 2021-06-11 |
+| [parse](https://github.com/r1chardj0n3s/parse) | MIT | 4 | 2026-02-18 to 2026-10-27 |
+| [python-semver](https://github.com/python-semver/python-semver) | BSD-3-Clause | 2 | 2026-07-15 to 2026-10-05 |
+| [python-tabulate](https://github.com/astanin/python-tabulate) | MIT | 1 | 2026-03-05 |
+| [sqlparse](https://github.com/andialbrecht/sqlparse) | BSD-3-Clause | 3 | 2025-11-29 to 2026-07-22 |
+| [toml](https://github.com/uiri/toml) | MIT | 2 | 2018-09-14 to 2018-12-31 |
+| [toolz](https://github.com/pytoolz/toolz) | BSD-3-Clause | 1 | 2026-09-18 |
+| [validators](https://github.com/python-validators/validators) | MIT | 4 | 2026-06-19 to 2026-10-10 |
+
+**Validity.** These are real defects in real code, which is the point, but read results with care:
+
+- **Contamination.** The projects are public; 24 of the 34 fixes are from 2026, the rest are older
+  and may be in a model's training data, fix included. Compare models on the recent ones too.
+- **Size.** A task shows a whole small package (about 600 to 4,900 lines, up to about 50,000 tokens), so a
+  real-repo task costs several text tasks to run. They are still small projects with one-file fixes,
+  not large unfamiliar codebases.
+- **The tests decide.** The hidden tests are the maintainers' own; a different correct fix can fail
+  a test that encodes the upstream choice (an error type, a message). The prompts state what the
+  tests check that a careful reader could not infer, but that is a judgement.
+- **Picked by hand.** Fixes were chosen for being self-contained, testable with pytest alone and
+  small; that selection favours easy-to-specify bugs.
+
+### Guidelines for adding or reviewing a real-repo task
+
+1. Pick a fix commit that changes one or two source files and a test file, in a project under a
+   permissive licence whose tests need nothing beyond pytest and the standard library.
+2. Vendor the parent's package, the parent's version of the test file and its helpers; write the fix
+   commit's test file as `tests/test_hidden_<name>.py` and the fix as `reference/solution/`; copy
+   `LICENSE`; fill in `source`.
+3. Run the hidden tests in the sandbox without and with the fix: keep the tests that pass with it as
+   `expected_pass` and require at least one in `fail_to_pass`.
+4. Write the bug report: symptom, a reproduction with values of your own, what must not change.
+5. Run `fusion bench dataset validate`, add the task to the review sheet and, if the split is
+   frozen, to `_splits.json` with `freeze --add`.
+
 ## Licence
 
-The dataset, its authoring sources and these notes are released under the repository's
-[MIT licence](../../LICENSE) (copyright Oleksandr Shevchenko). The tasks contain only original,
-synthetic code and prose written for this project: no third-party code, data or text was copied
-into them.
+The dataset's own material (every synthetic task, the authoring sources, the real-repo bug reports
+and these notes) is released under the repository's [MIT licence](../../LICENSE) (copyright
+Oleksandr Shevchenko). The real-repo tasks (`v2/coding/real-*/`) also contain third-party code and
+tests, vendored unchanged: each task's files are under the licence of their project, MIT or
+BSD-3-Clause (table above), whose text and copyright notice are in that task's `LICENSE`.

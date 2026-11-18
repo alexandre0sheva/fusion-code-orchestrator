@@ -1,0 +1,47 @@
+id: perf-reversed-lines
+category: performance
+difficulty: easy
+split: dev
+tags:
+- python
+- performance
+- strings
+expected_pass:
+- tests.test_hidden.HiddenTests.test_no_lines
+- tests.test_hidden.HiddenTests.test_positions_are_not_padded
+- tests.test_hidden.HiddenTests.test_no_trailing_newline
+- tests.test_hidden.HiddenTests.test_empty_line_text_is_kept
+- tests.test_hidden.HiddenTests.test_text_with_tabs_is_unchanged
+- tests.test_hidden.HiddenTests.test_accepts_any_iterable
+solution_summary: Build the entries in order, reverse the list once and join it
+flaws:
+- summary: Insert each entry at the front of a list, which shifts the whole list every
+    time
+- summary: Peek at the first entry to detect an empty log, which fails when there
+    are no lines
+perf:
+  sizes:
+  - 3000
+  - 6000
+  - 12000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

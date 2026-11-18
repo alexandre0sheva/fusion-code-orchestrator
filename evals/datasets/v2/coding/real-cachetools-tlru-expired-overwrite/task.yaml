@@ -1,0 +1,73 @@
+id: real-cachetools-tlru-expired-overwrite
+category: coding
+provenance: real-repo
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-cachetools
+- caching
+- expiry
+source:
+  repo: cachetools
+  url: https://github.com/tkem/cachetools
+  commit: c0fdf6abab38040947d6fe2e38c507401d5e2350
+  parent: 978d34d40cdbf3b4cbfce104f3166032cc4ea028
+  committed: '2026-06-24'
+  licence: MIT
+  upstream_files:
+  - src/cachetools/__init__.py
+  - src/cachetools/_cached.py
+  - src/cachetools/_cachedmethod.py
+  - src/cachetools/func.py
+  - src/cachetools/keys.py
+  - src/cachetools/py.typed
+  upstream_test: tests/test_tlru.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_clear
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_clear_empty
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_clear_getsizeof
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_defaults
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_delete
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_getsizeof_negative
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_getsizeof_param
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_getsizeof_subclass
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_insert
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_missing
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_missing_getsizeof
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_overwrite_existing_with_expired
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_pickle
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_pickle_maxsize
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_pop
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_popitem
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_popitem_exception_context
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_tlru_clear
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_tlru_datetime
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_atomic
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_expire
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_expired
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_heap_cleanup
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_lru
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_reverse_insert
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_ttu_tuple_key
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_update
+solution_summary: When the new value is already expired, remove the key's existing entry (marking it removed)
+  instead of returning and keeping the stale value
+flaws: []
+fail_to_pass:
+- tests/test_hidden_tlru.py::TLRUCacheTest::test_overwrite_existing_with_expired

@@ -91,3 +91,4 @@ jobs:
           cd "$(mktemp -d)"
           uvx --no-cache --from "$wheel" fusion version
           uvx --no-cache --from "$wheel" fusion bench plan --dataset v1 --arms solo-cheap --mock
+          uvx --no-cache --from "$wheel" fusion bench plan --suite ablation-v3 --mock

@@ -1,0 +1,620 @@
+# Debugging tasks, Go. Format: see src/fusion/bench/datasets/build.py and evals/datasets/README.md.
+
+- id: dbg-go-01
+  category: debugging
+  language: go
+  difficulty: easy
+  split: dev
+  symptom: |
+    The `/users/{id}/name` endpoint returns a 500 and the server logs a panic, but only for some
+    ids. Known users work.
+  files:
+    - path: users/directory.go
+      content: |
+        package users
+
+        import "sync"
+
+        type User struct {
+        	ID	int
+        	Name  string
+        	Email string
+        }
+
+        type Directory struct {
+        	mu   sync.RWMutex
+        	byID map[int]*User
+        }
+
+        func NewDirectory() *Directory {
+        	return &Directory{byID: make(map[int]*User)}
+        }
+
+        func (d *Directory) Add(u *User) {
+        	d.mu.Lock()
+        	defer d.mu.Unlock()
+        	d.byID[u.ID] = u
+        }
+
+        func (d *Directory) Get(id int) *User {
+        	d.mu.RLock()
+        	defer d.mu.RUnlock()
+        	return d.byID[id]
+        }
+
+        // DisplayName is the name shown in the UI header.
+        func (d *Directory) DisplayName(id int) string {
+        	return d.Get(id).Name
+        }
+    - path: api/handler.go
+      content: |
+        package api
+
+        import (
+        	"fmt"
+        	"net/http"
+        	"strconv"
+        )
+
+        func (s *Server) handleName(w http.ResponseWriter, r *http.Request) {
+        	id, err := strconv.Atoi(r.PathValue("id"))
+        	if err != nil {
+        		http.Error(w, "bad id", http.StatusBadRequest)
+        		return
+        	}
+        	fmt.Fprint(w, s.users.DisplayName(id))
+        }
+  trace: |
+    2026/03/11 10:14:02 http: panic serving 10.0.3.8:51844: runtime error: invalid memory address or nil pointer dereference
+    [signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x6a2f1c]
+
+    goroutine 41 [running]:
+    net/http.(*conn).serve.func1()
+            /usr/local/go/src/net/http/server.go:1898 +0xbe
+    panic({0x7a1b20?, 0xa2c4e0?})
+            /usr/local/go/src/runtime/panic.go:770 +0x132
+    example.com/svc/users.(*Directory).DisplayName(...)
+            /app/users/directory.go:36
+    example.com/svc/api.(*Server).handleName(0xc0001a8000, {0x8a3f10, 0xc0002c4000}, 0xc0002ca000)
+            /app/api/handler.go:15 +0x7c
+  logs: |
+    10.0.3.8 GET /users/17/name 200
+    10.0.3.8 GET /users/9999/name 500 (panic)
+    10.0.3.9 GET /users/18/name 200
+  root_cause_tags: ["nil-pointer-dereference", "missing-map-key-check"]
+  root_cause_aliases:
+    nil-pointer-dereference: ["nil pointer", "nil dereference", "invalid memory address", "Get returns nil"]
+    missing-map-key-check: ["unknown id", "key is not in the map", "no ok check", "comma ok", "user does not exist", "missing user"]
+  root_cause: "For an unknown id `Get` returns a nil `*User` (the map's zero value), and `DisplayName` dereferences it with `.Name` without checking, so the handler panics."
+  fix_keywords: ["nil check|if u == nil|ok|comma-ok|(*User, bool)|return an error", "404|not found|error|default|empty"]
+
+- id: dbg-go-02
+  category: debugging
+  language: go
+  difficulty: easy
+  split: test
+  symptom: |
+    `ApplyRestock` is supposed to add the restocked quantities to the inventory, but afterwards
+    every quantity is unchanged. There is no error.
+  files:
+    - path: inventory/restock.go
+      content: |
+        package inventory
+
+        type Item struct {
+        	SKU string
+        	Qty int
+        }
+
+        // ApplyRestock adds the restocked quantity for each SKU to the items.
+        func ApplyRestock(items []Item, restock map[string]int) {
+        	for _, it := range items {
+        		if extra, ok := restock[it.SKU]; ok {
+        			it.Qty += extra
+        		}
+        	}
+        }
+
+        // Total returns the number of units in stock.
+        func Total(items []Item) int {
+        	n := 0
+        	for _, it := range items {
+        		n += it.Qty
+        	}
+        	return n
+        }
+    - path: inventory/restock_test.go
+      content: |
+        package inventory
+
+        import "testing"
+
+        func TestApplyRestock(t *testing.T) {
+        	items := []Item{{"a", 2}, {"b", 3}}
+        	ApplyRestock(items, map[string]int{"a": 5})
+        	if got := Total(items); got != 10 {
+        		t.Fatalf("Total = %d, want 10 (items=%v)", got, items)
+        	}
+        }
+  trace: |
+    --- FAIL: TestApplyRestock (0.00s)
+        restock_test.go:8: Total = 5, want 10 (items=[{a 2} {b 3}])
+    FAIL
+    FAIL    example.com/svc/inventory       0.003s
+  logs: ""
+  root_cause_tags: ["range-value-copy", "modifying-a-copy-of-the-element"]
+  root_cause_aliases:
+    range-value-copy: ["range copies the element", "the loop variable is a copy", "for _, it := range", "value copy", "range variable is a copy"]
+    modifying-a-copy-of-the-element: ["modifies a copy", "changes the copy", "not the slice element", "original slice is not modified", "element is copied"]
+  root_cause: "`for _, it := range items` gives `it` a copy of each element, so `it.Qty += extra` updates the copy and the slice is never changed."
+  fix_keywords: ["index|items[i]|&items[i]|pointer", "range"]
+
+- id: dbg-go-03
+  category: debugging
+  language: go
+  difficulty: medium
+  split: dev
+  symptom: |
+    The new report generator prints "fatal error: all goroutines are asleep - deadlock!" the
+    moment it starts, before producing any output.
+  files:
+    - path: report/pipeline.go
+      content: |
+        package report
+
+        import (
+        	"fmt"
+        	"strings"
+        )
+
+        type Row struct {
+        	Customer string
+        	Total	float64
+        }
+
+        func produce(rows []Row, out chan<- Row) {
+        	for _, r := range rows {
+        		out <- r
+        	}
+        	close(out)
+        }
+
+        func consume(in <-chan Row, done chan<- string) {
+        	var b strings.Builder
+        	for r := range in {
+        		fmt.Fprintf(&b, "%s,%.2f\n", r.Customer, r.Total)
+        	}
+        	done <- b.String()
+        }
+
+        // Render builds the CSV text for rows.
+        func Render(rows []Row) string {
+        	ch := make(chan Row)
+        	done := make(chan string)
+        	produce(rows, ch)
+        	go consume(ch, done)
+        	return <-done
+        }
+    - path: cmd/report/main.go
+      content: |
+        package main
+
+        import (
+        	"fmt"
+
+        	"example.com/svc/report"
+        )
+
+        func main() {
+        	rows := []report.Row{{"acme", 120.5}, {"globex", 80}}
+        	fmt.Print(report.Render(rows))
+        }
+  trace: |
+    fatal error: all goroutines are asleep - deadlock!
+
+    goroutine 1 [chan send]:
+    example.com/svc/report.produce({0xc000012120?, 0x2, 0x2}, 0xc00007e060)
+            /app/report/pipeline.go:14 +0x4c
+    example.com/svc/report.Render({0xc000012120, 0x2, 0x2})
+            /app/report/pipeline.go:33 +0xa5
+    main.main()
+            /app/cmd/report/main.go:11 +0x7e
+  logs: ""
+  root_cause_tags: ["unbuffered-channel-deadlock", "producer-blocks-before-consumer-starts"]
+  root_cause_aliases:
+    unbuffered-channel-deadlock: ["unbuffered channel", "send blocks", "no receiver", "deadlock on channel send", "chan send"]
+    producer-blocks-before-consumer-starts: ["produce is called synchronously", "consumer starts after the producer", "consumer goroutine is started too late", "called before go consume", "producer runs on the main goroutine"]
+  root_cause: "`produce` is called synchronously before the consumer goroutine is started, and sending on an unbuffered channel blocks until someone receives, so the main goroutine blocks forever on its first send."
+  fix_keywords: ["go produce|run the producer in a goroutine|start the consumer first|buffered channel|make(chan Row, len(rows))", "goroutine|buffer"]
+
+- id: dbg-go-04
+  category: debugging
+  language: go
+  difficulty: medium
+  split: test
+  symptom: |
+    The staging pipeline is built from the production pipeline by inserting an audit step, but
+    after building staging the production pipeline no longer deploys: its last step has turned
+    into "audit".
+  files:
+    - path: pipeline/steps.go
+      content: |
+        package pipeline
+
+        import "strings"
+
+        // WithAudit returns the steps with an audit step inserted before the last step.
+        func WithAudit(steps []string) []string {
+        	head := steps[:len(steps)-1]
+        	return append(head, "audit", steps[len(steps)-1])
+        }
+
+        func Describe(steps []string) string {
+        	return strings.Join(steps, " -> ")
+        }
+    - path: pipeline/steps_test.go
+      content: |
+        package pipeline
+
+        import "testing"
+
+        func TestWithAuditKeepsOriginal(t *testing.T) {
+        	prod := []string{"build", "test", "deploy"}
+        	staging := WithAudit(prod)
+        	if got := Describe(staging); got != "build -> test -> audit -> deploy" {
+        		t.Fatalf("staging = %s", got)
+        	}
+        	if got := Describe(prod); got != "build -> test -> deploy" {
+        		t.Fatalf("prod was modified: %s", got)
+        	}
+        }
+  trace: |
+    --- FAIL: TestWithAuditKeepsOriginal (0.00s)
+        steps_test.go:12: prod was modified: build -> test -> audit
+    FAIL
+  logs: |
+    2026/03/12 14:00:00 pipeline: building production plan
+    2026/03/12 14:00:00 pipeline: production = build -> test -> deploy
+    2026/03/12 14:00:01 pipeline: building staging plan (with audit)
+    2026/03/12 14:00:01 pipeline: staging = build -> test -> audit -> deploy
+    2026/03/12 14:00:05 pipeline: running production: build ok, test ok
+    2026/03/12 14:00:09 pipeline: running production: audit ok
+    2026/03/12 14:00:09 pipeline: production finished, nothing was deployed
+  root_cause_tags: ["slice-append-aliasing", "shared-backing-array"]
+  root_cause_aliases:
+    slice-append-aliasing: ["append overwrites", "append modifies the original slice", "aliasing", "append writes into the original"]
+    shared-backing-array: ["backing array", "head shares memory with steps", "capacity", "slices share the same underlying array", "spare capacity"]
+  root_cause: "`head` is a sub-slice of `steps` with spare capacity, so `append` writes `audit` into the original slice's backing array, overwriting its last element."
+  fix_keywords: ["copy|make([]string|slices.Clone|full slice expression|steps[:n:n]|three-index", "new slice|allocate|capacity"]
+
+- id: dbg-go-05
+  category: debugging
+  language: go
+  difficulty: medium
+  split: dev
+  symptom: |
+    `POST /documents` always answers 204 and the caller believes the document was stored, but
+    documents with a valid body regularly never show up. The logs do contain an error.
+  files:
+    - path: docs/service.go
+      content: |
+        package docs
+
+        import (
+        	"context"
+        	"errors"
+        	"log"
+        )
+
+        type Doc struct {
+        	ID   string
+        	Body string
+        }
+
+        func (d Doc) Valid() bool { return d.ID != "" && d.Body != "" }
+
+        type Store interface {
+        	Put(ctx context.Context, d Doc) error
+        }
+
+        type Service struct {
+        	store Store
+        }
+
+        // Save stores a valid document and reports whether it succeeded.
+        func (s *Service) Save(ctx context.Context, d Doc) error {
+        	var err error
+        	if d.Valid() {
+        		err := s.store.Put(ctx, d)
+        		if err != nil {
+        			log.Printf("docs: put %s failed: %v", d.ID, err)
+        		}
+        	} else {
+        		err = errors.New("docs: invalid document")
+        	}
+        	return err
+        }
+    - path: api/handler.go
+      content: |
+        package api
+
+        import (
+        	"encoding/json"
+        	"net/http"
+
+        	"example.com/svc/docs"
+        )
+
+        func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
+        	var d docs.Doc
+        	if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
+        		http.Error(w, "bad json", http.StatusBadRequest)
+        		return
+        	}
+        	if err := s.docs.Save(r.Context(), d); err != nil {
+        		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+        		return
+        	}
+        	w.WriteHeader(http.StatusNoContent)
+        }
+  trace: |
+    $ curl -i -X POST localhost:8080/documents -d '{"ID":"d-77","Body":"hello"}'
+    HTTP/1.1 204 No Content
+    $ curl -i localhost:8080/documents/d-77
+    HTTP/1.1 404 Not Found
+  logs: |
+    2026/03/12 09:12:44 docs: put d-77 failed: dial tcp 10.0.1.9:5432: connect: connection refused
+    2026/03/12 09:12:44 POST /documents 204 3ms
+  root_cause_tags: ["shadowed-err-variable", "error-swallowed-by-shadowing"]
+  root_cause_aliases:
+    shadowed-err-variable: ["err is shadowed", "err := inside the if block", "short variable declaration shadows", "shadowing", "declares a new err"]
+    error-swallowed-by-shadowing: ["outer err stays nil", "the error is only logged", "returns nil", "error is not returned", "swallows the error"]
+  root_cause: "`err := s.store.Put(...)` inside the `if` block declares a new variable that shadows the outer `err`, so the failure is only logged and `Save` returns the outer `err`, which is still nil."
+  fix_keywords: ["=|err =|assign|return err", "shadow"]
+
+- id: dbg-go-06
+  category: debugging
+  language: go
+  difficulty: hard
+  split: test
+  symptom: |
+    The gateway's memory and goroutine count climb steadily (about 4,000 more goroutines per
+    hour) until it is restarted, and each leaked goroutine holds on to a buffer. Request latency is
+    fine and no requests fail.
+  files:
+    - path: events/client.go
+      content: |
+        package events
+
+        import (
+        	"time"
+        )
+
+        type Event struct {
+        	Topic string
+        	Data  []byte
+        }
+
+        type Source interface {
+        	// Poll blocks until an event is available for topic.
+        	Poll(topic string) (Event, error)
+        }
+
+        type Client struct {
+        	src Source
+        }
+
+        // Subscribe streams the events of a topic.
+        func (c *Client) Subscribe(topic string) <-chan Event {
+        	out := make(chan Event)
+        	go func() {
+        		for {
+        			ev, err := c.src.Poll(topic)
+        			if err != nil {
+        				time.Sleep(time.Second)
+        				continue
+        			}
+        			out <- ev
+        		}
+        	}()
+        	return out
+        }
+    - path: api/latest.go
+      content: |
+        package api
+
+        import (
+        	"encoding/json"
+        	"net/http"
+        	"time"
+        )
+
+        // handleLatest returns the next event of a topic, or 204 after two seconds.
+        func (s *Server) handleLatest(w http.ResponseWriter, r *http.Request) {
+        	events := s.events.Subscribe(r.PathValue("topic"))
+        	select {
+        	case ev := <-events:
+        		json.NewEncoder(w).Encode(ev)
+        	case <-time.After(2 * time.Second):
+        		w.WriteHeader(http.StatusNoContent)
+        	}
+        }
+  trace: |
+    # goroutine profile (debug=1), 6 hours after start
+    goroutine profile: total 24113
+    24068 @ 0x43e8f6 0x40b2fb 0x40af57 0x6f2e4a 0x472a81
+    #   0x6f2e49   example.com/svc/events.(*Client).Subscribe.func1+0x69   /app/events/client.go:30
+    17 @ 0x43e8f6 0x4399d2 0x46ad65 0x4f9a05 0x4f87b2
+    #   0x4f9a04   net/http.(*conn).serve+0x6a4   /usr/local/go/src/net/http/server.go:2000
+  logs: |
+    2026-03-13 06:00:00 INFO gateway goroutines=412 heap=88MB
+    2026-03-13 09:00:00 INFO gateway goroutines=12044 heap=1.1GB
+    2026-03-13 12:00:00 INFO gateway goroutines=24113 heap=2.3GB
+  root_cause_tags: ["goroutine-leak", "subscriber-goroutine-never-stops"]
+  root_cause_aliases:
+    goroutine-leak: ["leaked goroutines", "goroutines are never cleaned up", "blocked on channel send", "goroutine accumulation"]
+    subscriber-goroutine-never-stops: ["no cancellation", "never exits", "no context", "loops forever", "out <- ev blocks forever", "nobody receives"]
+  root_cause: "Each `Subscribe` call starts a goroutine that loops forever and blocks on `out <- ev` once the handler stops reading (after the first event or the 2 s timeout), so one goroutine leaks per request."
+  fix_keywords: ["context|ctx.Done|cancel", "select|done channel|close|stop"]
+
+- id: dbg-go-07
+  category: debugging
+  language: go
+  difficulty: hard
+  split: dev
+  symptom: |
+    The batch importer hangs after the last item is processed and, if you wait, Go reports a
+    deadlock. Every item is imported correctly; the program just never finishes.
+  files:
+    - path: importer/run.go
+      content: |
+        package importer
+
+        import (
+        	"fmt"
+        	"sync"
+        )
+
+        type Item struct {
+        	ID   int
+        	Name string
+        }
+
+        func importItem(it Item, wg sync.WaitGroup, results chan<- string) {
+        	defer wg.Done()
+        	results <- fmt.Sprintf("imported %d:%s", it.ID, it.Name)
+        }
+
+        // Run imports every item concurrently and returns the log lines.
+        func Run(items []Item) []string {
+        	var wg sync.WaitGroup
+        	results := make(chan string, len(items))
+        	for _, it := range items {
+        		wg.Add(1)
+        		go importItem(it, wg, results)
+        	}
+        	wg.Wait()
+        	close(results)
+        	var log []string
+        	for line := range results {
+        		log = append(log, line)
+        	}
+        	return log
+        }
+    - path: cmd/import/main.go
+      content: |
+        package main
+
+        import (
+        	"fmt"
+
+        	"example.com/svc/importer"
+        )
+
+        func main() {
+        	lines := importer.Run([]importer.Item{{1, "a"}, {2, "b"}, {3, "c"}})
+        	for _, l := range lines {
+        		fmt.Println(l)
+        	}
+        }
+  trace: |
+    fatal error: all goroutines are asleep - deadlock!
+
+    goroutine 1 [semacquire]:
+    sync.runtime_Semacquire(0xc0000a4018?)
+            /usr/local/go/src/runtime/sema.go:62 +0x25
+    sync.(*WaitGroup).Wait(0xc0000a4010)
+            /usr/local/go/src/sync/waitgroup.go:116 +0x48
+    example.com/svc/importer.Run({0xc0000b6000, 0x3, 0x3})
+            /app/importer/run.go:26 +0xe5
+
+    $ go vet ./...
+    importer/run.go:14:41: importItem passes lock by value: sync.WaitGroup contains sync.noCopy
+  logs: ""
+  root_cause_tags: ["waitgroup-passed-by-value", "waitgroup-copied"]
+  root_cause_aliases:
+    waitgroup-passed-by-value: ["WaitGroup is copied", "passes lock by value", "pass a pointer to the WaitGroup", "by value", "copy of the WaitGroup"]
+    waitgroup-copied: ["Done is called on a copy", "the original counter never reaches zero", "wg is a copy", "noCopy", "goroutines decrement a copy"]
+  root_cause: "`importItem` takes the `sync.WaitGroup` by value, so each goroutine calls `Done` on its own copy; the original's counter never goes down and `Wait` blocks forever."
+  fix_keywords: ["*sync.WaitGroup|pointer|&wg", "closure|go func|wg.Go|errgroup"]
+
+- id: dbg-go-08
+  category: debugging
+  language: go
+  difficulty: hard
+  split: test
+  symptom: |
+    Under load the service occasionally freezes for good, and the log line that prints the cache
+    statistics is always the last thing logged by the stuck goroutine. A goroutine dump shows it
+    waiting on a mutex that nobody holds.
+  files:
+    - path: cache/stats.go
+      content: |
+        package cache
+
+        import (
+        	"fmt"
+        	"sync"
+        )
+
+        // Stats counts cache hits and misses. It is safe for concurrent use.
+        type Stats struct {
+        	mu	 sync.Mutex
+        	hits   int
+        	misses int
+        }
+
+        func (s *Stats) Hit() {
+        	s.mu.Lock()
+        	s.hits++
+        	s.mu.Unlock()
+        }
+
+        func (s *Stats) Miss() {
+        	s.mu.Lock()
+        	s.misses++
+        	s.mu.Unlock()
+        }
+
+        func (s Stats) String() string {
+        	s.mu.Lock()
+        	defer s.mu.Unlock()
+        	return fmt.Sprintf("hits=%d misses=%d", s.hits, s.misses)
+        }
+    - path: cache/cache.go
+      content: |
+        package cache
+
+        import "log"
+
+        type Cache struct {
+        	data  map[string]string
+        	stats Stats
+        }
+
+        func (c *Cache) Report() {
+        	log.Printf("cache stats: %v", c.stats)
+        }
+  trace: |
+    goroutine 212 [sync.Mutex.Lock, 38 minutes]:
+    sync.runtime_SemacquireMutex(0xc0001b2018?, 0x0?, 0x1)
+            /usr/local/go/src/runtime/sema.go:95 +0x25
+    sync.(*Mutex).Lock(...)
+    example.com/svc/cache.Stats.String({{0x1, 0x0}, 0x2a1, 0x33})
+            /app/cache/stats.go:26 +0x5e
+    fmt.(*pp).handleMethods(0xc00019c1a0, 0x76)
+    example.com/svc/cache.(*Cache).Report(0xc0000b0000)
+            /app/cache/cache.go:11 +0x4b
+
+    $ go vet ./...
+    cache/cache.go:11:40: call of log.Printf copies lock value: example.com/svc/cache.Stats contains sync.Mutex
+  logs: |
+    2026-03-14 03:11:02 INFO cache stats: hits=1203311 misses=9021
+    2026-03-14 03:11:32 INFO cache stats: hits=1215980 misses=9043
+    2026-03-14 03:12:02 (no further output; request handlers still serving, reporter goroutine stuck)
+  root_cause_tags: ["mutex-copied-by-value", "value-receiver-copies-lock"]
+  root_cause_aliases:
+    mutex-copied-by-value: ["copies the mutex", "copylocks", "copy lock value", "a copy of the locked mutex", "copied sync.Mutex"]
+    value-receiver-copies-lock: ["String has a value receiver", "value receiver", "Stats passed by value to Printf", "the copy is locked", "method with value receiver"]
+  root_cause: "`String` has a value receiver and `%v` passes `c.stats` by value, so the mutex is copied while another goroutine may hold it; the copy is permanently locked and `s.mu.Lock()` in `String` blocks forever."
+  fix_keywords: ["pointer receiver|*Stats|&c.stats", "copylocks|go vet|do not copy|pass a pointer"]

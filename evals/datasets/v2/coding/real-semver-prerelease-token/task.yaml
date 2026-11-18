@@ -1,0 +1,103 @@
+id: real-semver-prerelease-token
+category: coding
+provenance: real-repo
+difficulty: hard
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-semver
+- versions
+- validation
+source:
+  repo: python-semver
+  url: https://github.com/python-semver/python-semver
+  commit: 37ae009c7cacab8f1a87157ca2b484b8e18a0a78
+  parent: 1d515915d50b31f23fd1fb0f572ef608453e80e3
+  committed: '2026-10-05'
+  licence: BSD-3-Clause
+  upstream_files:
+  - src/semver/__about__.py
+  - src/semver/__init__.py
+  - src/semver/__main__.py
+  - src/semver/_deprecated.py
+  - src/semver/_types.py
+  - src/semver/cli.py
+  - src/semver/py.typed
+  - src/semver/version.py
+  upstream_test: tests/test_bump.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- -o
+- pythonpath=tests
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_bump.py::test_next_version_ignores_token_for_main_parts[major-rc.-2.0.0]
+- tests/test_hidden_bump.py::test_next_version_ignores_token_for_main_parts[minor-rc+build-1.3.0]
+- tests/test_hidden_bump.py::test_next_version_ignores_token_for_main_parts[patch-rc..next-1.2.4]
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-alpha.beta.1+build.7-alpha.beta-1.2.3-alpha.beta.2]
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-alpha.beta.gamma.1-alpha-1.2.3-alpha.beta.gamma.2]
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-alphaXbeta9-alpha.beta-1.2.3-alpha.beta.1]
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-rc.3-rc-1.2.3-rc.4]
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-rc3-rc-1.2.3-rc4]
+- tests/test_hidden_bump.py::test_next_version_preserves_empty_token_semantics[None]
+- tests/test_hidden_bump.py::test_next_version_preserves_empty_token_semantics[]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[01]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[[]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[r\xe9]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc+build]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc..next]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc.01]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc.]
+- tests/test_hidden_bump.py::test_should_bump_build[3.4.5-3.4.5+build.1]
+- tests/test_hidden_bump.py::test_should_bump_build[3.4.5-rc.1+0009.dev-3.4.5-rc.1+0010.dev]
+- tests/test_hidden_bump.py::test_should_bump_build[3.4.5-rc.1+build.9-3.4.5-rc.1+build.10]
+- tests/test_hidden_bump.py::test_should_bump_build[3.4.5-rc.1-3.4.5-rc.1+build.1]
+- tests/test_hidden_bump.py::test_should_bump_major
+- tests/test_hidden_bump.py::test_should_bump_minor
+- tests/test_hidden_bump.py::test_should_bump_patch
+- tests/test_hidden_bump.py::test_should_bump_prerelease[3.4.5--3.4.5-rc.1-1]
+- tests/test_hidden_bump.py::test_should_bump_prerelease[3.4.5-None-3.4.5-rc.1-1]
+- tests/test_hidden_bump.py::test_should_bump_prerelease[3.4.5-dev-3.4.5-dev.1-1]
+- tests/test_hidden_bump.py::test_should_bump_prerelease[3.4.5-rc.9-None-3.4.5-rc.10--1]
+- tests/test_hidden_bump.py::test_should_ignore_build_on_prerelease_bump
+- tests/test_hidden_bump.py::test_should_ignore_extensions_for_bump
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_build_with_empty_str
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_build_with_none
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_major_and_minor
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_minor_and_patch
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_multiple
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_patch_and_prerelease
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_patch_and_prerelease_bump_patch
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_patch_and_prerelease_with_token
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_and_build
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_and_build_with_token
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_bump_patch
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_nonnumeric
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_nonnumeric_nine
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_with_empty_str
+- tests/test_hidden_bump.py::test_should_versioninfo_bump_prerelease_with_none
+solution_summary: Validate the prerelease token as a prerelease identifier, match old-style tokens with
+  re.escape and fullmatch, and treat the current prerelease as the token family only when it equals the
+  token or starts with token plus a dot
+flaws: []
+fail_to_pass:
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-alpha.beta.1+build.7-alpha.beta-1.2.3-alpha.beta.2]
+- tests/test_hidden_bump.py::test_next_version_matches_literal_prerelease_token_family[1.2.3-alphaXbeta9-alpha.beta-1.2.3-alpha.beta.1]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[01]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[[]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[r\xe9]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc+build]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc..next]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc.01]
+- tests/test_hidden_bump.py::test_next_version_rejects_invalid_prerelease_token[rc.]

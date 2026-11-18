@@ -1,0 +1,45 @@
+id: real-boltons-histogram-zero-iqr
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-boltons
+- statistics
+source:
+  repo: boltons
+  url: https://github.com/mahmoud/boltons
+  commit: 1cdc0e9d36f3eb32608f3b34885717697643e9b8
+  parent: 805c803ca71da28f09cb7ec521f7ea14d1a4048b
+  committed: '2026-09-07'
+  licence: BSD-3-Clause
+  upstream_files:
+  - boltons/__init__.py
+  - boltons/statsutils.py
+  upstream_test: tests/test_statsutils.py
+  adapted: Only boltons/__init__.py and boltons/statsutils.py are vendored; statsutils imports no other
+    boltons module.
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_statsutils.py::test_histogram_zero_interquartile_range
+- tests/test_hidden_statsutils.py::test_mode
+- tests/test_hidden_statsutils.py::test_stats_basic
+solution_summary: When the Freedman-Diaconis bin width is zero (zero interquartile range), return a single
+  bin from the minimum (plus the maximum when asked)
+flaws: []
+fail_to_pass:
+- tests/test_hidden_statsutils.py::test_histogram_zero_interquartile_range

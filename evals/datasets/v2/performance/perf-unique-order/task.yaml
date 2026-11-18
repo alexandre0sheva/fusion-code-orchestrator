@@ -1,0 +1,46 @@
+id: perf-unique-order
+category: performance
+difficulty: easy
+split: dev
+tags:
+- python
+- performance
+- dedupe
+expected_pass:
+- tests.test_hidden.HiddenTests.test_keeps_first_occurrence_order
+- tests.test_hidden.HiddenTests.test_strings
+- tests.test_hidden.HiddenTests.test_all_equal
+- tests.test_hidden.HiddenTests.test_does_not_modify_the_input
+- tests.test_hidden.HiddenTests.test_tuples
+- tests.test_hidden.HiddenTests.test_accepts_any_iterable
+solution_summary: Track what has been seen in a hash table (dict.fromkeys keeps the
+  order)
+flaws:
+- summary: Filter with a list comprehension that scans a slice of the earlier items
+- summary: Return list(set(items)), which loses the order of first appearance
+perf:
+  sizes:
+  - 1500
+  - 3000
+  - 6000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

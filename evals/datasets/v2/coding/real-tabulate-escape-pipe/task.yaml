@@ -1,0 +1,79 @@
+id: real-tabulate-escape-pipe
+category: coding
+provenance: real-repo
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-tabulate
+- formatting
+- escaping
+source:
+  repo: python-tabulate
+  url: https://github.com/astanin/python-tabulate
+  commit: e6a24aa6e00ca8ce9a1987f28c11ca08c6f19383
+  parent: 46c9fe38d36e1f185271884ace2e80415389216c
+  committed: '2026-03-05'
+  licence: MIT
+  upstream_files:
+  - tabulate/__init__.py
+  upstream_test: test/test_regression.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- -o
+- pythonpath=tests
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_regression.py::test_88_256_ANSI_color_codes
+- tests/test_hidden_regression.py::test_align_long_integers
+- tests/test_hidden_regression.py::test_alignment_of_colored_cells
+- tests/test_hidden_regression.py::test_alignment_of_decimal_numbers_with_ansi_color
+- tests/test_hidden_regression.py::test_alignment_of_decimal_numbers_with_commas
+- tests/test_hidden_regression.py::test_alignment_of_link_cells
+- tests/test_hidden_regression.py::test_alignment_of_link_text_cells
+- tests/test_hidden_regression.py::test_ansi_color_bold_and_fgcolor
+- tests/test_hidden_regression.py::test_ansi_color_for_decimal_numbers
+- tests/test_hidden_regression.py::test_ansi_color_in_table_cells
+- tests/test_hidden_regression.py::test_asciidoc_without_trailing_whitespace
+- tests/test_hidden_regression.py::test_boolean_columns
+- tests/test_hidden_regression.py::test_colorclass_colors
+- tests/test_hidden_regression.py::test_column_type_of_bytestring_columns
+- tests/test_hidden_regression.py::test_column_with_mixed_value_types
+- tests/test_hidden_regression.py::test_custom_tablefmt
+- tests/test_hidden_regression.py::test_datetime_values
+- tests/test_hidden_regression.py::test_empty_pipe_table_with_columns
+- tests/test_hidden_regression.py::test_empty_table_with_colalign
+- tests/test_hidden_regression.py::test_empty_table_with_keys_as_header
+- tests/test_hidden_regression.py::test_empty_table_with_maxheadercolwidths
+- tests/test_hidden_regression.py::test_escape_empty_cell_in_first_column_in_rst
+- tests/test_hidden_regression.py::test_exception_on_empty_data_with_maxcolwidths
+- tests/test_hidden_regression.py::test_github_escape_pipe_character
+- tests/test_hidden_regression.py::test_isconvertible_on_set_values
+- tests/test_hidden_regression.py::test_iter_of_iters_with_headers
+- tests/test_hidden_regression.py::test_iterable_row_index
+- tests/test_hidden_regression.py::test_latex_escape_special_chars
+- tests/test_hidden_regression.py::test_long_integers
+- tests/test_hidden_regression.py::test_maxcolwidths_accepts_list_or_tuple
+- tests/test_hidden_regression.py::test_mixed_bool_strings_and_numeric_strings
+- tests/test_hidden_regression.py::test_numeric_column_headers
+- tests/test_hidden_regression.py::test_preserve_line_breaks_with_maxcolwidths
+- tests/test_hidden_regression.py::test_ragged_rows
+- tests/test_hidden_regression.py::test_simple_separated_format
+- tests/test_hidden_regression.py::test_simple_separated_format_with_headers
+- tests/test_hidden_regression.py::test_string_with_comma_between_digits_without_floatfmt_grouping_option
+solution_summary: Give the pipe and github formats' header and data rows an escape rule that turns | inside
+  a cell into \|
+flaws: []
+fail_to_pass:
+- tests/test_hidden_regression.py::test_github_escape_pipe_character

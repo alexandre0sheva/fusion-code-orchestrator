@@ -1,0 +1,47 @@
+id: perf-two-sum
+category: performance
+difficulty: easy
+split: dev
+tags:
+- python
+- performance
+- hashing
+expected_pass:
+- tests.test_hidden.HiddenTests.test_uses_the_smallest_earlier_index
+- tests.test_hidden.HiddenTests.test_first_j_wins
+- tests.test_hidden.HiddenTests.test_same_element_is_not_used_twice
+- tests.test_hidden.HiddenTests.test_zero_target_with_zeros
+- tests.test_hidden.HiddenTests.test_negative_numbers
+- tests.test_hidden.HiddenTests.test_empty
+solution_summary: Remember the first index of each value in a dict and look the complement
+  up
+flaws:
+- summary: Search a slice of the earlier numbers for the complement
+- summary: Remember the latest index of each value, which picks the wrong earlier
+    position for duplicates
+perf:
+  sizes:
+  - 750
+  - 1500
+  - 3000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

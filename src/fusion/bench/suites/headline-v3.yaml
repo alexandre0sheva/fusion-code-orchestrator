@@ -1,0 +1,31 @@
+# The headline study on dataset v2 (roadmap Task 16): the frontier and cheap models alone against
+# Fusion, on the held-out test split. Run it only after ablation-v3 has settled the defaults, and
+# do not change an arm afterwards: nothing may be tuned on these tasks.
+#
+#   fusion bench plan --suite headline-v3
+#   fusion bench run  --suite headline-v3 --max-usd 1.35
+#
+# `fusion-best` is a placeholder until Task 16 freezes it from `fusion bench recommend` on the
+# ablation-v3 run, before this suite runs; it must not change after that.
+description: >-
+  Opus 5.5, Sol, Haiku and Luna alone, Fusion's default (strategy auto) and the best ablation
+  variant, on a stratified subset of the v2 test split, judged by neutral OpenRouter judges.
+stage: final study on test
+dataset: v2
+split: test
+quota: {code_review: 2, debugging: 2, architecture: 1, planning: 1, coding: 2, frontend: 1, performance: 1}
+repeats: 1
+seed: 100
+max_usd: 1.35
+spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
+concurrency: 8
+# The neutral judges of ablation-v3 (Xiaomi and Meta are on no arm here either).
+judge_models: [mimo-pro, muse-ember]
+neutral_judges: true
+arms:
+  - {name: solo-opus, strategy: solo-opus}           # Claude Opus 5.5
+  - {name: solo-sol, strategy: solo-sol}             # GPT-6.2 Sol
+  - {name: solo-haiku, strategy: solo-haiku}
+  - {name: solo-luna, strategy: solo-luna}
+  - {name: fusion-default, strategy: auto}
+  - {name: fusion-best, strategy: panel-nano-auto}   # placeholder: Task 16 freezes it

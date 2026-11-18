@@ -1,0 +1,69 @@
+id: fe-responsive-nav
+category: frontend
+difficulty: medium
+split: dev
+tags:
+- html
+- css
+- javascript
+- frontend
+- navigation
+expected_pass:
+- tests.test_hidden.HiddenTests.test_navigation_landmark_is_named
+- tests.test_hidden.HiddenTests.test_toggle_button_controls_the_menu
+- tests.test_hidden.HiddenTests.test_toggle_starts_collapsed
+- tests.test_hidden.HiddenTests.test_five_named_links
+- tests.test_hidden.HiddenTests.test_a_script_keeps_aria_expanded_in_step
+- tests.test_hidden.HiddenTests.test_collapses_with_a_media_query
+- tests.test_hidden.HiddenTests.test_keyboard_focus_is_visible
+solution_summary: A named nav with a Menu button that carries aria-controls and aria-expanded,
+  a small script and a max-width media query
+flaws:
+- summary: A navigation with no toggle button or script, so there is nothing to open
+    on a phone
+- summary: A working toggle whose links are pale green on white and one link has a
+    positive tabindex
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: brand left, links in a row on desktop, a Menu button and a stacked
+    list on phones, restrained green and white styling
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: the toggle works by mouse and keyboard, the open menu is full width,
+    links have clear hover and focus states
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

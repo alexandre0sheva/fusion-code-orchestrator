@@ -24,12 +24,13 @@ from pydantic import BaseModel
 from fusion.bench.arms import arm_book
 from fusion.bench.cache import CachingProvider, ResponseDiskCache
 from fusion.bench.evaluators import EvaluatorSet
+from fusion.bench.judges import arm_aliases, check_neutral_judges
 from fusion.bench.meta import build_meta, load_meta, write_meta
 from fusion.bench.metrics import build_metrics
 from fusion.bench.plan import estimate_job
 from fusion.bench.scoring import AnswerView, ScoreEnv, ScoreResult, get_scorer, is_solved
 from fusion.bench.scoring.coding import coding_crosschecker, coding_verifier
-from fusion.bench.scoring.pairwise import providers_of
+from fusion.bench.scoring.pairwise import vendors_of
 from fusion.bench.spec import (
     BenchConfig,
     BenchTask,
@@ -366,6 +367,9 @@ async def run_bench(
     clock = asyncio.get_running_loop().time
     book = arm_book(env.book, cfg.arms)
     routing = RoutingPolicy(env.routing_config, registry=env.registry, strategies=book)
+    if cfg.neutral_judges:
+        strategies = {a.name: book.get(a.name) for a in cfg.arms}
+        check_neutral_judges(cfg.judge_models, strategies, routing, env.registry.models)
     pipeline = _pipeline(env, routing, clock)
     store = env.store
     spend = env.spend if not cfg.mock else None
@@ -570,18 +574,14 @@ async def _execute(
     score: ScoreResult | None = None
     error: str | None = None
     try:
-        aliases = [
-            alias
-            for used in pipeline.deps.routing.ladder(strategy)  # every rung of strategy auto
-            for alias in used.models
-        ]
+        aliases = arm_aliases(strategy, pipeline.deps.routing)  # every rung of strategy auto
         score = await get_scorer(task.category).score(
             task,
             view,
             ScoreEnv(
                 gateway=gateway,
                 judge_models=cfg.judge_models,
-                exclude_providers=providers_of(aliases, env.registry.models),
+                exclude_vendors=vendors_of(aliases, env.registry.models),
                 artifacts_dir=evaluators.cache.out_dir,
                 evaluators=evaluators,
             ),

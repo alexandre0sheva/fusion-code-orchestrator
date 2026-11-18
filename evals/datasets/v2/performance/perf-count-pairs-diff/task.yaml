@@ -1,0 +1,46 @@
+id: perf-count-pairs-diff
+category: performance
+difficulty: easy
+split: dev
+tags:
+- python
+- performance
+- hashing
+- counting
+expected_pass:
+- tests.test_hidden.HiddenTests.test_order_matters
+- tests.test_hidden.HiddenTests.test_negative_difference
+- tests.test_hidden.HiddenTests.test_zero_difference_counts_equal_values_once_per_pair
+- tests.test_hidden.HiddenTests.test_duplicates_multiply
+- tests.test_hidden.HiddenTests.test_empty_and_single
+- tests.test_hidden.HiddenTests.test_negative_values
+solution_summary: "Count each value seen so far in a dict and add the count of value - diff before recording the value"
+flaws:
+- summary: "Count value - diff in the slice of earlier numbers for every position"
+- summary: "Multiply the counts of each value and value + diff, ignoring which comes first and counting a value paired with itself"
+perf:
+  sizes:
+  - 750
+  - 1500
+  - 3000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

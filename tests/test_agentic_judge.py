@@ -323,7 +323,7 @@ async def test_judges_from_a_provider_that_serves_an_arm_are_left_out(outputs) -
         ["claude-haiku", "gemini-flash", "gpt-luna"],
         "absolute",
         env=env,
-        exclude_providers={"anthropic"},
+        exclude_vendors={"anthropic"},
     )
     assert verdict.excluded == ["claude-haiku"]
     assert {r.judge for r in verdict.runs} == {"gemini-flash", "gpt-luna"}
@@ -342,7 +342,7 @@ async def test_fewer_than_two_eligible_judges_is_refused(outputs) -> None:
             ["claude-haiku", "gemini-flash"],
             "absolute",
             env=env,
-            exclude_providers={"google"},
+            exclude_vendors={"google"},
         )
     assert provider.requests == []  # nobody was asked
 

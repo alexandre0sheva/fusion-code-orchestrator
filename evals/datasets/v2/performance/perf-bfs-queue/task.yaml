@@ -1,0 +1,45 @@
+id: perf-bfs-queue
+category: performance
+difficulty: hard
+split: test
+tags:
+- python
+- performance
+- graphs
+expected_pass:
+- tests.test_hidden.HiddenTests.test_levels_before_depth
+- tests.test_hidden.HiddenTests.test_neighbours_in_listed_order
+- tests.test_hidden.HiddenTests.test_cycles_do_not_repeat_nodes
+- tests.test_hidden.HiddenTests.test_unreachable_nodes_are_left_out
+- tests.test_hidden.HiddenTests.test_node_missing_from_the_graph_has_no_neighbours
+- tests.test_hidden.HiddenTests.test_diamond
+solution_summary: Use a deque so taking the next node from the front is constant time
+flaws:
+- summary: Take the front with queue[0] and rebuild the list with a slice each time
+- summary: Use a stack, which visits depth first instead of level by level
+perf:
+  sizes:
+  - 5000
+  - 10000
+  - 20000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Newsletter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>The Weekly Tide</h1>
+    <p>One short email every Friday with the week's best tide-pool finds.</p>
+    <button tabindex="6" id="open" class="btn" type="button" aria-haspopup="dialog">Subscribe</button>
+    <dialog id="subscribe" aria-labelledby="subscribe-title">
+      <h2 id="subscribe-title">Subscribe to The Weekly Tide</h2>
+      <form method="dialog">
+        <p class="field">
+          <label for="mail">Email address</label>
+          <input id="mail" name="mail" type="email" autocomplete="email" required>
+        </p>
+        <div class="actions">
+          <button class="btn" type="submit" value="subscribe">Subscribe</button>
+          <button class="btn ghost" type="submit" value="cancel" formnovalidate>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

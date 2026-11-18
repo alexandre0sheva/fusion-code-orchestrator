@@ -1,0 +1,53 @@
+id: real-parse-tt-empty
+category: coding
+provenance: real-repo
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-parse
+- regex
+- parsing
+source:
+  repo: parse
+  url: https://github.com/r1chardj0n3s/parse
+  commit: 52bf0b3862c6e21271e9582a3a98915247228763
+  parent: cc86df74f565265a4c03326bbcef06e08f01cec2
+  committed: '2026-10-27'
+  licence: MIT
+  upstream_files:
+  - parse/__init__.py
+  upstream_test: tests/test_bugs.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_bugs.py::test_case_insensitive_month_names
+- tests/test_hidden_bugs.py::test_dotted_type_conversion_pull_8
+- tests/test_hidden_bugs.py::test_match_trailing_newline
+- tests/test_hidden_bugs.py::test_microsecond_precision_issue162
+- tests/test_hidden_bugs.py::test_named_date_issue7
+- tests/test_hidden_bugs.py::test_pickling_bug_110
+- tests/test_hidden_bugs.py::test_pm_handling_issue57
+- tests/test_hidden_bugs.py::test_pm_overflow_issue16
+- tests/test_hidden_bugs.py::test_time_type_requires_an_actual_time
+- tests/test_hidden_bugs.py::test_tz_compare_to_None
+- tests/test_hidden_bugs.py::test_unmatched_brace_doesnt_match
+- tests/test_hidden_bugs.py::test_unused_centered_alignment_bug
+- tests/test_hidden_bugs.py::test_unused_left_alignment_bug
+- tests/test_hidden_bugs.py::test_user_type_with_group_count_issue60
+solution_summary: Make the time part of the tt pattern required; only AM/PM and the timezone stay optional
+flaws: []
+fail_to_pass:
+- tests/test_hidden_bugs.py::test_time_type_requires_an_actual_time

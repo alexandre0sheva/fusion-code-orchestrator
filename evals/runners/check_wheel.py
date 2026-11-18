@@ -6,7 +6,7 @@
 A file that is in the source tree but missing from the wheel is how `uvx --from <wheel>` ends up
 failing on a missing YAML, dashboard asset, integration template or dataset. It compares the
 wheel with the repository (every non-bytecode file under ``src/fusion``, ``integrations`` and
-``evals/datasets/v1``), the version with ``pyproject.toml``, and the console script.
+``evals/datasets/v1`` and ``v2``), the version with ``pyproject.toml``, and the console script.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ TREES = (
     (Path("src") / "fusion", Path("fusion")),
     (Path("integrations"), Path("fusion") / "_integrations"),
     (Path("evals") / "datasets" / "v1", Path("fusion") / "bench" / "datasets" / "v1"),
+    (Path("evals") / "datasets" / "v2", Path("fusion") / "bench" / "datasets" / "v2"),
 )
 _IGNORED = {".DS_Store"}
 _IGNORED_SUFFIXES = {".pyc", ".pyo"}

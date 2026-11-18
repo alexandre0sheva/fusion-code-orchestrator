@@ -1,0 +1,68 @@
+id: fe-dashboard-widget
+category: frontend
+difficulty: hard
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- data-display
+expected_pass:
+- tests.test_hidden.HiddenTests.test_the_card_is_a_named_region
+- tests.test_hidden.HiddenTests.test_key_figures_are_term_and_value_pairs
+- tests.test_hidden.HiddenTests.test_sparkline_is_an_accessible_svg
+- tests.test_hidden.HiddenTests.test_range_selector_is_labelled_with_three_choices
+- tests.test_hidden.HiddenTests.test_figures_reflow
+- tests.test_hidden.HiddenTests.test_one_h1_then_h2
+solution_summary: A labelled card region, a dl of key figures in an auto-fit grid,
+  a labelled range select and an SVG sparkline with role img
+flaws:
+- summary: A sparkline with no role or accessible name and a range selector without
+    a label
+- summary: Correct markup with muted figure labels that are too pale and a positive
+    tabindex on the selector
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a bordered card with heading and range selector in one row, four KPIs
+    in a responsive grid, a sparkline beneath
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: figures are large and scannable, labels are secondary, the chart does
+    not overflow the card
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

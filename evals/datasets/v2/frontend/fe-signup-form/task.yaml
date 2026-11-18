@@ -1,0 +1,68 @@
+id: fe-signup-form
+category: frontend
+difficulty: medium
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- forms
+expected_pass:
+- tests.test_hidden.HiddenTests.test_every_control_has_a_label
+- tests.test_hidden.HiddenTests.test_email_field
+- tests.test_hidden.HiddenTests.test_password_field_rules
+- tests.test_hidden.HiddenTests.test_hints_are_attached_to_their_fields
+- tests.test_hidden.HiddenTests.test_terms_checkbox_is_required_and_named
+- tests.test_hidden.HiddenTests.test_submit_button
+- tests.test_hidden.HiddenTests.test_fits_small_screens_and_has_one_h1
+solution_summary: Labelled fields with native validation, described-by hints, autocomplete
+  hints and a fluid single column
+flaws:
+- summary: Placeholders instead of labels and a plain text input for the email address
+- summary: A correct form whose hint text is pale grey on white and which has a stray
+    skipped heading level
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: a single narrow column form with clear labels, hints under the fields
+    and a full-width button on phones
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: helpful hints, native validation, visible invalid state and focus,
+    password manager friendly
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

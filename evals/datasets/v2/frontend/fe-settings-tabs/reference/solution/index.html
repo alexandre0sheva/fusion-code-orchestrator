@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container narrow">
+    <h1>Account settings</h1>
+    <div class="tabs" role="tablist" aria-label="Settings sections">
+      <button id="tab-profile" role="tab" aria-selected="true" aria-controls="panel-profile">Profile</button>
+      <button id="tab-notifications" role="tab" aria-selected="false" aria-controls="panel-notifications" tabindex="-1">Notifications</button>
+      <button id="tab-privacy" role="tab" aria-selected="false" aria-controls="panel-privacy" tabindex="-1">Privacy</button>
+    </div>
+    <section id="panel-profile" role="tabpanel" aria-labelledby="tab-profile">
+      <h2>Profile</h2>
+      <label for="display-name">Display name</label>
+      <input id="display-name" name="display-name" type="text" autocomplete="nickname">
+      <label for="bio">Bio</label>
+      <textarea id="bio" name="bio" rows="4"></textarea>
+    </section>
+    <section id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications" hidden>
+      <h2>Notifications</h2>
+      <label class="check"><input type="checkbox" name="email-news" checked> Email me product news</label>
+      <label class="check"><input type="checkbox" name="email-mentions"> Email me when someone mentions me</label>
+    </section>
+    <section id="panel-privacy" role="tabpanel" aria-labelledby="tab-privacy" hidden>
+      <h2>Privacy</h2>
+      <label for="visibility">Who can see my profile</label>
+      <select id="visibility" name="visibility">
+        <option>Everyone</option>
+        <option>Members only</option>
+        <option>Only me</option>
+      </select>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

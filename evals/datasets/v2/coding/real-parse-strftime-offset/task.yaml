@@ -1,0 +1,108 @@
+id: real-parse-strftime-offset
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-parse
+- regex
+- datetime
+source:
+  repo: parse
+  url: https://github.com/r1chardj0n3s/parse
+  commit: 484c7ee2b9c3ff259decd29c06d0196bfed1f746
+  parent: 175b52d5079dd632332bdc8a075f25867d5a6a17
+  committed: '2026-10-22'
+  licence: MIT
+  upstream_files:
+  - parse/__init__.py
+  upstream_test: tests/test_parse.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_parse.py::test_center
+- tests/test_hidden_parse.py::test_custom_type
+- tests/test_hidden_parse.py::test_datetime_group_count
+- tests/test_hidden_parse.py::test_datetime_group_count_with_timezone
+- tests/test_hidden_parse.py::test_datetime_with_various_subsecond_precision
+- tests/test_hidden_parse.py::test_datetimes
+- tests/test_hidden_parse.py::test_fixed
+- tests/test_hidden_parse.py::test_flexible_dates_inferred_year_day_of_year
+- tests/test_hidden_parse.py::test_flexible_dates_inferred_year_leap_day
+- tests/test_hidden_parse.py::test_flexible_dates_j
+- tests/test_hidden_parse.py::test_flexible_dates_single_digit
+- tests/test_hidden_parse.py::test_flexible_dates_year_current_year_inferred
+- tests/test_hidden_parse.py::test_flexible_datetime_with_colon
+- tests/test_hidden_parse.py::test_flexible_datetime_with_timezone
+- tests/test_hidden_parse.py::test_flexible_datetime_with_timezone_that_has_colons
+- tests/test_hidden_parse.py::test_flexible_datetimes
+- tests/test_hidden_parse.py::test_flexible_time
+- tests/test_hidden_parse.py::test_flexible_time_ms
+- tests/test_hidden_parse.py::test_flexible_time_no_hour
+- tests/test_hidden_parse.py::test_flexible_time_preserves_timezone[+0000]
+- tests/test_hidden_parse.py::test_flexible_time_preserves_timezone[+00:00]
+- tests/test_hidden_parse.py::test_flexible_time_preserves_timezone[+0530]
+- tests/test_hidden_parse.py::test_flexible_time_preserves_timezone[-0430]
+- tests/test_hidden_parse.py::test_flexible_time_without_timezone_stays_naive
+- tests/test_hidden_parse.py::test_hexadecimal
+- tests/test_hidden_parse.py::test_hyphen_inside_field_name
+- tests/test_hidden_parse.py::test_hyphen_inside_field_name_collision_handling
+- tests/test_hidden_parse.py::test_invalid_timezone_minutes[+01:60]
+- tests/test_hidden_parse.py::test_invalid_timezone_minutes[+160]
+- tests/test_hidden_parse.py::test_invalid_timezone_minutes[-0199]
+- tests/test_hidden_parse.py::test_invalid_timezone_minutes[-1:99]
+- tests/test_hidden_parse.py::test_left
+- tests/test_hidden_parse.py::test_letters
+- tests/test_hidden_parse.py::test_mixed
+- tests/test_hidden_parse.py::test_mixed_type_variant
+- tests/test_hidden_parse.py::test_mixed_types
+- tests/test_hidden_parse.py::test_multiline
+- tests/test_hidden_parse.py::test_named
+- tests/test_hidden_parse.py::test_named_aligned_typed
+- tests/test_hidden_parse.py::test_named_repeated
+- tests/test_hidden_parse.py::test_named_repeated_fail_value
+- tests/test_hidden_parse.py::test_named_repeated_type
+- tests/test_hidden_parse.py::test_named_repeated_type_fail_value
+- tests/test_hidden_parse.py::test_named_repeated_type_mismatch
+- tests/test_hidden_parse.py::test_named_typed
+- tests/test_hidden_parse.py::test_no_evaluate_result
+- tests/test_hidden_parse.py::test_no_match
+- tests/test_hidden_parse.py::test_nothing
+- tests/test_hidden_parse.py::test_numbers
+- tests/test_hidden_parse.py::test_parser_format
+- tests/test_hidden_parse.py::test_pipe
+- tests/test_hidden_parse.py::test_precision
+- tests/test_hidden_parse.py::test_question_mark
+- tests/test_hidden_parse.py::test_regular_expression
+- tests/test_hidden_parse.py::test_right
+- tests/test_hidden_parse.py::test_sign
+- tests/test_hidden_parse.py::test_spans
+- tests/test_hidden_parse.py::test_strftime_strptime_roundtrip
+- tests/test_hidden_parse.py::test_strftime_timezone_rejects_what_strptime_rejects[10:30+02]
+- tests/test_hidden_parse.py::test_strftime_timezone_rejects_what_strptime_rejects[10:30z]
+- tests/test_hidden_parse.py::test_strftime_timezone_rejects_what_strptime_rejects[10:30|0200]
+- tests/test_hidden_parse.py::test_strftime_timezone_zulu
+- tests/test_hidden_parse.py::test_two_datetimes
+- tests/test_hidden_parse.py::test_typed
+- tests/test_hidden_parse.py::test_typed_fail
+- tests/test_hidden_parse.py::test_unicode
+solution_summary: 'Make the %z pattern mirror strptime: a required + or - sign and required minutes, or
+  a case-sensitive Z'
+flaws: []
+fail_to_pass:
+- tests/test_hidden_parse.py::test_strftime_timezone_rejects_what_strptime_rejects[10:30+02]
+- tests/test_hidden_parse.py::test_strftime_timezone_rejects_what_strptime_rejects[10:30|0200]
+- tests/test_hidden_parse.py::test_strftime_timezone_zulu

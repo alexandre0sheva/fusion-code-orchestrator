@@ -1,0 +1,47 @@
+id: perf-intersect-sorted
+category: performance
+difficulty: medium
+split: dev
+tags:
+- python
+- performance
+- merging
+expected_pass:
+- tests.test_hidden.HiddenTests.test_each_value_once
+- tests.test_hidden.HiddenTests.test_one_side_empty
+- tests.test_hidden.HiddenTests.test_identical_lists
+- tests.test_hidden.HiddenTests.test_strings
+- tests.test_hidden.HiddenTests.test_negative_numbers
+- tests.test_hidden.HiddenTests.test_does_not_modify_the_inputs
+solution_summary: Walk both sorted lists with two pointers, skipping repeats of the
+  last match
+flaws:
+- summary: Collect matching values into a set by testing membership in the other list
+- summary: Two-pointer merge that keeps one copy per matching pair, so repeated values
+    appear repeatedly
+perf:
+  sizes:
+  - 1000
+  - 2000
+  - 4000
+  samples: 5
+  warmup: 1
+  max_ratio: 3.0
+  timeout_s: 60
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden tests pass
+- id: fast-enough
+  evidence: perf
+  description: close to the reference, same scaling
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+- id: performance
+  weight: 3
+  source: perf
+- id: code_quality
+  weight: 1
+  source: static

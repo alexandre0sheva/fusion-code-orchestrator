@@ -1,0 +1,16 @@
+# The v2 benchmark dataset (roadmap 0.3.0, Task 14): v1's tasks, three more frontend and three more
+# performance tasks, and real-repo coding tasks (upstream bugs with their fix and tests).
+# Provenance, licences and validity: evals/datasets/README.md.
+name: v2
+description: >-
+  At least 15 tasks in each of the seven categories, at least 30 of them real upstream bugs,
+  split into dev and test before any live run.
+release:  # what `fusion bench dataset validate evals/datasets/v2 --release` holds it to
+  min_total: 120
+  min_per_category: 25         # code review, debugging, architecture, planning
+  min_each_category: 15        # every category, executable ones included
+  min_coding: 30
+  min_artifact: 15             # frontend, and performance
+  min_per_split_artifact: 6
+  min_real_repo: 30
+  min_real_repo_per_split: 12

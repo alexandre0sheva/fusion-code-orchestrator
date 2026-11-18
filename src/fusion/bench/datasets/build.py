@@ -1,7 +1,7 @@
 """Building datasets: compile hand-reviewable authoring files into the JSONL a study loads, and
 (optionally, on a spend cap) have a model draft candidate tasks for a person to review.
 
-**Authoring format.** One YAML file per category in a directory (``evals/datasets/authoring/v1``),
+**Authoring format.** One YAML file per category in a directory (``evals/datasets/authoring/v2``),
 each a list of items. The compiler turns them into ``BenchTask`` JSONL with the right line numbers,
 so nobody counts lines by hand and the JSONL never drifts from the sources (a test compares them).
 
@@ -35,6 +35,7 @@ from fusion.config.layers import ConfigError
 
 __all__ = [
     "AUTHORING_DIR",
+    "DATASET_DIR",
     "CATEGORY_FILES",
     "AuthoringError",
     "Compiled",
@@ -44,7 +45,8 @@ __all__ = [
     "write_compiled",
 ]
 
-AUTHORING_DIR = Path("evals") / "datasets" / "authoring" / "v1"
+AUTHORING_DIR = Path("evals") / "datasets" / "authoring" / "v2"  # the current dataset's sources
+DATASET_DIR = Path("evals") / "datasets" / "v2"  # and where they compile to
 CATEGORY_FILES: dict[str, str] = {
     "code_review": "code_review.jsonl",
     "debugging": "debugging.jsonl",

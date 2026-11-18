@@ -1,0 +1,123 @@
+id: real-docstring-parser-union-returns
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-docstring-parser
+- regex
+- parsing
+source:
+  repo: docstring_parser
+  url: https://github.com/rr-/docstring_parser
+  commit: 8347d8fb347bd66e4bf5711d3df586357166944a
+  parent: 87dca55a7b5bdc854ad1d190f1c461015ba5f008
+  committed: '2026-06-30'
+  licence: MIT
+  upstream_files:
+  - docstring_parser/__init__.py
+  - docstring_parser/attrdoc.py
+  - docstring_parser/common.py
+  - docstring_parser/epydoc.py
+  - docstring_parser/google.py
+  - docstring_parser/numpydoc.py
+  - docstring_parser/parser.py
+  - docstring_parser/py.typed
+  - docstring_parser/rest.py
+  - docstring_parser/util.py
+  upstream_test: docstring_parser/tests/test_google.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_google.py::test_attributes
+- tests/test_hidden_google.py::test_broken_arguments
+- tests/test_hidden_google.py::test_broken_meta
+- tests/test_hidden_google.py::test_compose[-]
+- tests/test_hidden_google.py::test_compose[Short description-Short description]
+- tests/test_hidden_google.py::test_compose[Short description\nLong description-Short description\nLong
+  description]
+- tests/test_hidden_google.py::test_compose[Short description\n\nLong description-Short description\n\nLong
+  description]
+- tests/test_hidden_google.py::test_compose[\n            Short description\n            Long description\n            -Short
+  description\nLong description]
+- tests/test_hidden_google.py::test_compose[\n            Short description\n            Long description\n            Second
+  line\n            -Short description\nLong description\nSecond line]
+- tests/test_hidden_google.py::test_compose[\n            Short description\n            Meta:\n                asd\n            -Short
+  description\nMeta:\n    asd]
+- tests/test_hidden_google.py::test_compose[\n            Short description\n\n            Long description\n            -Short
+  description\n\nLong description]
+- tests/test_hidden_google.py::test_compose[\n            Short description\n\n            Long description\n            Second
+  line\n            -Short description\n\nLong description\nSecond line]
+- tests/test_hidden_google.py::test_compose[\n   Short description\n-Short description]
+- tests/test_hidden_google.py::test_compose[\n-]
+- tests/test_hidden_google.py::test_compose[\nShort description\n-Short description]
+- tests/test_hidden_google.py::test_compose[\nShort description\nLong description\n-Short description\nLong
+  description]
+- tests/test_hidden_google.py::test_compose[source13-Short description\nLong description\nMeta:\n    asd]
+- tests/test_hidden_google.py::test_compose[source14-Short description\nFirst line\n    Second line\nMeta:\n    asd]
+- tests/test_hidden_google.py::test_compose[source15-Short description\n\nFirst line\n    Second line\nMeta:\n    asd]
+- tests/test_hidden_google.py::test_compose[source16-Short description\n\nFirst line\n    Second line\n\nMeta:\n    asd]
+- tests/test_hidden_google.py::test_compose[source17-Short description\n\nMeta:\n    asd\n        1\n            2\n        3]
+- tests/test_hidden_google.py::test_compose[source18-Short description\n\nMeta1:\n    asd\n    1\n        2\n    3\nMeta2:\n    herp\nMeta3:\n    derp]
+- tests/test_hidden_google.py::test_compose[source19-expected19]
+- 'tests/test_hidden_google.py::test_compose[source20-Short description\nRaises:\n    ValueError: description]'
+- tests/test_hidden_google.py::test_compose_clean[source0-expected0]
+- tests/test_hidden_google.py::test_compose_expanded[source0-expected0]
+- tests/test_hidden_google.py::test_default_args
+- tests/test_hidden_google.py::test_empty_example
+- tests/test_hidden_google.py::test_examples
+- tests/test_hidden_google.py::test_google_parser_custom_sections
+- tests/test_hidden_google.py::test_google_parser_custom_sections_after
+- tests/test_hidden_google.py::test_google_parser_multi_line_parameter_type
+- tests/test_hidden_google.py::test_google_parser_unknown_section
+- tests/test_hidden_google.py::test_long_description[Short description\nLong description-Short description-Long
+  description-False]
+- tests/test_hidden_google.py::test_long_description[Short description\n\nLong description-Short description-Long
+  description-True]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n            Long
+  description\n            -Short description-Long description-False]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n            Long
+  description\n            Second line\n            -Short description-Long description\nSecond line-False]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n\n            Long
+  description\n            -Short description-Long description-True]
+- tests/test_hidden_google.py::test_long_description[\n            Short description\n\n            Long
+  description\n            Second line\n            -Short description-Long description\nSecond line-True]
+- tests/test_hidden_google.py::test_long_description[\nShort description\nLong description\n-Short description-Long
+  description-False]
+- tests/test_hidden_google.py::test_meta_newlines[\n            Args:\n                asd:\n            -None-None-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[\n            Short description\n            Args:\n                asd:\n            -Short
+  description-None-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[source1-Short description-Long description-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[source2-Short description-First line\n    Second line-False-False]
+- tests/test_hidden_google.py::test_meta_newlines[source3-Short description-First line\n    Second line-True-False]
+- tests/test_hidden_google.py::test_meta_newlines[source4-Short description-First line\n    Second line-True-True]
+- tests/test_hidden_google.py::test_meta_with_multiline_description
+- tests/test_hidden_google.py::test_multiple_meta
+- tests/test_hidden_google.py::test_params
+- tests/test_hidden_google.py::test_raises
+- tests/test_hidden_google.py::test_returns
+- tests/test_hidden_google.py::test_short_description[-None]
+- tests/test_hidden_google.py::test_short_description[No __doc__]
+- tests/test_hidden_google.py::test_short_description[Short description-Short description]
+- tests/test_hidden_google.py::test_short_description[\n   Short description\n-Short description]
+- tests/test_hidden_google.py::test_short_description[\n-None]
+- tests/test_hidden_google.py::test_short_description[\nShort description\n-Short description]
+- tests/test_hidden_google.py::test_unknown_meta
+solution_summary: Let the pattern that recognises a typed return line accept PEP 604 unions (word | word
+  ... followed by a colon)
+flaws: []
+fail_to_pass:
+- tests/test_hidden_google.py::test_returns

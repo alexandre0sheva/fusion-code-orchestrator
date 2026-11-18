@@ -32,10 +32,11 @@ from fusion.bench.scoring.calibration import (
     save_report,
     seeded_pair,
 )
-from fusion.bench.scoring.pairwise import eligible_judges, providers_of
+from fusion.bench.scoring.pairwise import eligible_judges, vendors_of
 from fusion.bench.spec import BenchTask, load_dataset
 from fusion.bench.spend import SpendCapError, SpendLedger
 from fusion.bench.virtual import run_virtual
+from fusion.config.catalog import load_catalog
 
 TASK = make_task("architecture", {"required_points": ["x"]})
 
@@ -113,7 +114,7 @@ async def test_the_majority_of_judges_decides_and_equal_votes_tie() -> None:
 async def test_judges_that_share_a_provider_with_an_arm_are_excluded() -> None:
     env, provider = score_env({"claude-haiku": prefers_good, "gpt-luna": prefers_good})
     result = await PairwiseJudge().compare(
-        TASK, "GOOD x", "poor y", env, exclude_providers={"anthropic"}
+        TASK, "GOOD x", "poor y", env, exclude_vendors={"anthropic"}
     )
     assert result.excluded == ["claude-haiku"]
     assert [v.judge for v in result.votes] == ["gpt-luna"]
@@ -122,10 +123,10 @@ async def test_judges_that_share_a_provider_with_an_arm_are_excluded() -> None:
 
 async def test_with_every_judge_excluded_the_comparison_refuses() -> None:
     env, _ = score_env({"claude-haiku": prefers_good})
-    with pytest.raises(NoEligibleJudgeError, match="shares a provider"):
-        await PairwiseJudge().compare(TASK, "a", "b", env, exclude_providers={"anthropic"})
+    with pytest.raises(NoEligibleJudgeError, match="shares a vendor"):
+        await PairwiseJudge().compare(TASK, "a", "b", env, exclude_vendors={"anthropic"})
     allowed = await PairwiseJudge(cross_family=False).compare(
-        TASK, "GOOD a", "b", env, exclude_providers={"anthropic"}
+        TASK, "GOOD a", "b", env, exclude_vendors={"anthropic"}
     )
     assert allowed.winner == "a"
     empty, _ = score_env({})
@@ -133,12 +134,23 @@ async def test_with_every_judge_excluded_the_comparison_refuses() -> None:
         await PairwiseJudge().compare(TASK, "a", "b", empty)
 
 
-def test_arm_providers_come_from_the_catalog() -> None:
+def test_arm_vendors_come_from_the_catalog() -> None:
     env, _ = score_env({"claude-haiku": prefers_good})
     models = env.gateway.models
-    assert providers_of(["claude-haiku", "gpt-luna", "unknown"], models) == {"anthropic", "openai"}
+    assert vendors_of(["claude-haiku", "gpt-luna", "unknown"], models) == {"anthropic", "openai"}
     usable, removed = eligible_judges(["claude-haiku", "gpt-luna"], models, {"openai"})
     assert (usable, removed) == (["claude-haiku"], ["gpt-luna"])
+
+
+def test_openrouter_models_are_judged_by_their_maker_not_by_the_api() -> None:
+    models = load_catalog().models
+    assert models["qwen-flash"].vendor == "qwen"
+    assert models["deepseek-flash"].vendor == "deepseek"
+    assert models["claude-haiku"].vendor == "anthropic"  # whichever route serves it
+    # An open-weight panel no longer excludes every OpenRouter judge, only its own vendors'.
+    arm = vendors_of(["deepseek-flash", "qwen-flash"], models)
+    usable, removed = eligible_judges(["mimo-flash", "qwen-flash"], models, arm)
+    assert (usable, removed) == (["mimo-flash"], ["qwen-flash"])
 
 
 async def test_judging_costs_are_the_scorers_and_reported() -> None:

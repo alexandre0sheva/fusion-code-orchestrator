@@ -1,0 +1,66 @@
+id: fe-settings-tabs
+category: frontend
+difficulty: medium
+split: test
+tags:
+- html
+- css
+- javascript
+- frontend
+- aria
+- tabs
+expected_pass:
+- tests.test_hidden.HiddenTests.test_tablist_has_an_accessible_name
+- tests.test_hidden.HiddenTests.test_three_tabs_are_buttons
+- tests.test_hidden.HiddenTests.test_each_tab_controls_a_panel_labelled_by_it
+- tests.test_hidden.HiddenTests.test_the_first_tab_is_selected_on_load
+- tests.test_hidden.HiddenTests.test_only_the_active_panel_is_shown
+- tests.test_hidden.HiddenTests.test_a_script_switches_tabs_with_the_arrow_keys
+- tests.test_hidden.HiddenTests.test_every_setting_is_a_labelled_control
+- tests.test_hidden.HiddenTests.test_focus_style_and_fluid_layout
+solution_summary: "ARIA tabs: button tabs in a named tablist, aria-selected and aria-controls, hidden inactive panels, arrow keys in app.js"
+flaws:
+- summary: "Clickable divs with inline onclick handlers and display toggling, no tab roles, an unlabelled select"
+- summary: "The full tabs pattern with pale grey inactive tab labels and a positive tabindex on the first tab"
+helpers:
+- sitecheck
+site:
+  entry: index.html
+  timeout_s: 20
+hard_gates:
+- id: tests-pass
+  evidence: tests
+  description: the hidden structure tests pass
+- id: works-offline
+  evidence: static
+  metric: external_requests
+  max: 0
+  description: nothing is fetched from another host
+- id: no-console-errors
+  evidence: console
+  description: the page logs no errors
+soft_criteria:
+- id: correctness
+  weight: 3
+  source: tests
+  description: the structure the brief asks for
+- id: accessibility
+  weight: 2
+  source: a11y
+  description: labels, names, contrast, headings, focus
+- id: responsiveness
+  weight: 1.5
+  source: visual
+  description: fits a 390px phone and a 1440px desktop
+- id: design_fidelity
+  weight: 2
+  source: judge
+  description: "a tab row with a clear active tab above one panel of labelled settings"
+- id: ux_polish
+  weight: 1
+  source: judge
+  description: "arrow keys move between tabs, the focused tab shows a ring, the tab row wraps on a phone"
+- id: code_quality
+  weight: 1
+  source: static
+  description: clean, minimal HTML, CSS and JS

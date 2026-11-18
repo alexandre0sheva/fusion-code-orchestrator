@@ -1,0 +1,90 @@
+id: real-funcy-once-per-unhashable
+category: coding
+provenance: real-repo
+difficulty: medium
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-funcy
+- decorators
+- hashing
+source:
+  repo: funcy
+  url: https://github.com/Suor/funcy
+  commit: c72bfae84581458ac17fa3da3d9b92a8962ba682
+  parent: 19e9617383cd48dfbc4074dab11df9157ece98b0
+  committed: '2026-09-09'
+  licence: BSD-3-Clause
+  upstream_files:
+  - funcy/__init__.py
+  - funcy/_inspect.py
+  - funcy/calc.py
+  - funcy/colls.py
+  - funcy/debug.py
+  - funcy/decorators.py
+  - funcy/flow.py
+  - funcy/funcmakers.py
+  - funcy/funcolls.py
+  - funcy/funcs.py
+  - funcy/objects.py
+  - funcy/primitives.py
+  - funcy/seqs.py
+  - funcy/strings.py
+  - funcy/tree.py
+  - funcy/types.py
+  upstream_test: tests/test_flow.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_flow.py::test_collecting
+- tests/test_hidden_flow.py::test_fallback
+- tests/test_hidden_flow.py::test_ignore
+- tests/test_hidden_flow.py::test_limit_error_rate
+- tests/test_hidden_flow.py::test_once
+- tests/test_hidden_flow.py::test_once_per
+- tests/test_hidden_flow.py::test_once_per_args
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[<lambda>-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[<lambda>-once_per_args]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[dict-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[dict-once_per_args]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[list-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[list-once_per_args]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[set-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[set-once_per_args]
+- tests/test_hidden_flow.py::test_post_processing
+- tests/test_hidden_flow.py::test_raiser
+- tests/test_hidden_flow.py::test_reraise
+- tests/test_hidden_flow.py::test_retry
+- tests/test_hidden_flow.py::test_retry_filter
+- tests/test_hidden_flow.py::test_retry_many_errors
+- tests/test_hidden_flow.py::test_retry_timeout
+- tests/test_hidden_flow.py::test_silent
+- tests/test_hidden_flow.py::test_suppress
+- tests/test_hidden_flow.py::test_throttle[int]
+- tests/test_hidden_flow.py::test_throttle[timedelta]
+- tests/test_hidden_flow.py::test_throttle_class
+- tests/test_hidden_flow.py::test_wrap_with
+solution_summary: Decide hashability by trying hash(values) and falling back to the list on TypeError,
+  since a tuple is always an instance of Hashable even when its items are not
+flaws: []
+fail_to_pass:
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[<lambda>-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[<lambda>-once_per_args]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[dict-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[dict-once_per_args]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[list-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[list-once_per_args]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[set-once]
+- tests/test_hidden_flow.py::test_once_per_unhashable_arguments[set-once_per_args]

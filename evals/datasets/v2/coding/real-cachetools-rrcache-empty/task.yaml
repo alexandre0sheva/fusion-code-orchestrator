@@ -1,0 +1,73 @@
+id: real-cachetools-rrcache-empty
+category: coding
+provenance: real-repo
+difficulty: easy
+split: dev
+tags:
+- python
+- bug-fix
+- real-repo-cachetools
+- caching
+- error-handling
+source:
+  repo: cachetools
+  url: https://github.com/tkem/cachetools
+  commit: bcf9e8176ebe16da58751fce971c98ffe045ede1
+  parent: eadb91cc9d54a57d6738386bc5c575ff3c7d22ec
+  committed: '2026-09-25'
+  licence: MIT
+  upstream_files:
+  - src/cachetools/__init__.py
+  - src/cachetools/_cached.py
+  - src/cachetools/_cachedmethod.py
+  - src/cachetools/func.py
+  - src/cachetools/keys.py
+  - src/cachetools/py.typed
+  upstream_test: tests/test_rr.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_rr.py::RRCacheTest::test_clear
+- tests/test_hidden_rr.py::RRCacheTest::test_clear_empty
+- tests/test_hidden_rr.py::RRCacheTest::test_clear_getsizeof
+- tests/test_hidden_rr.py::RRCacheTest::test_defaults
+- tests/test_hidden_rr.py::RRCacheTest::test_delete
+- tests/test_hidden_rr.py::RRCacheTest::test_getsizeof_negative
+- tests/test_hidden_rr.py::RRCacheTest::test_getsizeof_param
+- tests/test_hidden_rr.py::RRCacheTest::test_getsizeof_replace_grow
+- tests/test_hidden_rr.py::RRCacheTest::test_getsizeof_replace_same_size
+- tests/test_hidden_rr.py::RRCacheTest::test_getsizeof_replace_shrink
+- tests/test_hidden_rr.py::RRCacheTest::test_getsizeof_subclass
+- tests/test_hidden_rr.py::RRCacheTest::test_insert
+- tests/test_hidden_rr.py::RRCacheTest::test_maxsize_infinite
+- tests/test_hidden_rr.py::RRCacheTest::test_maxsize_negative
+- tests/test_hidden_rr.py::RRCacheTest::test_maxsize_zero
+- tests/test_hidden_rr.py::RRCacheTest::test_missing
+- tests/test_hidden_rr.py::RRCacheTest::test_missing_getsizeof
+- tests/test_hidden_rr.py::RRCacheTest::test_pickle
+- tests/test_hidden_rr.py::RRCacheTest::test_pickle_maxsize
+- tests/test_hidden_rr.py::RRCacheTest::test_pop
+- tests/test_hidden_rr.py::RRCacheTest::test_popitem
+- tests/test_hidden_rr.py::RRCacheTest::test_popitem_exception_context
+- tests/test_hidden_rr.py::RRCacheTest::test_rr
+- tests/test_hidden_rr.py::RRCacheTest::test_rr_bad_choice
+- tests/test_hidden_rr.py::RRCacheTest::test_rr_default_choice
+- tests/test_hidden_rr.py::RRCacheTest::test_rr_getsizeof
+- tests/test_hidden_rr.py::RRCacheTest::test_rr_popitem_empty_custom_choice
+- tests/test_hidden_rr.py::RRCacheTest::test_rr_update_existing
+- tests/test_hidden_rr.py::RRCacheTest::test_update
+solution_summary: Check whether the key list is empty and raise KeyError before calling the choice function
+flaws: []
+fail_to_pass:
+- tests/test_hidden_rr.py::RRCacheTest::test_rr_popitem_empty_custom_choice

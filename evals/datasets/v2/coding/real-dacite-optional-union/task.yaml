@@ -1,0 +1,146 @@
+id: real-dacite-optional-union
+category: coding
+provenance: real-repo
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-dacite
+- typing
+source:
+  repo: dacite
+  url: https://github.com/konradhalas/dacite
+  commit: 3e122e9b45f797ed99be7501518cdfc82bbd8178
+  parent: a440f2f0419d13f0fd0eb0f19f761984e455c4ba
+  committed: '2022-12-21'
+  licence: MIT
+  upstream_files:
+  - dacite/__init__.py
+  - dacite/config.py
+  - dacite/core.py
+  - dacite/data.py
+  - dacite/dataclasses.py
+  - dacite/exceptions.py
+  - dacite/py.typed
+  - dacite/types.py
+  upstream_test: tests/test_types.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_types.py::test_extract_generic
+- tests/test_hidden_types.py::test_extract_generic_collection
+- tests/test_hidden_types.py::test_extract_generic_with_defaults
+- tests/test_hidden_types.py::test_extract_init_var
+- tests/test_hidden_types.py::test_extract_new_type
+- tests/test_hidden_types.py::test_extract_optional
+- tests/test_hidden_types.py::test_extract_optional_with_optional_of_union
+- tests/test_hidden_types.py::test_extract_optional_with_wrong_type
+- tests/test_hidden_types.py::test_is_generic_collection_with_generic_collection
+- tests/test_hidden_types.py::test_is_generic_collection_with_non_generic_collection
+- tests/test_hidden_types.py::test_is_generic_collection_with_union
+- tests/test_hidden_types.py::test_is_generic_with_generic
+- tests/test_hidden_types.py::test_is_generic_with_non_generic
+- tests/test_hidden_types.py::test_is_init_var_with_init_var
+- tests/test_hidden_types.py::test_is_init_var_with_non_init_var
+- tests/test_hidden_types.py::test_is_instance_with_any_type
+- tests/test_hidden_types.py::test_is_instance_with_built_in_type_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_built_in_type_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_empty_tuple_and_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_empty_tuple_and_not_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_abstract_collection_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_collection_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_collection_and_not_matching_item_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_collection_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_collection_without_specified_inner_types_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_collection_without_specified_inner_types_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_mapping_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_mapping_and_not_matching_mapping_key_type
+- tests/test_hidden_types.py::test_is_instance_with_generic_mapping_and_not_matching_mapping_value_type
+- tests/test_hidden_types.py::test_is_instance_with_init_var_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_init_var_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_literal_and_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_literal_and_not_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_nested_generic_collection_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_nested_generic_collection_and_not_matching_item_type
+- tests/test_hidden_types.py::test_is_instance_with_new_type_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_new_type_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_not_supported_generic_types
+- tests/test_hidden_types.py::test_is_instance_with_numeric_tower
+- tests/test_hidden_types.py::test_is_instance_with_numeric_tower_and_new_type
+- tests/test_hidden_types.py::test_is_instance_with_numeric_tower_and_optional
+- tests/test_hidden_types.py::test_is_instance_with_optional_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_optional_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_optional_literal_and_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_optional_literal_and_none
+- tests/test_hidden_types.py::test_is_instance_with_optional_literal_and_not_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_tuple_and_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_tuple_and_not_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_tuple_and_wrong_length
+- tests/test_hidden_types.py::test_is_instance_with_union_and_matching_generic_collection
+- tests/test_hidden_types.py::test_is_instance_with_union_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_union_and_not_matching_generic_collection
+- tests/test_hidden_types.py::test_is_instance_with_union_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_variable_length_tuple_and_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_variable_length_tuple_and_not_matching_type
+- tests/test_hidden_types.py::test_is_instance_with_with_type_and_matching_value_type
+- tests/test_hidden_types.py::test_is_instance_with_with_type_and_not_matching_value_type
+- tests/test_hidden_types.py::test_is_literal_with_literal
+- tests/test_hidden_types.py::test_is_literal_with_non_literal
+- tests/test_hidden_types.py::test_is_new_type_with_new_type
+- tests/test_hidden_types.py::test_is_new_type_with_non_new_type
+- tests/test_hidden_types.py::test_is_optional_with_non_optional
+- tests/test_hidden_types.py::test_is_optional_with_non_optional_pep_604_union
+- tests/test_hidden_types.py::test_is_optional_with_optional
+- tests/test_hidden_types.py::test_is_optional_with_optional_of_union
+- tests/test_hidden_types.py::test_is_optional_with_pep_604_union
+- tests/test_hidden_types.py::test_is_set_frozentset_class
+- tests/test_hidden_types.py::test_is_set_frozentset_object
+- tests/test_hidden_types.py::test_is_set_int_class
+- tests/test_hidden_types.py::test_is_set_list_class
+- tests/test_hidden_types.py::test_is_set_set_class
+- tests/test_hidden_types.py::test_is_set_set_object
+- tests/test_hidden_types.py::test_is_set_union
+- tests/test_hidden_types.py::test_is_tuple_with_non_tuple
+- tests/test_hidden_types.py::test_is_tuple_with_not_parametrized_tuple
+- tests/test_hidden_types.py::test_is_tuple_with_tuple
+- tests/test_hidden_types.py::test_is_tuple_with_tuple_class_object
+- tests/test_hidden_types.py::test_is_tuple_with_tuple_generic
+- tests/test_hidden_types.py::test_is_tuple_with_variable_length_tuple
+- tests/test_hidden_types.py::test_is_tuple_with_variable_length_tuple_generic
+- tests/test_hidden_types.py::test_is_type_generic_with_matching_value
+- tests/test_hidden_types.py::test_is_type_generic_with_not_matching_value
+- tests/test_hidden_types.py::test_is_union_with_non_union
+- tests/test_hidden_types.py::test_is_union_with_pep_604_union
+- tests/test_hidden_types.py::test_is_union_with_union
+- tests/test_hidden_types.py::test_transform_value_with_cast_matching_base_class
+- tests/test_hidden_types.py::test_transform_value_with_cast_matching_type
+- tests/test_hidden_types.py::test_transform_value_with_generic_abstract_collection
+- tests/test_hidden_types.py::test_transform_value_with_generic_mapping
+- tests/test_hidden_types.py::test_transform_value_with_generic_sequence_and_matching_both_item_and_sequence
+- tests/test_hidden_types.py::test_transform_value_with_generic_sequence_and_matching_item
+- tests/test_hidden_types.py::test_transform_value_with_generic_sequence_and_matching_sequence
+- tests/test_hidden_types.py::test_transform_value_with_matching_type
+- tests/test_hidden_types.py::test_transform_value_with_nested_generic_mapping
+- tests/test_hidden_types.py::test_transform_value_with_nested_generic_sequence
+- tests/test_hidden_types.py::test_transform_value_with_new_type
+- tests/test_hidden_types.py::test_transform_value_with_optional_and_exact_matching_type
+- tests/test_hidden_types.py::test_transform_value_with_optional_and_none_value
+- tests/test_hidden_types.py::test_transform_value_with_optional_and_not_none_value
+- tests/test_hidden_types.py::test_transform_value_without_matching_generic_sequence
+- tests/test_hidden_types.py::test_transform_value_without_matching_type
+solution_summary: Return a Union of every non-None member of the optional instead of only the first one
+flaws: []
+fail_to_pass:
+- tests/test_hidden_types.py::test_extract_optional_with_optional_of_union

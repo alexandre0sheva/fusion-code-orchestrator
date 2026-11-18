@@ -1,0 +1,26 @@
+id: coding-config-merge-fix
+difficulty: medium
+split: test
+tags:
+- python
+- bug-fix
+- multi-file
+solution_summary: Deep-merge into a fresh structure with recursion, copy everything
+  taken from either side, and let None in the override delete a key
+flaws:
+- summary: Recurse into nested dicts but start from a shallow copy of base, so lists
+    and untouched sections are still shared
+- summary: Deep-copy and merge recursively but store None instead of removing the
+    key
+expected_pass:
+- tests.test_hidden.LoadConfigTests.test_defaults_are_loaded
+- tests.test_hidden.LoadConfigTests.test_defaults_are_never_changed
+- tests.test_hidden.LoadConfigTests.test_override_keeps_the_rest_of_the_section
+- tests.test_hidden.MergeTests.test_arguments_are_not_modified
+- tests.test_hidden.MergeTests.test_empty_inputs
+- tests.test_hidden.MergeTests.test_lists_are_replaced_not_merged
+- tests.test_hidden.MergeTests.test_nested_merge_keeps_siblings
+- tests.test_hidden.MergeTests.test_none_for_a_missing_key_adds_nothing
+- tests.test_hidden.MergeTests.test_none_removes_a_key_at_any_depth
+- tests.test_hidden.MergeTests.test_result_shares_nothing_with_the_inputs
+- tests.test_hidden.MergeTests.test_scalar_replaces_dict_and_dict_replaces_scalar

@@ -1,0 +1,52 @@
+id: real-parse-microseconds
+category: coding
+provenance: real-repo
+difficulty: easy
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-parse
+- datetime
+- floating-point
+source:
+  repo: parse
+  url: https://github.com/r1chardj0n3s/parse
+  commit: ba6803d57179a4b026c8ed51d970156653153b62
+  parent: 738447715c76f8ebc460b33320307faccafbc599
+  committed: '2026-02-18'
+  licence: MIT
+  upstream_files:
+  - parse.py
+  upstream_test: tests/test_bugs.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_bugs.py::test_dotted_type_conversion_pull_8
+- tests/test_hidden_bugs.py::test_match_trailing_newline
+- tests/test_hidden_bugs.py::test_microsecond_precision_issue162
+- tests/test_hidden_bugs.py::test_named_date_issue7
+- tests/test_hidden_bugs.py::test_pickling_bug_110
+- tests/test_hidden_bugs.py::test_pm_handling_issue57
+- tests/test_hidden_bugs.py::test_pm_overflow_issue16
+- tests/test_hidden_bugs.py::test_tz_compare_to_None
+- tests/test_hidden_bugs.py::test_unmatched_brace_doesnt_match
+- tests/test_hidden_bugs.py::test_unused_centered_alignment_bug
+- tests/test_hidden_bugs.py::test_unused_left_alignment_bug
+- tests/test_hidden_bugs.py::test_user_type_with_group_count_issue60
+solution_summary: Read the fractional seconds as digits padded or cut to six instead of going through
+  a float
+flaws: []
+fail_to_pass:
+- tests/test_hidden_bugs.py::test_microsecond_precision_issue162

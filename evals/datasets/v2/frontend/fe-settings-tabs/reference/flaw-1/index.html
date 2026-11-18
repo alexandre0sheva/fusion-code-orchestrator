@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container narrow">
+    <h1>Account settings</h1>
+    <div class="tabs">
+      <div class="tab active" onclick="show('profile')">Profile</div>
+      <div class="tab" onclick="show('notifications')">Notifications</div>
+      <div class="tab" onclick="show('privacy')">Privacy</div>
+    </div>
+    <section id="profile">
+      <h2>Profile</h2>
+      <label for="display-name">Display name</label>
+      <input id="display-name" name="display-name" type="text">
+      <label for="bio">Bio</label>
+      <textarea id="bio" name="bio" rows="4"></textarea>
+    </section>
+    <section id="notifications" style="display: none">
+      <h2>Notifications</h2>
+      <label class="check"><input type="checkbox" name="email-news"> Email me product news</label>
+      <label class="check"><input type="checkbox" name="email-mentions"> Email me when someone mentions me</label>
+    </section>
+    <section id="privacy" style="display: none">
+      <h2>Privacy</h2>
+      <select name="visibility">
+        <option>Everyone</option>
+        <option>Only me</option>
+      </select>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

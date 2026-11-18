@@ -1,0 +1,103 @@
+id: real-validators-cron-sunday-seven
+category: coding
+provenance: real-repo
+difficulty: easy
+split: test
+tags:
+- python
+- bug-fix
+- real-repo-validators
+- validation
+- cron
+source:
+  repo: validators
+  url: https://github.com/python-validators/validators
+  commit: aa5d83bf160caf84ca6c15ad8a1417cf350d3826
+  parent: a55c62ddd300f386d18993c3a9a356ed46199c4d
+  committed: '2026-06-24'
+  licence: MIT
+  upstream_files:
+  - src/validators/__init__.py
+  - src/validators/_extremes.py
+  - src/validators/_tld.txt
+  - src/validators/between.py
+  - src/validators/card.py
+  - src/validators/country.py
+  - src/validators/cron.py
+  - src/validators/crypto_addresses/__init__.py
+  - src/validators/crypto_addresses/bsc_address.py
+  - src/validators/crypto_addresses/btc_address.py
+  - src/validators/crypto_addresses/eth_address.py
+  - src/validators/crypto_addresses/trx_address.py
+  - src/validators/domain.py
+  - src/validators/email.py
+  - src/validators/encoding.py
+  - src/validators/finance.py
+  - src/validators/hashes.py
+  - src/validators/hostname.py
+  - src/validators/i18n/__init__.py
+  - src/validators/i18n/es.py
+  - src/validators/i18n/fi.py
+  - src/validators/i18n/fr.py
+  - src/validators/i18n/ind.py
+  - src/validators/i18n/ru.py
+  - src/validators/iban.py
+  - src/validators/ip_address.py
+  - src/validators/length.py
+  - src/validators/mac_address.py
+  - src/validators/py.typed
+  - src/validators/slug.py
+  - src/validators/uri.py
+  - src/validators/url.py
+  - src/validators/utils.py
+  - src/validators/uuid.py
+  upstream_test: tests/test_cron.py
+command:
+- python
+- -m
+- pytest
+- -q
+- -rA
+- --tb=line
+- -p
+- no:cacheprovider
+- -W
+- ignore::DeprecationWarning
+- tests
+timeout_s: 60
+expected_pass:
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[& * * & * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[*
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[* * * * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[* * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[*/15 0,6,12,24 * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[*/5 * *-1 * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[*/5 25 * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[0 */0 * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[0 12 * * 8]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[0 12 32 * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[10-* * * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[30-20 * * * *]
+- tests/test_hidden_cron.py::test_returns_failed_validation_on_invalid_cron[32-30 * * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[* * * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[*/15 0,6,12,18 * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[*/5 * * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[*/61 * * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 */3 * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 0 * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 0 * * 0,7]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 0 * * 0-7]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 0 1 1 *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 12 * * 0]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 12 * * 7]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 12 * 1-6 1-5]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 12 1 */2 *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 3-6 * * *]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[15 5 * * 1,3,5]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[30 3 * * 1-5]
+solution_summary: Allow day-of-week values up to 7 (both 0 and 7 mean Sunday)
+flaws: []
+fail_to_pass:
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 0 * * 0,7]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 0 * * 0-7]
+- tests/test_hidden_cron.py::test_returns_true_on_valid_cron[0 12 * * 7]

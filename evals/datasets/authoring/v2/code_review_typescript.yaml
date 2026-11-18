@@ -1,0 +1,460 @@
+# Code-review tasks, TypeScript. Format: see src/fusion/bench/datasets/build.py and evals/datasets/README.md.
+
+- id: cr-ts-01
+  category: code_review
+  language: typescript
+  difficulty: easy
+  split: dev
+  tags: [correctness]
+  title: Price helpers for the catalogue page
+  description: |
+    Adds `cheapest`, `priceRange` and `averagePrice` for the catalogue page's "from $X to $Y"
+    banner. Prices are plain numbers in dollars, such as 9.5, 10 and 100.
+  files:
+    - path: src/catalogue/prices.ts
+      diff: |
+        =export interface Product {
+        =  id: string;
+        =  name: string;
+        =  price: number;
+        =}
+        =
+        +export function cheapest(products: Product[], count: number): Product[] {
+        +  return [...products].sort((a, b) => a.price - b.price).slice(0, count);
+        +}
+        +
+        +export function priceRange(products: Product[]): [number, number] | null {
+        +  if (products.length === 0) return null;
+        +  const prices = products.map((p) => p.price);
+        +  prices.sort();«b1»
+        +  return [prices[0], prices[prices.length - 1]];
+        +}
+        +
+        +export function averagePrice(products: Product[]): number {
+        +  if (products.length === 0) return 0;
+        +  const total = products.reduce((sum, p) => sum + p.price, 0);
+        +  return total / products.length;
+        +}
+        +
+        +export function formatBanner(products: Product[]): string {
+        +  const range = priceRange(products);
+        +  if (range === null) return "No products";
+        +  const [low, high] = range;
+        +  return `From $${low.toFixed(2)} to $${high.toFixed(2)}`;
+        +}
+        +
+        +export function qualifiesForFreeShipping(basketTotal: number, threshold = 50): boolean {
+        +  return basketTotal >= threshold;
+        +}
+  bugs:
+    - id: b1
+      category: wrong-sort-comparator
+      severity: medium
+      description: "`Array.prototype.sort()` without a comparator sorts numbers as strings (`[10, 9, 100]` becomes `[10, 100, 9]`), so the first and last elements are not the minimum and maximum."
+      aliases: [default sort, lexicographic, sort comparator, sorts as strings, compare function]
+
+- id: cr-ts-02
+  category: code_review
+  language: typescript
+  difficulty: easy
+  split: test
+  tags: [async, api]
+  title: Create-order endpoint
+  description: |
+    Adds `POST /orders`. `db.orders.insert` and `db.audit.log` both return promises. The client
+    shows a confirmation page as soon as it receives the 201, and retries on any 5xx.
+  files:
+    - path: src/routes/orders.ts
+      diff: |
+        =import express from "express";
+        =import { randomUUID } from "node:crypto";
+        =import { db } from "../db";
+        =
+        =export const router = express.Router();
+        =
+        =interface Line {
+        =  price: number;
+        =  qty: number;
+        =}
+        =
+        +router.post("/orders", async (req, res) => {
+        +  const { customerId, items } = req.body as { customerId?: string; items?: Line[] };
+        +  if (!customerId || !Array.isArray(items) || items.length === 0) {
+        +    return res.status(400).json({ error: "customerId and items are required" });
+        +  }
+        +  const total = items.reduce((sum, line) => sum + line.price * line.qty, 0);
+        +  const order = { id: randomUUID(), customerId, items, total, status: "pending" };
+        +  db.orders.insert(order);«b1»
+        +  await db.audit.log("order.created", order.id);
+        +  res.status(201).json(order);
+        +});
+        +
+        +router.get("/orders/:id", async (req, res) => {
+        +  const order = await db.orders.findById(req.params.id);
+        +  if (!order) {
+        +    return res.status(404).json({ error: "not found" });
+        +  }
+        +  res.json(order);
+        +});
+  bugs:
+    - id: b1
+      category: missing-await
+      severity: high
+      description: "`db.orders.insert(order)` is not awaited, so the 201 can be sent before the order is stored, and a failed insert becomes an unhandled rejection that the client never sees."
+      aliases: [missing await, not awaited, floating promise, unhandled rejection, forgot await]
+
+- id: cr-ts-03
+  category: code_review
+  language: typescript
+  difficulty: medium
+  split: dev
+  tags: [react]
+  title: Debounced search box
+  description: |
+    Adds `useDebouncedValue` and a `SearchBox` that queries `/api/search` after the user stops
+    typing for 300 ms. The parent passes a memoised `onResults` (via `useCallback`).
+  files:
+    - path: src/components/SearchBox.tsx
+      diff: |
+        +import { useEffect, useState } from "react";
+        +
+        +export interface Result {
+        +  id: string;
+        +  title: string;
+        +}
+        +
+        +/** Returns `value`, but only after it has stopped changing for `delayMs`. */
+        +export function useDebouncedValue<T>(value: T, delayMs = 300): T {
+        +  const [debounced, setDebounced] = useState(value);
+        +
+        +  useEffect(() => {
+        +    const timer = setTimeout(() => setDebounced(value), delayMs);
+        +    return () => clearTimeout(timer);
+        +  }, [value, delayMs]);
+        +
+        +  return debounced;
+        +}
+        +
+        +export function SearchBox({ onResults }: { onResults: (results: Result[]) => void }) {
+        +  const [query, setQuery] = useState("");
+        +  const debounced = useDebouncedValue(query.trim(), 300);
+        +
+        +  useEffect(() => {
+        +    if (debounced.length < 2) {
+        +      onResults([]);
+        +      return;
+        +    }
+        +    const controller = new AbortController();
+        +    fetch(`/api/search?q=${encodeURIComponent(debounced)}`, { signal: controller.signal })
+        +      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+        +      .then((data: Result[]) => onResults(data))
+        +      .catch((err) => {
+        +        if (err.name !== "AbortError") console.error("search failed", err);
+        +      });
+        +    return () => controller.abort();
+        +  }, [debounced, onResults]);
+        +
+        +  return <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" />;
+        +}
+  bugs: []
+
+- id: cr-ts-04
+  category: code_review
+  language: typescript
+  difficulty: medium
+  split: dev
+  tags: [security, react]
+  title: Show user comments on the article page
+  description: |
+    Adds a `CommentList` component and a comment form to article pages. Comments are plain text
+    typed by anonymous readers; the API stores them exactly as submitted.
+  files:
+    - path: src/components/Comments.tsx
+      diff: |
+        =import { useState } from "react";
+        =
+        =export interface Comment {
+        =  id: string;
+        =  author: string;
+        =  body: string;
+        =  createdAt: string;
+        =}
+        =
+        +export function CommentList({ comments }: { comments: Comment[] }) {
+        +  if (comments.length === 0) {
+        +    return <p className="empty">No comments yet.</p>;
+        +  }
+        +  return (
+        +    <ul className="comments">
+        +      {comments.map((c) => (
+        +        <li key={c.id}>
+        +          <strong>{c.author}</strong>
+        +          <div className="body" dangerouslySetInnerHTML={{ __html: c.body }} />«b1»
+        +          <time dateTime={c.createdAt}>{new Date(c.createdAt).toLocaleString()}</time>
+        +        </li>
+        +      ))}
+        +    </ul>
+        +  );
+        +}
+        +
+        +export function CommentForm({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
+        +  const [body, setBody] = useState("");
+        +  const [busy, setBusy] = useState(false);
+        +
+        +  async function submit(event: React.FormEvent) {
+        +    event.preventDefault();
+        +    const trimmed = body.trim();
+        +    if (!trimmed || busy) return;
+        +    setBusy(true);
+        +    try {
+        +      await onSubmit(trimmed);
+        +      setBody("");
+        +    } finally {
+        +      setBusy(false);
+        +    }
+        +  }
+        +
+        +  return (
+        +    <form onSubmit={submit}>
+        +      <textarea value={body} onChange={(e) => setBody(e.target.value)} />
+        +      <button disabled={busy}>Post</button>
+        +    </form>
+        +  );
+        +}
+  bugs:
+    - id: b1
+      category: xss
+      severity: critical
+      description: User-supplied comment text is rendered with `dangerouslySetInnerHTML`, so a comment containing a script or an event handler attribute runs in every reader's browser.
+      aliases: [cross-site scripting, dangerouslySetInnerHTML, unsanitized html, script injection, injection]
+
+- id: cr-ts-05
+  category: code_review
+  language: typescript
+  difficulty: medium
+  split: test
+  tags: [react, correctness]
+  title: Countdown timer for the checkout hold
+  description: |
+    Adds a `Countdown` component that shows how long a held basket is reserved and calls
+    `onDone` when it reaches zero. It is mounted once per checkout with `seconds={600}`.
+  files:
+    - path: src/components/Countdown.tsx
+      diff: |
+        +import { useEffect, useState } from "react";
+        +
+        +function pad(n: number): string {
+        +  return n.toString().padStart(2, "0");
+        +}
+        +
+        +export function formatClock(totalSeconds: number): string {
+        +  const clamped = Math.max(0, totalSeconds);
+        +  return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
+        +}
+        +
+        +export function Countdown({ seconds, onDone }: { seconds: number; onDone: () => void }) {
+        +  const [left, setLeft] = useState(seconds);
+        +
+        +  useEffect(() => {
+        +    const id = setInterval(() => {
+        +      setLeft(left - 1);«b1»
+        +      if (left - 1 <= 0) {
+        +        clearInterval(id);
+        +        onDone();
+        +      }
+        +    }, 1000);
+        +    return () => clearInterval(id);
+        +  }, []);
+        +
+        +  return (
+        +    <div role="timer" aria-live="off">
+        +      Basket held for {formatClock(left)}
+        +    </div>
+        +  );
+        +}
+        +
+        +export function holdExpired(heldAt: number, now: number, holdSeconds: number): boolean {
+        +  return now - heldAt >= holdSeconds * 1000;
+        +}
+  bugs:
+    - id: b1
+      category: stale-closure
+      severity: high
+      description: "The interval callback closes over the initial `left` because the effect has an empty dependency array, so it always computes `seconds - 1`: the display sticks at 09:59 and `onDone` never fires."
+      aliases: [stale closure, stale state, dependency array, functional update, setLeft((l) => l - 1)]
+
+- id: cr-ts-06
+  category: code_review
+  language: typescript
+  difficulty: easy
+  split: dev
+  tags: [security, web]
+  title: OAuth login callback with return-to support
+  description: |
+    Adds `GET /login/callback`, which exchanges the OAuth code for a session and sends the user
+    back to the page they came from. The login page links to
+    `/login/callback?code=...&next=/account` and `next` is set from the page URL.
+  files:
+    - path: src/routes/login.ts
+      diff: |
+        =import express from "express";
+        =import { exchangeCode } from "../auth/oauth";
+        =
+        =export const router = express.Router();
+        =
+        =const SESSION_COOKIE = "sid";
+        =
+        +router.get("/login/callback", async (req, res) => {
+        +  const { code, next } = req.query;
+        +  if (typeof code !== "string" || code.length === 0) {
+        +    return res.status(400).send("missing code");
+        +  }
+        +  let session;
+        +  try {
+        +    session = await exchangeCode(code);
+        +  } catch {
+        +    return res.status(401).send("login failed");
+        +  }
+        +  res.cookie(SESSION_COOKIE, session.id, {
+        +    httpOnly: true,
+        +    secure: true,
+        +    sameSite: "lax",
+        +    maxAge: 24 * 60 * 60 * 1000,
+        +  });
+        +  res.redirect(String(next ?? "/"));«b1»
+        +});
+        +
+        +router.post("/logout", (_req, res) => {
+        +  res.clearCookie(SESSION_COOKIE);
+        +  res.status(204).end();
+        +});
+  bugs:
+    - id: b1
+      category: open-redirect
+      severity: high
+      description: "`next` comes straight from the query string, so a crafted link such as `?next=https://evil.example` redirects a freshly logged-in user to an attacker's site."
+      aliases: [open redirect, unvalidated redirect, redirect to arbitrary url, validate next, allow-list]
+
+- id: cr-ts-07
+  category: code_review
+  language: typescript
+  difficulty: hard
+  split: dev
+  tags: [async]
+  title: Bounded-concurrency map for the export job
+  description: |
+    Adds `mapLimit`, which runs an async function over a list with at most `limit` calls in
+    flight and returns results in input order. If any call rejects, no new calls start and the
+    returned promise rejects with that error.
+  files:
+    - path: src/util/concurrency.ts
+      diff: |
+        +export async function mapLimit<T, R>(
+        +  items: readonly T[],
+        +  limit: number,
+        +  fn: (item: T, index: number) => Promise<R>,
+        +): Promise<R[]> {
+        +  if (!Number.isInteger(limit) || limit < 1) {
+        +    throw new RangeError("limit must be a positive integer");
+        +  }
+        +  const results: R[] = new Array(items.length);
+        +  let next = 0;
+        +  let failed = false;
+        +
+        +  async function worker(): Promise<void> {
+        +    while (!failed) {
+        +      const index = next++;
+        +      if (index >= items.length) return;
+        +      try {
+        +        results[index] = await fn(items[index], index);
+        +      } catch (err) {
+        +        failed = true;
+        +        throw err;
+        +      }
+        +    }
+        +  }
+        +
+        +  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+        +  await Promise.all(workers);
+        +  return results;
+        +}
+        +
+        +export function chunk<T>(items: readonly T[], size: number): T[][] {
+        +  if (!Number.isInteger(size) || size < 1) {
+        +    throw new RangeError("size must be a positive integer");
+        +  }
+        +  const out: T[][] = [];
+        +  for (let i = 0; i < items.length; i += size) {
+        +    out.push(items.slice(i, i + size));
+        +  }
+        +  return out;
+        +}
+  bugs: []
+
+- id: cr-ts-08
+  category: code_review
+  language: typescript
+  difficulty: hard
+  split: test
+  tags: [security, async]
+  title: Tenant settings patches
+  description: |
+    Adds `deepMerge` and `applyPatches`, which apply a batch of JSON patches (parsed from the
+    request body with `JSON.parse`) to tenants' stored settings. The endpoint returns the number
+    of patches once they are applied, and the client treats that as confirmation.
+  files:
+    - path: src/settings/patch.ts
+      diff: |
+        =export interface Patch {
+        =  tenant: string;
+        =  changes: Record<string, unknown>;
+        =}
+        =
+        =export interface Store {
+        =  load(tenant: string): Promise<Record<string, any>>;
+        =  save(tenant: string, settings: Record<string, any>): Promise<void>;
+        =}
+        =
+        +export function deepMerge(
+        +  target: Record<string, any>,
+        +  source: Record<string, any>,
+        +): Record<string, any> {
+        +  for (const key of Object.keys(source)) {
+        +    const value = source[key];
+        +    if (value && typeof value === "object" && !Array.isArray(value)) {
+        +      target[key] = deepMerge(target[key] ?? {}, value);«b1»
+        +    } else {
+        +      target[key] = value;
+        +    }
+        +  }
+        +  return target;
+        +}
+        +
+        +export function validate(patch: Patch): string | null {
+        +  if (!patch.tenant) return "tenant is required";
+        +  if (Object.keys(patch.changes).length === 0) return "changes must not be empty";
+        +  return null;
+        +}
+        +
+        +export async function applyPatches(patches: Patch[], store: Store): Promise<number> {
+        +  const problems = patches.map(validate).filter((p): p is string => p !== null);
+        +  if (problems.length > 0) {
+        +    throw new Error(problems.join("; "));
+        +  }
+        +  patches.forEach(async (patch) => {«b2»
+        +    const current = await store.load(patch.tenant);
+        +    await store.save(patch.tenant, deepMerge(current, patch.changes));
+        +  });
+        +  return patches.length;
+        +}
+  bugs:
+    - id: b1
+      category: prototype-pollution
+      severity: critical
+      description: "`deepMerge` recurses into the key `__proto__` (an own key of a `JSON.parse` result), so a patch like `{\"__proto__\": {\"isAdmin\": true}}` writes onto `Object.prototype` and affects every object in the process."
+      aliases: [prototype pollution, __proto__, constructor.prototype, hasOwnProperty, Object.create(null)]
+    - id: b2
+      category: async-foreach
+      severity: high
+      description: "`forEach` ignores the promises returned by its async callback, so `applyPatches` returns before any patch is saved, failures are unhandled rejections, and two patches for one tenant race on load and save."
+      aliases: [forEach async, not awaited, Promise.all, for...of, floating promises, fire and forget]
