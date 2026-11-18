@@ -143,7 +143,26 @@ def estimate_job(
     scorer: Scorer,
     judge_models: Sequence[str] = (),
 ) -> JobEstimate:
-    """Forecast one run of ``strategy`` on ``task`` from the catalog, scoring included."""
+    """Forecast one run of ``strategy`` on ``task`` from the catalog, scoring included.
+
+    ``strategy: auto`` is forecast from the rung the task's difficulty starts at: the expected
+    cost adds the higher rungs at ``ESCALATION_SHARE``, the worst case adds all of them.
+    """
+    if strategy.kind == "auto":
+        rungs = routing.ladder(strategy, task.task_type, task.prompt)
+        found = [
+            estimate_job(
+                task,
+                rung,
+                routing=routing,
+                registry=registry,
+                pricing=pricing,
+                scorer=scorer,
+                judge_models=judge_models,
+            )
+            for rung in rungs
+        ]
+        return _ladder_estimate(found)
     decision = routing.router.route(
         strategy=strategy, explicit_type=task.task_type.value, content=task.prompt
     )
@@ -190,6 +209,27 @@ def estimate_job(
         eval_usd=eval_usd,
         seconds=seconds,
         unpriced=unpriced,
+    )
+
+
+def _ladder_estimate(rungs: list[JobEstimate]) -> JobEstimate:
+    """One estimate for a climb: the start rung, plus the higher rungs at ``ESCALATION_SHARE``
+    (expected) or in full (worst case). Scoring is counted once."""
+    first, higher = rungs[0], rungs[1:]
+    scoring = first.eval_usd
+
+    def model_usd(values: list[float]) -> float:
+        return sum(v - scoring for v in values)
+
+    return JobEstimate(
+        expected_usd=first.expected_usd
+        + ESCALATION_SHARE * model_usd([r.expected_usd for r in higher]),
+        worst_usd=model_usd([r.worst_usd for r in rungs]) + scoring,
+        low_usd=first.low_usd,
+        high_usd=model_usd([r.high_usd for r in rungs]) + scoring,
+        eval_usd=scoring,
+        seconds=first.seconds + ESCALATION_SHARE * sum(r.seconds for r in higher),
+        unpriced=tuple(dict.fromkeys(m for r in rungs for m in r.unpriced)),
     )
 
 

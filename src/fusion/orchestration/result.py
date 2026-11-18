@@ -10,6 +10,7 @@ from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelRespon
 from fusion.orchestration.budget_guard import BudgetReport
 from fusion.orchestration.cascade import CascadeOutcome
 from fusion.orchestration.claims import AgreementReport, ClaimCluster
+from fusion.orchestration.escalate import EscalationOutcome
 from fusion.orchestration.fanout import FanoutResult
 from fusion.orchestration.ledger import RunLedger, TaskMetrics
 from fusion.orchestration.refine import RefinementResult
@@ -67,6 +68,8 @@ class PipelineResult:
     claims: list[ClaimCluster] = field(default_factory=list)
     agreement: AgreementReport | None = None
     cascade: CascadeOutcome | None = None
+    # strategy auto: the difficulty estimate, every rung tried and which one answered
+    escalation: EscalationOutcome | None = None
     budget: BudgetReport | None = None
     cache_hit: bool = False  # served from the response cache: no model was called
     # Why the run stopped early: insufficient_context, quorum, budget or timeout.

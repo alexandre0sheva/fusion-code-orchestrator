@@ -293,8 +293,9 @@ Three catalog settings tune provider calls (all in `src/fusion/config/catalog.ya
 
 A **strategy** says who answers a task and how the answers are combined. Every tool accepts an
 optional `strategy` (a name from `strategies.yaml`); `fusion strategies list` prints them. Without
-one, the legacy `budget` argument picks the strategy through `budget_strategies`, and the response's
-`routing.strategy` reports which one ran. Switching strategy is a config or argument change, never a
+one, the legacy `budget` argument picks the strategy through `budget_strategies` (the default,
+`medium`, is [`auto`](#difficulty-routing-strategy-auto)), and the response's `routing.strategy`
+reports which one ran. Switching strategy is a config or argument change, never a
 code change. A strategy lists each model alias once unless it uses [lenses](#lenses), which is
 how a self-mixture is built now: the 0.2.0 temperature-sample aliases `claude-haiku-s2` and friends
 are gone, since Claude's API no longer accepts sampling parameters.
@@ -307,7 +308,7 @@ in `strategies.yaml`): `panel-cheap` runs `panel-nano`, `solo-cheap` runs `solo-
 ```yaml
 strategies:
   my-panel:
-    kind: panel                  # solo | panel | cascade
+    kind: panel                  # solo | panel | cascade | auto (see Difficulty routing)
     members:                     # catalog aliases; solo has exactly one
       - model: claude-haiku
       - model: gpt-luna
@@ -334,6 +335,7 @@ strategies:
       use: vote                  # vote | best_of | union builds the answer instead
       escalate_on_high_risk: true  # a high-risk task is always synthesized
     speed: balanced              # balanced | fast (rank members by measured speed)
+    self_check: false            # true: each member checks its answer, reports an honest confidence
   my-cascade:
     kind: cascade                # cheapest members first, the rest only if they disagree
     members: [{model: claude-haiku}, {model: gpt-luna}, {model: gemini-flash}]
@@ -350,8 +352,11 @@ budget_strategies:
 
 | Strategy | Runs | Calls per task |
 |----------|------|----------------|
+| `auto` (default) | estimates the request's difficulty and climbs the [escalation ladder](#difficulty-routing-strategy-auto) from the matching rung: Haiku 5.5 with a self-check, `panel-nano-auto`, `panel-mid`; never the frontier rung | 1 to 9 |
+| `auto-frontier` | `auto` that may also end at the frontier rung (`solo-opus`) | 1 to 9 |
 | `solo-<model>` | one model alone: `solo-haiku`, `solo-sonnet`, `solo-opus`, `solo-fable`, `solo-luna`, `solo-terra`, `solo-sol`, `solo-astra`, `solo-flash`, `solo-hydrogen`, `solo-carbon`, `solo-argon` | 1 |
-| `panel-duo` (default) | Claude Haiku 5.5 + GPT-6 Luna; when they agree (0.6) their vote is the answer, otherwise Haiku 5.5 merges them; a failing model is replaced by another of its tier | 2, or 2 + 1 |
+| `solo-haiku-check` | Haiku 5.5 alone, asked for a self-check and an honest confidence (rung 0 of `auto`) | 1 |
+| `panel-duo` (the panel default before `auto`) | Claude Haiku 5.5 + GPT-6 Luna; when they agree (0.6) their vote is the answer, otherwise Haiku 5.5 merges them; a failing model is replaced by another of its tier | 2, or 2 + 1 |
 | `panel-nano` | Haiku 5.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 5.5 | 3 + 1 |
 | `panel-mid` | GPT-6.1 Terra + Gemini 4 Hydrogen + Claude Sonnet 5.5, merged by Sonnet 5.5 | 3 + 1 |
 | `panel-open` | open-weight models through OpenRouter: DeepSeek V4.1 Flash + MiniMax M3.1 Flash + Qwen 3.8 Flash + GLM-5.3, merged by Haiku 5.5; needs `OPENROUTER_API_KEY`; a 0.3.0 ablation candidate, not a default | 4 + 1 |
@@ -561,7 +566,7 @@ Budgets are aliases kept for compatibility:
 | Budget | Strategy |
 |--------|----------|
 | `low` | `solo-haiku` |
-| `medium` | `panel-duo` |
+| `medium` | `auto` |
 | `high` | `panel-refine` |
 | `local_only` | `panel-local` |
 
@@ -573,6 +578,58 @@ that every strategy names catalog models.
 The panel is intentionally cheap; a stronger aggregator (`panel-cheap-strong-synth`) is the first
 lever when quality matters more than cost. Panel members receive the role prompts in
 `src/fusion/orchestration/prompts.py`.
+
+### Difficulty routing (strategy auto)
+
+`strategy: auto` (`kind: auto`, no members) estimates how hard a request is and starts it on a
+rung of the escalation ladder; it asks a higher rung only when the answer shows it is not enough,
+and a higher rung reuses every answer the lower ones produced (a model is not asked twice). How it
+works is in [ARCHITECTURE.md](ARCHITECTURE.md#difficulty-routing-and-the-escalation-ladder); the
+settings are the `routing` section of `routing_policies.yaml`. Every threshold is provisional until
+the 0.3.0 study calibrates it on the dev split.
+
+```yaml
+routing:
+  difficulty:
+    weights: {task: 0.15, size: 0.15, files: 0.1, hunks: 0.1, languages: 0.05,
+              stack_depth: 0.1, error_type: 0.1, risk: 0.2, question: 0.05}
+    task_base: {default: 0.1, answer_eval: 0.3, code_review: 0.4, debugging: 0.5,
+                implementation_plan: 0.5, architecture_decision: 0.7}
+    scales: {size_tokens: 8000, files: 5, hunks: 10, languages: 3, stack_frames: 15}
+    easy_below: 0.25             # score below this: easy
+    hard_from: 0.45              # score from this on: hard; normal in between
+    ambiguity_margin: 0.05       # this close to a threshold: one classifier call decides
+    classifier_model: claude-haiku   # null: never call, keep the signals' level
+    classifier_max_tokens: 150
+  escalation:
+    rungs:                       # cheapest first; each names a solo or panel strategy
+      - {name: nano-solo, strategy: solo-haiku-check}
+      - {name: nano-panel, strategy: panel-nano-auto}
+      - {name: mid-panel, strategy: panel-mid}
+      - {name: frontier, strategy: solo-opus, frontier: true}
+    start_by_level: {easy: 0, normal: 1, hard: 2}
+    allow_frontier: false        # frontier rungs run only when true
+    max_rungs: 3                 # rungs one run may try, the start rung included
+    triggers:
+      self_confidence_below: 0.7 # a single model's own confidence
+      agreement_below: 0.5       # tau, for panels without lenses or approaches
+```
+
+- **Opting into the frontier rung:** `strategy: auto-frontier` for one call, or
+  `routing.escalation.allow_frontier: true` for every `auto` run. A `kind: auto` strategy may set
+  `escalation: {allow_frontier: true, max_rungs: 4}` for itself; everything else about answering
+  (members, aggregator, rounds, judge, caps other than `max_cost_usd`/`max_latency_s`) belongs to
+  the rungs' strategies and is refused on an `auto` strategy.
+- **Caps and time:** `max_cost_usd` (the call's or the strategy's) is checked before every rung,
+  and so is the soft time limit (`FUSION_TOOL_SOFT_TIMEOUT_S`). When the next rung would pass
+  either, or `max_rungs` is reached, or the next rung is a frontier rung that is not allowed, the
+  run returns the best answer so far with a warning that says why.
+- **What you see:** the response's `escalation` field and its **Route** section say which rung
+  answered and why (`answered at rung 1 (nano-panel): panel agreed (0.86)`); `detail: full` and
+  `fusion://runs/{run_id}` list every rung tried with its cost, time and trigger.
+- **Environment overrides** work as for any setting, for example
+  `FUSION__ROUTING__ESCALATION__ALLOW_FRONTIER=true` or
+  `FUSION__ROUTING__DIFFICULTY__CLASSIFIER_MODEL=gpt-luna`.
 
 ### Upgrading from v0.1.0
 

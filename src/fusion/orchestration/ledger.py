@@ -21,8 +21,17 @@ from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
 from fusion.security.redaction import redact_error, redact_request
 from fusion.telemetry.cost import ModelUsage, PricingRegistry
 
+# "route": the difficulty classifier call of strategy auto, made before any panel call.
 StageName = Literal[
-    "panel", "refine", "judge", "synthesis", "shadow_baseline", "shadow_judge", "solo", "eval"
+    "route",
+    "panel",
+    "refine",
+    "judge",
+    "synthesis",
+    "shadow_baseline",
+    "shadow_judge",
+    "solo",
+    "eval",
 ]
 CallStatus = Literal["success", "failed", "timeout", "cancelled", "missing_provider"]
 
@@ -182,6 +191,7 @@ class RunLedger:
         """Records in stage order, then panel order: stable however the calls interleaved."""
         rank = {name: i for i, name in enumerate(model_order or [])}
         stage_rank = {
+            "route": -1,
             "panel": 0,
             "solo": 0,
             "refine": 1,

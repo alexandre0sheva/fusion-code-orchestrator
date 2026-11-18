@@ -1,7 +1,10 @@
 """Pipeline stages. Each reads and writes only ``RunState``; nothing else is shared.
 
-Order: Redact -> Route -> ContextEval -> Budget -> ShadowStart -> Panel -> Refine -> Claims ->
-(Judge | Aggregate) -> FinalEval -> Shadow -> Persist. Judge and Aggregate run at the same time
+Order: Redact -> Difficulty -> Route -> ContextEval -> Budget -> ShadowStart -> Panel -> Refine ->
+Claims -> Escalate -> (Judge | Aggregate) -> FinalEval -> Shadow -> Persist. Difficulty and
+Escalate act only for ``strategy: auto`` (``escalate.py``): they pick the start rung of the ladder
+and, after the claims, check, aggregate and climb; the aggregation that follows then has nothing
+left to do. Judge and Aggregate run at the same time
 unless the strategy's synthesis needs the judge's scores; the shadow baseline runs alongside the
 panel and is collected by Shadow. A stage may halt the run (``state.halt``); every later stage is
 then skipped except those marked ``always_runs`` (Persist), which still stores a diagnostic
@@ -55,8 +58,9 @@ from fusion.orchestration.claims import (
     parse_panel_answer,
     render_panel_answer,
 )
-from fusion.orchestration.context import Halt, PipelineDeps, RunState
+from fusion.orchestration.context import Carried, Halt, PipelineDeps, RunState
 from fusion.orchestration.disagreement import analyze_disagreement
+from fusion.orchestration.escalate import DifficultyStage, EscalateStage
 from fusion.orchestration.fanout import FanoutResult, fanout_to_panel
 from fusion.orchestration.judge import judge_panel_responses
 from fusion.orchestration.ledger import CallRecord
@@ -95,8 +99,9 @@ from fusion.telemetry.traces import OrchestrationTrace, StepTrace
 
 class Stage(Protocol):
     """A pipeline step. Optional class attributes (read with ``getattr``): ``label`` is the
-    progress message sent when the stage starts, and ``soft_limited`` puts the stage under the
-    soft time limit (see ``SoftTimeoutRecovery``)."""
+    progress message sent when the stage starts, ``soft_limited`` puts the stage under the
+    soft time limit (see ``SoftTimeoutRecovery``), and ``skips(state)`` says the stage has
+    nothing to do for this run (it is then not started and sends no progress message)."""
 
     always_runs: bool
 
@@ -444,6 +449,8 @@ class PanelStage(_Stage):
             state.lenses = self._assign(state)
         elif strategy.approaches == "auto":
             state.approaches = self._assign_approaches(state)
+        if state.carried is not None:
+            return await self._with_carried(state, state.carried)
         return self._accept(state, await self._fan(state, state.panel_models))
 
     def _assign(self, state: RunState) -> dict[str, Lens]:
@@ -506,9 +513,11 @@ class PanelStage(_Stage):
             members={m.model: m for m in state.members},
             min_successful=min_successful,
             label=label,
-            avoid=state.panel_models,
+            # a hedge or fallback never asks a model that already answered on a lower rung
+            avoid=[*(state.carried.models if state.carried else []), *state.panel_models],
             lenses=state.lenses,
             approaches=state.approaches,
+            self_check=state.strategy.self_check if state.strategy else False,
         )
 
     def _fanout_config(self, state: RunState) -> FanoutConfig:
@@ -541,6 +550,34 @@ class PanelStage(_Stage):
         }
         if not fanout.quorum_met:
             self._halt_without_quorum(state)
+        return state
+
+    async def _with_carried(self, state: RunState, carried: Carried) -> RunState:
+        """A higher rung of the escalation ladder: ask only its new members, and add the answers
+        the lower rungs already produced. The rung needs at least one new answer of its own."""
+        asked = list(state.panel_models)
+        fresh = await self._fan(state, asked) if asked else FanoutResult()
+        merged = merge_fanouts(
+            carried.fanout,
+            fresh,
+            order=[*carried.models, *asked],
+            min_successful=self.deps.routing.budgets.fanout.min_successful_responses,
+        )
+        if asked and not fresh.successful:
+            merged = merged.model_copy(
+                update={
+                    "quorum_met": False,
+                    "warnings": [*merged.warnings, "None of this rung's new models answered."],
+                }
+            )
+        state.members = [*carried.members, *state.members]
+        state.panel_models = [m.model for m in state.members]
+        if state.trace is not None:
+            state.trace.panel_models = state.panel_models
+        state = self._accept(state, merged)
+        state.successful = [*carried.successful, *fresh.successful]  # the latest (refined) answers
+        state.answer_lenses = {**carried.answer_lenses, **state.answer_lenses}
+        state.answer_approaches = {**carried.answer_approaches, **state.answer_approaches}
         return state
 
     # -- cascade ----------------------------------------------------------------------------
@@ -1092,12 +1129,15 @@ class AggregateStage(_Stage):
             "picked": picked,
             "candidates": n,
             "added_points": len(result.missing),
+            "acceptable": result.acceptable,
         }
         if state.routing is not None:
             first = result.why.splitlines()[0] if result.why else "no reason given"
             extra = f", plus {len(result.missing)} point(s)" if result.missing else ""
+            verdict = "" if result.acceptable else " (none acceptable; the least bad one)"
             state.routing.reasons.append(
-                f"select picked {picked}'s answer ({result.choice_id} of {n}{extra}): {first}"
+                f"select picked {picked}'s answer ({result.choice_id} of {n}{extra}){verdict}: "
+                f"{first}"
             )
 
     def _select_fallback(
@@ -1162,6 +1202,7 @@ class AggregateStage(_Stage):
             state.warnings.append("Verified: no answer contained a patch; returned the best answer")
             return AggregateStage._best_of(state, readable)
         response, picked, scores = verified
+        state.disagreement["verified"] = dict(scores)
         if state.routing is not None:
             shown = ", ".join(
                 f"{m} {'?' if v is None else f'{v:.2f}'}" for m, v in scores.items()
@@ -1452,6 +1493,14 @@ class PersistStage(_Stage):
 
     def _build_result(self, state: RunState) -> PipelineResult:
         assert state.trace is not None and state.routing is not None
+        climb = state.climb
+        if climb is not None and not climb.outcome.summary:  # the soft time limit cut it short
+            rung = climb.attempt
+            climb.outcome.summary = (
+                f"stopped at rung {rung.rung} ({rung.name}) by the soft time limit; the answer is "
+                "the panel's digest"
+            )
+            state.routing.escalation = climb.outcome.summary
         assert state.context_eval is not None and state.final_eval is not None
         total = state.ledger.total_cost()
         usage = build_usage_summary(
@@ -1495,6 +1544,7 @@ class PersistStage(_Stage):
             claims=state.clusters,
             agreement=state.agreement,
             cascade=state.cascade,
+            escalation=state.climb.outcome if state.climb else None,
             budget=state.budget_report(),
             halt_reason=state.halt.reason if state.halt else None,
             partial=state.partial,
@@ -1628,13 +1678,20 @@ class ConcurrentStages:
     soft_limited = True
 
     def __init__(
-        self, *stages: Stage, sequential_if: Callable[[RunState], bool] = lambda _state: False
+        self,
+        *stages: Stage,
+        sequential_if: Callable[[RunState], bool] = lambda _state: False,
+        skip_if: Callable[[RunState], bool] = lambda _state: False,
     ) -> None:
         self.stages = stages
         self._sequential_if = sequential_if
+        self._skip_if = skip_if
+
+    def skips(self, state: RunState) -> bool:
+        return state.halted or self._skip_if(state)
 
     async def run(self, state: RunState) -> RunState:
-        if state.halted:
+        if self.skips(state):
             return state
         if self._sequential_if(state):
             for stage in self.stages:
@@ -1655,9 +1712,24 @@ def _judge_feeds_synthesis(state: RunState) -> bool:
     return state.strategy is not None and state.strategy.judge_feeds_synthesis
 
 
+def _aggregated(state: RunState) -> bool:
+    """The escalation ladder already judged and aggregated the rung that answered."""
+    return state.synth_response is not None
+
+
+def _judge_and_aggregate(deps: PipelineDeps) -> ConcurrentStages:
+    return ConcurrentStages(
+        JudgeStage(deps),
+        AggregateStage(deps),
+        sequential_if=_judge_feeds_synthesis,
+        skip_if=_aggregated,
+    )
+
+
 def default_stages(deps: PipelineDeps) -> list[Stage]:
     return [
         RedactStage(deps),
+        DifficultyStage(deps),
         RouteStage(deps),
         ContextEvalStage(deps),
         BudgetStage(deps),
@@ -1665,9 +1737,15 @@ def default_stages(deps: PipelineDeps) -> list[Stage]:
         PanelStage(deps),
         RefineStage(deps),
         ClaimsStage(deps),
-        ConcurrentStages(
-            JudgeStage(deps), AggregateStage(deps), sequential_if=_judge_feeds_synthesis
+        EscalateStage(
+            deps,
+            route=RouteStage(deps),
+            panel=PanelStage(deps),
+            refine=RefineStage(deps),
+            claims=ClaimsStage(deps),
+            aggregate=_judge_and_aggregate(deps),
         ),
+        _judge_and_aggregate(deps),
         FinalEvalStage(deps),
         ShadowStage(deps),
         PersistStage(deps),

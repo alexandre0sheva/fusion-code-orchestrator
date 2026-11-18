@@ -430,7 +430,9 @@ async def test_the_shadow_baseline_runs_alongside_the_panel_not_after_it(tmp_pat
 
 
 async def test_shadow_calls_are_not_part_of_the_critical_path(tmp_path: Path) -> None:
-    result = await _run_gated(_pipe(tmp_path, GatedShadow(0.02)), _ctx(shadow_baseline=True))
+    result = await _run_gated(
+        _pipe(tmp_path, GatedShadow(0.02)), _ctx(strategy="panel-nano", shadow_baseline=True)
+    )
     metrics = result.task_metrics
     assert metrics is not None
     shadow = _spans(result, "shadow_baseline")

@@ -62,3 +62,8 @@ arms:
   - {name: select-no-approaches, strategy: panel-nano-select, overrides: {approaches: off}}
   - {name: auto, strategy: panel-nano-auto}             # union on review/debug, select+patch else
   - {name: self-luna-select, strategy: panel-luna-approaches}
+  # --- difficulty routing and the escalation ladder (roadmap Task 9) ---
+  # auto-route is the default strategy; its thresholds (routing.difficulty, routing.escalation)
+  # are calibrated on this split. auto-route-frontier also allows rung 3 (Opus 5.5 alone).
+  - {name: auto-route, strategy: auto}
+  - {name: auto-route-frontier, strategy: auto-frontier}

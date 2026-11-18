@@ -19,7 +19,8 @@ from fusion import __version__
 from fusion.bench.arms import arm_book
 from fusion.bench.spec import BenchConfig, BenchTask, load_dataset, select_tasks, task_hash
 from fusion.config.catalog import ModelEntry
-from fusion.orchestration.strategy import StrategyBook, load_strategy_book
+from fusion.config.loader import load_routing_policies
+from fusion.orchestration.strategy import Strategy, StrategyBook, load_strategy_book
 
 __all__ = [
     "META_FILE",
@@ -100,6 +101,16 @@ def _model_meta(alias: str, entry: ModelEntry) -> ModelMeta:
     )
 
 
+def _arm_members(strategy: Strategy, book: StrategyBook) -> list[str]:
+    """The arm's members; for strategy auto, every model of every rung it may climb."""
+    if strategy.kind != "auto":
+        return [m.model for m in strategy.members]
+    ladder = load_routing_policies().routing.escalation
+    policy = strategy.escalation.applied_to(ladder) if strategy.escalation else ladder
+    rungs = [book.get(policy.rungs[i].strategy) for i in policy.climbable()]
+    return list(dict.fromkeys(alias for rung in rungs for alias in rung.models))
+
+
 def build_meta(
     cfg: BenchConfig,
     tasks: list[BenchTask],
@@ -113,20 +124,21 @@ def build_meta(
     used: list[str] = []
     for arm in cfg.arms:
         strategy = book.get(arm.name)
+        members = _arm_members(strategy, book)
         arms.append(
             ArmMeta(
                 name=arm.name,
                 strategy=arm.strategy,
                 overrides=dict(arm.overrides),
                 kind=strategy.kind,
-                members=[m.model for m in strategy.members],
+                members=members,
                 aggregator=strategy.aggregator,
                 aggregator_model=strategy.aggregator_model,
                 rounds=strategy.rounds,
                 judge=strategy.judge,
             )
         )
-        used += [m.model for m in strategy.members]
+        used += members
         if strategy.aggregator_model:
             used.append(strategy.aggregator_model)
     used += cfg.judge_models

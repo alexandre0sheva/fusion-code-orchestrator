@@ -10,7 +10,11 @@ from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelRespon
 
 STRATEGY_DESCRIPTION = (
     "Strategy name; overrides budget. Read resource fusion://strategies to see them. Examples: "
-    "solo-haiku (one cheap model), panel-duo (default: two cheap models; a synthesis call only "
+    "auto (default: estimates the request's difficulty, starts with one cheap model with a "
+    "self-check, a cheap panel or a mid panel, and asks more models only when the answer shows "
+    "it is not enough; the response's `escalation` says which rung answered), auto-frontier "
+    "(auto, allowed to end at Opus 5.5 alone), "
+    "solo-haiku (one cheap model), panel-duo (two cheap models; a synthesis call only "
     "when they disagree), "
     "panel-nano (three cheap models), "
     "panel-cascade (two cheap models, the rest only if they disagree), panel-refine (adds a "
@@ -304,6 +308,13 @@ class FusionToolResult(ToolEnvelope):
 
     run_id: str = Field(description="Handle for the stored run: resource fusion://runs/{run_id}")
     strategy: str | None = Field(default=None, description="The strategy that produced the answer")
+    escalation: str | None = Field(
+        default=None,
+        description=(
+            "strategy auto: the rung of the escalation ladder that answered and why, e.g. "
+            "'answered at rung 1 (nano-panel): panel agreed (0.86)'"
+        ),
+    )
     confidence: float | None = Field(default=None, description="0 to 1, calibrated by agreement")
     cost_usd: float | None = Field(
         default=None, description="Estimated Fusion spend; null if unknown"

@@ -109,6 +109,8 @@ class BasePipeline:
                     continue
                 if state.partial and not stage.always_runs:
                     continue  # the answer is final; the shadow comparison would only delay it
+                if (skips := getattr(stage, "skips", None)) is not None and skips(state):
+                    continue  # nothing to do (the escalation ladder already aggregated)
                 if label := getattr(stage, "label", None):
                     await report_progress(label)
                 state = await self._run_stage(stage, state, deadline)

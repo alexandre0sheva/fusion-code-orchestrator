@@ -6,7 +6,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from fusion.config.catalog import Catalog, ModelEntry, PriceTier, load_catalog
 from fusion.config.layers import (
@@ -21,6 +28,13 @@ __all__ = [
     "BaselineEntry",
     "BudgetConfig",
     "CacheConfig",
+    "DIFFICULTY_LEVELS",
+    "DIFFICULTY_SIGNALS",
+    "DifficultyConfig",
+    "DifficultyLevel",
+    "DifficultyScales",
+    "EscalationPolicy",
+    "EscalationTriggers",
     "PriceTier",
     "EarlyReturn",
     "FanoutConfig",
@@ -29,13 +43,15 @@ __all__ = [
     "ModelRegistryConfig",
     "RefinementConfig",
     "RoutingPoliciesConfig",
+    "RoutingSection",
+    "Rung",
     "load_baseline",
     "load_model_registry",
     "load_routing_policies",
 ]
 
 _CONFIG_DIR = Path(__file__).parent
-_ROUTING_KEYS = frozenset({"policies", "budgets", "fanout", "refinement", "cache"})
+_ROUTING_KEYS = frozenset({"policies", "routing", "budgets", "fanout", "refinement", "cache"})
 
 class ModelRegistryConfig(BaseModel):
     """Full model registry loaded from YAML."""
@@ -171,10 +187,185 @@ class CacheConfig(BaseModel):
     max_entries: int = Field(default=128, ge=1)
 
 
+DifficultyLevel = Literal["easy", "normal", "hard"]
+DIFFICULTY_LEVELS: tuple[DifficultyLevel, ...] = ("easy", "normal", "hard")
+# The deterministic signals ``fusion.routing.difficulty`` measures, each scaled to 0..1.
+DIFFICULTY_SIGNALS = (
+    "task",
+    "size",
+    "files",
+    "hunks",
+    "languages",
+    "stack_depth",
+    "error_type",
+    "risk",
+    "question",
+)
+
+
+class DifficultyScales(BaseModel):
+    """The amount of each measured thing that counts as fully hard (its signal is then 1.0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    size_tokens: int = Field(default=8000, ge=1)  # request, context and files together
+    files: int = Field(default=5, ge=1)  # distinct files named or touched
+    hunks: int = Field(default=10, ge=1)  # diff hunks
+    languages: int = Field(default=3, ge=2)  # distinct languages by file extension
+    stack_frames: int = Field(default=15, ge=1)  # frames in a stack trace
+
+
+class DifficultyConfig(BaseModel):
+    """How a request's difficulty is estimated (``routing.difficulty``).
+
+    Each signal is scaled to 0..1 and the weighted mean is the score: below ``easy_below`` is
+    easy, from ``hard_from`` on hard, normal in between. A score within ``ambiguity_margin`` of a
+    threshold is ambiguous, and one call to ``classifier_model`` decides instead.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    weights: dict[str, float] = Field(
+        default_factory=lambda: {
+            "task": 0.15,
+            "size": 0.15,
+            "files": 0.1,
+            "hunks": 0.1,
+            "languages": 0.05,
+            "stack_depth": 0.1,
+            "error_type": 0.1,
+            "risk": 0.2,
+            "question": 0.05,
+        }
+    )
+    # Base difficulty of each task type (the policy keys); a missing type counts as `default`.
+    task_base: dict[str, float] = Field(
+        default_factory=lambda: {
+            "default": 0.1,
+            "answer_eval": 0.3,
+            "code_review": 0.4,
+            "debugging": 0.5,
+            "implementation_plan": 0.5,
+            "architecture_decision": 0.7,
+        }
+    )
+    scales: DifficultyScales = Field(default_factory=DifficultyScales)
+    easy_below: float = Field(default=0.25, gt=0, lt=1)
+    hard_from: float = Field(default=0.45, gt=0, lt=1)
+    ambiguity_margin: float = Field(default=0.05, ge=0, lt=0.5)
+    # One nano-model call settles an ambiguous estimate; null switches the call off.
+    classifier_model: str | None = "claude-haiku"
+    classifier_max_tokens: int = Field(default=150, ge=16, le=150)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> DifficultyConfig:
+        unknown = sorted(set(self.weights) - set(DIFFICULTY_SIGNALS))
+        if unknown:
+            msg = f"unknown difficulty signal(s) {unknown}; known: {list(DIFFICULTY_SIGNALS)}"
+            raise ValueError(msg)
+        if any(w < 0 for w in self.weights.values()) or sum(self.weights.values()) <= 0:
+            msg = "difficulty weights must be non-negative and not all zero"
+            raise ValueError(msg)
+        if self.easy_below >= self.hard_from:
+            msg = "difficulty.easy_below must be below difficulty.hard_from"
+            raise ValueError(msg)
+        return self
+
+
+class Rung(BaseModel):
+    """One step of the escalation ladder: a configured strategy, by name."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    strategy: str
+    # A frontier rung runs only with allow_frontier, so a default run never pays frontier prices.
+    frontier: bool = False
+
+
+class EscalationTriggers(BaseModel):
+    """When an answer is not enough and the next rung is asked (any one is enough)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # A single model's own confidence (its self-check) below this.
+    self_confidence_below: float = Field(default=0.7, ge=0, le=1)
+    # Agreement below this, for a panel whose members answer the same question the same way
+    # (no lenses, no approaches: those answers differ on purpose).
+    agreement_below: float = Field(default=0.5, ge=0, le=1)
+
+
+def _default_starts() -> dict[DifficultyLevel, int]:
+    return {"easy": 0, "normal": 1, "hard": 2}
+
+
+class EscalationPolicy(BaseModel):
+    """The ladder ``strategy: auto`` climbs (``routing.escalation``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rungs: list[Rung] = Field(min_length=1)
+    # The rung each difficulty level starts at (an index into rungs).
+    start_by_level: dict[DifficultyLevel, int] = Field(default_factory=_default_starts)
+    allow_frontier: bool = False
+    max_rungs: int = Field(default=3, ge=1)  # rungs one run may try, the start rung included
+    triggers: EscalationTriggers = Field(default_factory=EscalationTriggers)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> EscalationPolicy:
+        missing = [level for level in DIFFICULTY_LEVELS if level not in self.start_by_level]
+        if missing:
+            msg = f"escalation.start_by_level needs every level; missing {missing}"
+            raise ValueError(msg)
+        bad = {k: v for k, v in self.start_by_level.items() if not 0 <= v < len(self.rungs)}
+        if bad:
+            msg = f"escalation.start_by_level points past the {len(self.rungs)} rungs: {bad}"
+            raise ValueError(msg)
+        names = [r.name for r in self.rungs]
+        if len(set(names)) != len(names):
+            msg = "escalation.rungs: two rungs share a name"
+            raise ValueError(msg)
+        if all(r.frontier for r in self.rungs):
+            msg = "escalation.rungs: at least one rung must not be a frontier rung"
+            raise ValueError(msg)
+        return self
+
+    def climbable(self) -> list[int]:
+        """Indexes of the rungs a run may use: all but a frontier rung without allow_frontier."""
+        return [i for i, rung in enumerate(self.rungs) if self.allow_frontier or not rung.frontier]
+
+    def start_for(self, level: DifficultyLevel) -> int:
+        """The rung a level starts at, moved down past a frontier rung that is not allowed."""
+        allowed = self.climbable()
+        wanted = self.start_by_level[level]
+        return max([i for i in allowed if i <= wanted], default=allowed[0])
+
+
+def _default_ladder() -> EscalationPolicy:
+    return EscalationPolicy(
+        rungs=[
+            Rung(name="nano-solo", strategy="solo-haiku-check"),
+            Rung(name="nano-panel", strategy="panel-nano-auto"),
+            Rung(name="mid-panel", strategy="panel-mid"),
+            Rung(name="frontier", strategy="solo-opus", frontier=True),
+        ]
+    )
+
+
+class RoutingSection(BaseModel):
+    """``routing``: difficulty estimation and the escalation ladder of ``strategy: auto``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    difficulty: DifficultyConfig = Field(default_factory=DifficultyConfig)
+    escalation: EscalationPolicy = Field(default_factory=_default_ladder)
+
+
 class RoutingPoliciesConfig(BaseModel):
     """Full routing policies loaded from YAML."""
 
     policies: dict[str, RoutingPolicyEntry]
+    routing: RoutingSection = Field(default_factory=RoutingSection)
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
     fanout: FanoutConfig = Field(default_factory=FanoutConfig)
     refinement: RefinementConfig = Field(default_factory=RefinementConfig)

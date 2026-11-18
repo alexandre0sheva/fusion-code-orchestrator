@@ -1,8 +1,9 @@
 # Is the default as fast as one frontier model, and which latency control pays off? Wall time is
 # the measurement, so the response cache is off (a replayed call has no real latency). The arms
-# are Opus 5.5 alone (the median to match), the default strategy as shipped, the same panel with
-# every latency control off, the three-model panel (where early return can drop a straggler), and
-# the default with GPT-6 Luna at reasoning effort none (does the lowest effort hold quality?).
+# are Opus 5.5 alone (the median to match), the panel default (panel-duo) as shipped, the same panel
+# with every latency control off, the three-model panel (where early return can drop a straggler),
+# the panel default with GPT-6 Luna at reasoning effort none (does the lowest effort hold quality?),
+# and strategy auto, the default since roadmap Task 9 (difficulty routing and the ladder).
 #
 #   fusion bench run --suite latency --max-usd 1.2
 description: >-
@@ -30,3 +31,4 @@ arms:
   - name: luna-none
     strategy: panel-duo
     overrides: {members: [{model: claude-haiku}, {model: gpt-luna, reasoning_effort: none}]}
+  - {name: auto-route, strategy: auto}

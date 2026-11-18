@@ -8,13 +8,19 @@ from pydantic import BaseModel, Field
 
 from fusion.config.catalog import PriceTier, speed_rank
 from fusion.config.layers import ConfigError
-from fusion.config.loader import RoutingPoliciesConfig, RoutingPolicyEntry, load_routing_policies
+from fusion.config.loader import (
+    EscalationPolicy,
+    RoutingPoliciesConfig,
+    RoutingPolicyEntry,
+    load_routing_policies,
+)
 from fusion.routing.budget import ANSWER_OUTPUT_TOKENS, BudgetLevel
 from fusion.routing.classifier import (
     TaskClassifier,
     TaskType,
     canonical_task_key,
 )
+from fusion.routing.difficulty import RequestFacts, estimate_difficulty
 from fusion.routing.model_registry import ModelRegistry
 
 if TYPE_CHECKING:  # orchestration imports routing, so these are imported lazily at run time
@@ -39,6 +45,9 @@ class RoutingDecision(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     estimated_cost_tier: str
     warnings: list[str] = Field(default_factory=list)
+    # strategy auto: which rung answered and why, e.g. "answered at rung 1 (nano-panel): panel
+    # agreed (0.86)"; empty for any other strategy.
+    escalation: str = ""
 
 
 def mock_routing_policies(
@@ -54,7 +63,11 @@ def mock_routing_policies(
         key: policy.model_copy(update={"judge_model": judge})
         for key, policy in config.policies.items()
     }
-    return config.model_copy(update={"policies": policies})
+    difficulty = config.routing.difficulty
+    if difficulty.classifier_model is not None:
+        difficulty = difficulty.model_copy(update={"classifier_model": judge})
+    routing = config.routing.model_copy(update={"difficulty": difficulty})
+    return config.model_copy(update={"policies": policies, "routing": routing})
 
 
 class Router:
@@ -180,6 +193,24 @@ def build_routing(*, use_mock: bool) -> RoutingPolicy:
     return RoutingPolicy(config, registry=registry, strategies=strategies)
 
 
+def _check_rungs(policy: EscalationPolicy, book: StrategyBook) -> None:
+    """Every rung names a configured solo or panel strategy (a cascade or another auto strategy
+    would climb a ladder of its own)."""
+    for index, rung in enumerate(policy.rungs):
+        where = f"routing.escalation.rungs.{index} ({rung.name})"
+        try:
+            strategy = book.get(rung.strategy)
+        except ConfigError as exc:
+            msg = f"{where}: {exc}"
+            raise ConfigError(msg) from exc
+        if strategy.kind not in ("solo", "panel"):
+            msg = (
+                f"{where}: strategy '{rung.strategy}' is a {strategy.kind}; a rung must be a "
+                "solo or panel strategy (the ladder itself decides when to ask more models)"
+            )
+            raise ConfigError(msg)
+
+
 class RoutingPolicy:
     """Routing facade: the router, the per-task policies and the strategy book."""
 
@@ -196,6 +227,7 @@ class RoutingPolicy:
 
             strategies = load_strategy_book()
         self._strategies = strategies
+        _check_rungs(self.budgets.routing.escalation, strategies)
 
     def get_policy(self, task_type: TaskType) -> RoutingPolicyEntry:
         return self._router.get_policy(task_type)
@@ -212,9 +244,38 @@ class RoutingPolicy:
     def strategies(self) -> StrategyBook:
         return self._strategies
 
+    def escalation_for(self, strategy: Strategy) -> EscalationPolicy:
+        """The ladder a ``kind: auto`` strategy climbs: ``routing.escalation`` with the
+        strategy's own ``escalation`` settings on top."""
+        policy = self.budgets.routing.escalation
+        override = strategy.escalation
+        return policy if override is None else override.applied_to(policy)
+
     def resolve_strategy(self, name: str | None, budget: BudgetLevel) -> Strategy:
         """An explicit strategy name wins; otherwise the strategy mapped to the budget."""
         return self._strategies.resolve(name, budget)
+
+    def start_strategy(self, strategy: Strategy, task_type: TaskType, content: str) -> Strategy:
+        """For a ``kind: auto`` strategy, the strategy of the rung its difficulty estimate (from
+        the signals alone, no classifier call) starts at; any other strategy as it is."""
+        return self.ladder(strategy, task_type, content)[0]
+
+    def ladder(
+        self, strategy: Strategy, task_type: TaskType | None = None, content: str = ""
+    ) -> list[Strategy]:
+        """The strategies a run of ``strategy`` may use, in order: for ``kind: auto`` the
+        climbable rungs from where the request starts (rung 0 without a task) up to
+        ``max_rungs``; for any other strategy, itself."""
+        if strategy.kind != "auto":
+            return [strategy]
+        policy = self.escalation_for(strategy)
+        start = 0
+        if task_type is not None:
+            config = self.budgets.routing.difficulty
+            estimate = estimate_difficulty(content, RequestFacts(task_type=task_type), config)
+            start = policy.start_for(estimate.level)
+        indexes = [i for i in policy.climbable() if i >= start][: policy.max_rungs]
+        return [self._strategies.get(policy.rungs[i].strategy) for i in indexes]
 
     def route(
         self,
@@ -224,11 +285,12 @@ class RoutingPolicy:
         budget: BudgetLevel = BudgetLevel.MEDIUM,
         content: str = "",
     ) -> RoutingDecision:
-        return self._router.route(
-            strategy=self.resolve_strategy(strategy, budget),
-            explicit_type=task_type.value,
-            content=content,
+        """How a request would be routed. ``strategy: auto`` routes to its start rung's strategy
+        (the run itself may climb higher)."""
+        resolved = self.start_strategy(
+            self.resolve_strategy(strategy, budget), task_type, content
         )
+        return self._router.route(strategy=resolved, explicit_type=task_type.value, content=content)
 
     def select_panel(
         self,

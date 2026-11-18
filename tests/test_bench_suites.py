@@ -57,6 +57,7 @@ def test_ablation_expands_to_the_arms_the_roadmap_lists() -> None:
     # Lenses and union (Task 7): on/off, union with and without the check call, and the
     # self-mixtures, whose diversity now comes from lenses (Claude takes no sampling parameters).
     assert {"lenses-off", "union", "union-check", "self-luna", "self-haiku"} <= set(arms)
+    assert {"auto-route", "auto-route-frontier"} <= set(arms)  # difficulty routing (Task 9)
     assert len(arms) == len(set(arms))
 
 
@@ -85,7 +86,8 @@ def test_the_latency_suite_measures_time_so_the_cache_is_off() -> None:
     assert book.get("solo-opus").kind == "solo"  # the median the default must match
     default = book.get("default")
     assert default.fanout is None and default.skip_aggregator is not None  # as shipped
-    assert book.for_budget("medium").members == default.members
+    assert book.get("panel-duo").members == default.members  # the panel default, as shipped
+    assert book.get("auto-route").kind == "auto"  # strategy auto, the default since Task 9
     off = book.get("levers-off")
     assert off.skip_aggregator is None
     assert off.fanout == FanoutOverride(early_return="off", hedge_after_ms="off")
@@ -207,7 +209,7 @@ def test_a_dry_run_of_each_suite_works_on_simulated_models(fusion_home: Path, na
 def test_the_whole_latency_suite_runs_with_its_own_quota(fusion_home: Path) -> None:
     result = runner.invoke(app, ["bench", "run", "--suite", "latency", "--mock", "--yes"])
     assert result.exit_code == 0, result.output
-    assert "45/45" in result.output  # 9 tasks x 5 arms x 1 repeat
+    assert "54/54" in result.output  # 9 tasks x 6 arms x 1 repeat
 
 
 # ------------------------------------------------------------------------------- quotas

@@ -29,7 +29,7 @@ models; 0.3.0 moves to Haiku 5.5 and GPT-6.2 Sol, and `panel-cheap` is now `pane
 | GPT-6.1 Sol alone | 0.65 [0.54, 0.76] | $0.030 | 34.0 |
 | Claude Haiku 4.5 alone | 0.58 [0.46, 0.70] | $0.029 | 15.5 |
 | GPT-6 Luna alone | 0.64 [0.52, 0.75] | $0.001 | 12.3 |
-| **Fusion `panel-duo` (default)** | 0.67 [0.53, 0.80] | $0.036 | 30.4 |
+| **Fusion `panel-duo` (0.2.0 default)** | 0.67 [0.53, 0.80] | $0.036 | 30.4 |
 | Fusion `panel-cheap` (three models) | 0.66 [0.52, 0.79] | $0.049 | 32.2 |
 
 ![Quality against cost per task](docs/assets/benchmark-cost-quality.svg)
@@ -105,9 +105,9 @@ Claude Code -> MCP tool -> redact -> route (strategy) -> cheap panel (parallel) 
 ```
 
 Panel calls run concurrently and tolerate partial failure. Which models run is a *strategy*
-(`fusion strategies list`). The default, `panel-duo`, is Claude Haiku 5.5 + GPT-6 Luna (`nano`
-tier): if they agree their vote is the answer, else Haiku merges them. The baseline is Claude Opus
-5.5 (`high`). Tiers come from price ([COSTS.md](docs/COSTS.md#price-tiers)). `panel-refine`, the `high` budget,
+(`fusion strategies list`). The default, `auto`, starts by difficulty with one `nano` model
+checking its answer, the cheap panel or a mid panel, and asks more models only when needed
+([how](docs/CONFIGURATION.md#difficulty-routing-strategy-auto)). The baseline is Claude Opus 5.5 (`high`). Tiers come from price ([COSTS.md](docs/COSTS.md#price-tiers)). `panel-refine`, the `high` budget,
 also has the panel models revise their answers after seeing anonymized peer answers
 (mixture-of-agents). Every run is stored in
 SQLite and compared against a baseline model; an opt-in shadow mode also calls the real baseline and

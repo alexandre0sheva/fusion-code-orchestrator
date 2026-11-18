@@ -191,24 +191,35 @@ def job_key(
     repeat: int,
     seed: int,
     redact: bool,
+    routing: RoutingPolicy | None = None,
 ) -> str:
-    """Hash of everything that decides a job's result; the same job has the same key forever."""
+    """Hash of everything that decides a job's result; the same job has the same key forever.
+
+    For ``strategy: auto`` that includes the ladder, every rung's strategy and the difficulty
+    settings (``routing``), so recalibrating a threshold starts the arm's jobs afresh.
+    """
+    used = routing.ladder(strategy) if routing is not None else [strategy]
     models = {
         alias: registry.models[alias].model_id
-        for alias in strategy.models
+        for rung in used
+        for alias in rung.models
         if alias in registry.models
     }
-    blob = json.dumps(
-        {
-            "task": task_hash(task),
-            "strategy": strategy.model_dump(mode="json"),
-            "models": models,
-            "repeat": repeat,
-            "seed": seed,
-            "redact": redact,
-        },
-        sort_keys=True,
-    )
+    fields: dict[str, object] = {
+        "task": task_hash(task),
+        "strategy": strategy.model_dump(mode="json"),
+        "models": models,
+        "repeat": repeat,
+        "seed": seed,
+        "redact": redact,
+    }
+    if strategy.kind == "auto" and routing is not None:
+        fields["ladder"] = {
+            "escalation": routing.escalation_for(strategy).model_dump(mode="json"),
+            "difficulty": routing.budgets.routing.difficulty.model_dump(mode="json"),
+            "rungs": [rung.model_dump(mode="json") for rung in used],
+        }
+    blob = json.dumps(fields, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:20]
 
 
@@ -361,7 +372,9 @@ async def run_bench(
                 strategy = strategies[arm.name]
                 jobs.append(
                     Job(
-                        key=job_key(task, strategy, env.registry, repeat, seed, cfg.redact),
+                        key=job_key(
+                            task, strategy, env.registry, repeat, seed, cfg.redact, routing
+                        ),
                         task=task,
                         arm=arm.name,
                         repeat=repeat,
@@ -541,9 +554,11 @@ async def _execute(
     score: ScoreResult | None = None
     error: str | None = None
     try:
-        aliases = [m.model for m in strategy.members]
-        if strategy.aggregator_model:
-            aliases.append(strategy.aggregator_model)
+        aliases = [
+            alias
+            for used in pipeline.deps.routing.ladder(strategy)  # every rung of strategy auto
+            for alias in used.models
+        ]
         score = await get_scorer(task.category).score(
             task,
             view,

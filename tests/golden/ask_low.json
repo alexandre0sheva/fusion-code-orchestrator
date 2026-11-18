@@ -296,6 +296,7 @@
   "risks": [],
   "routing": {
     "complexity": "low",
+    "escalation": "",
     "estimated_cost_tier": "nano",
     "judge_model": "mock-judge",
     "reasons": [

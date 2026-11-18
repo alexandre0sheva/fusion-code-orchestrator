@@ -39,6 +39,7 @@ SECTIONS = frozenset(
         "tiering",
         "openrouter",
         "policies",
+        "routing",
         "budgets",
         "fanout",
         "refinement",

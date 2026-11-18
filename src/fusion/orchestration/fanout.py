@@ -20,6 +20,7 @@ from fusion.orchestration.prompts import (
     get_system_prompt,
     lens_instruction,
     role_instruction,
+    self_check_instruction,
 )
 from fusion.orchestration.strategy import PanelMember, member_overrides
 from fusion.providers.base import ModelProvider, ModelRequest, ModelResponse
@@ -107,6 +108,7 @@ async def fanout_to_panel(
     avoid: Collection[str] = (),
     lenses: Mapping[str, Lens] | None = None,
     approaches: Mapping[str, Approach] | None = None,
+    self_check: bool = False,
 ) -> FanoutResult:
     """Call all panel models concurrently and return structured outcomes.
 
@@ -122,6 +124,7 @@ async def fanout_to_panel(
     ``label`` names the wave in progress messages ("panel 2/3 done"). ``lenses`` gives members
     their lens (``lenses.assign_lenses``) and ``approaches`` their stance
     (``approaches.assign_approaches``); a hedge or fallback asked for a member keeps both.
+    ``self_check`` asks every member to check its answer and report an honest confidence.
     Cancelling the caller cancels every call still in flight.
     """
     fanout_config = config or FanoutConfig()
@@ -142,6 +145,7 @@ async def fanout_to_panel(
         avoid=avoid,
         lenses=lenses or {},
         approaches=approaches or {},
+        self_check=self_check,
     )
     return await panel.run()
 
@@ -177,8 +181,10 @@ class _Panel:
         avoid: Collection[str] = (),
         lenses: Mapping[str, Lens] | None = None,
         approaches: Mapping[str, Approach] | None = None,
+        self_check: bool = False,
     ) -> None:
         self.label = label
+        self.self_check = self_check
         self.lenses = dict(lenses or {})
         self.approaches = dict(approaches or {})
         self.panel_models = panel_models
@@ -244,7 +250,9 @@ class _Panel:
         timeout = self.config.per_model_timeout_seconds
         suffix = (role_instruction(persona) if persona else "") + (
             self._lens_text(lens) if lens is not None else ""
-        ) + (approach_instruction(approach) if approach is not None else "")
+        ) + (approach_instruction(approach) if approach is not None else "") + (
+            self_check_instruction() if self.self_check else ""
+        )
         metadata = {"task_type": self.task_type.value, "role": "panel", "personality": persona}
         if lens is not None:
             metadata["lens"] = lens.name

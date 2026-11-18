@@ -122,9 +122,11 @@ def test_budget_levels_map_to_strategies() -> None:
     names = {
         budget: routing.route(TaskType.DEBUGGING, budget=budget).strategy for budget in BudgetLevel
     }
+    # medium is strategy auto, which routes to the rung its difficulty starts at: an empty
+    # debugging request is easy, so rung 0 (one nano model with a self-check)
     assert names == {
         BudgetLevel.LOW: "solo-haiku",
-        BudgetLevel.MEDIUM: "panel-duo",
+        BudgetLevel.MEDIUM: "solo-haiku-check",
         BudgetLevel.HIGH: "panel-refine",
         BudgetLevel.LOCAL_ONLY: "panel-local",
     }
@@ -151,14 +153,27 @@ def test_routing_policy_selects_panel() -> None:
 def test_routing_judge_and_synthesizer() -> None:
     routing = build_routing(use_mock=True)
     assert routing.select_judge(TaskType.DEBUGGING) == "mock-judge"
-    assert routing.select_synthesizer(TaskType.IMPLEMENTATION_PLAN) == "mock-judge"
+    synth = routing.select_synthesizer(TaskType.IMPLEMENTATION_PLAN, strategy="panel-duo")
+    assert synth == "mock-judge"
+    # strategy auto's easy start rung is one model: nothing to merge
+    assert routing.select_synthesizer(TaskType.IMPLEMENTATION_PLAN) == ""
+
+
+def test_auto_routes_a_hard_request_to_the_mid_panel_and_never_to_frontier() -> None:
+    routing = build_routing(use_mock=False)
+    files = "".join(
+        f"diff --git a/{n} b/{n}\n+++ b/{n}\n@@ -1 +1 @@\n-a\n+b\n"
+        for n in ("auth.py", "pay.ts", "db.sql", "web.js", "api.go")
+    )
+    hard = files + "session token, refund, migration, race"
+    assert routing.route(TaskType.CODE_REVIEW, content=hard).strategy == "panel-mid"
 
 
 def test_production_routing_uses_cloud_models() -> None:
     routing = build_routing(use_mock=False)
     panel = routing.select_panel(TaskType.CODE_REVIEW)
     assert "mock-fast" not in panel
-    assert set(panel) == {"claude-haiku", "gpt-luna"}  # the default panel-duo
+    assert set(panel) == {"claude-haiku"}  # strategy auto's easy start: rung 0, Haiku 5.5
 
 
 def test_judge_prefers_json_capable_model() -> None:

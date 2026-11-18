@@ -246,7 +246,7 @@ The orchestration tools share these inputs (each tool adds its own, such as `dif
 | `globs` | Patterns such as `src/**/*.py`; at most 200 files |
 | `diff_ref` | A git revision or range (`HEAD~1`, `main...HEAD`, a sha) whose `git diff` Fusion reads. For `fusion_review_diff` it replaces `diff`, which is then optional; other tools get the diff as background |
 | `file_snippets` | Short code excerpts, each prefixed with its path; prefer `paths` |
-| `strategy` | A strategy name (`solo-haiku`, `panel-duo`, `panel-nano`, `panel-mid`, `panel-refine`, `panel-cascade`, `panel-vote`, `panel-digest`, `panel-nano-union`); overrides `budget`. The list is the `fusion://strategies` resource; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets) |
+| `strategy` | A strategy name (`auto`, the default; `auto-frontier`, `solo-haiku`, `panel-duo`, `panel-nano`, `panel-mid`, `panel-refine`, `panel-cascade`, `panel-vote`, `panel-digest`, `panel-nano-union`); overrides `budget`. The list is the `fusion://strategies` resource; see [CONFIGURATION.md](CONFIGURATION.md#strategies-and-budgets) |
 | `budget` | The older preset (`low`, `medium`, `high`, `local_only`); selects a strategy |
 | `max_cost_usd` | A hard cap for this call, lowering (never raising) the strategy's own; the run is shifted to a cheaper form or refused before any model is called, see [CONFIGURATION.md](CONFIGURATION.md#cost-and-latency-caps) |
 | `detail` | `compact` (default) or `full`, below |

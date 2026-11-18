@@ -74,6 +74,9 @@ async def test_implementation_plan_pipeline_e2e(pipelines: dict) -> None:
         ImplementationPlanInput(
             feature_request="Add OAuth2 login",
             constraints="Must support Google and GitHub",
+            # a synthesis: under strategy auto the mock selector may pick the mock weak model's
+            # one-line answer, which has no plan steps to parse
+            strategy="panel-nano",
         )
     )
     assert result.implementation_sequence

@@ -14,6 +14,7 @@ A run is a list of **stages** that read and write one `RunState` (`src/fusion/or
 ```text
 Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
    RedactStage       redact secrets, open the run record
+   DifficultyStage   strategy auto only: estimate difficulty, pick the start rung, run its strategy
    RouteStage        apply the strategy: panel/aggregator/judge models, fall back by catalog role
    ContextEvalStage  score the context            -- halts: "insufficient context"
    BudgetStage       forecast the cost against max_cost_usd; shift the strategy down if it is over
@@ -24,7 +25,9 @@ Claude Code -> MCP tool -> specialized pipeline -> BasePipeline.run(ctx)
    RefineStage       the strategy's extra peer-review rounds (rounds - 1; none for rounds: 1),
                      skipped when the panel already agrees or a cascade already stopped
    ClaimsStage       read answers as claims, cluster them across models, measure agreement
-   ConcurrentStages  at the same time:
+   EscalateStage     strategy auto only: check the rung's answer, aggregate it, and climb to the
+                     next rung when a trigger fires (also runs after a lost quorum)
+   ConcurrentStages  at the same time (skipped when EscalateStage already aggregated):
      JudgeStage        safety checks and claim-derived scores per answer; LLM judge if on
      AggregateStage    final answer (solo: the answer itself; llm: one synthesizer call;
                        digest, vote, best_of, union: built from the claims, no call;
@@ -226,7 +229,8 @@ strategy into:
   digest, vote, best_of and union);
 - the resolved strategy name, an estimated cost tier and routing warnings.
 
-`RoutingDecision.strategy` reports the strategy that ran. Model metadata and prices live in the
+`RoutingDecision.strategy` reports the strategy that ran (for `strategy: auto`, the strategy of the
+rung that answered; `RoutingDecision.escalation` says which rung and why). Model metadata and prices live in the
 catalog, `src/fusion/config/catalog.yaml`; per-task judge and context thresholds and fan-out settings
 in `src/fusion/config/routing_policies.yaml`; strategies in `src/fusion/config/strategies.yaml`.
 
@@ -390,6 +394,63 @@ patch) the answers are rivals, and one is picked instead of a synthesizer rewrit
   tokens out, about a tenth of a synthesis. Both kinds of call are in the ledger under `synthesis`
   with their roles, so the 0.3.0 study can compare them. Forecasts add `APPROACH_PROMPT_TOKENS` to
   each member of a select panel.
+
+### Difficulty routing and the escalation ladder
+
+`strategy: auto` (the default, `budget: medium`) is a `kind: auto` strategy with no members of
+its own. It starts a request on the cheapest rung that its difficulty calls for and spends more
+only when the cheaper answer shows it is not enough (`routing/difficulty.py`,
+`orchestration/escalate.py`; settings in `routing_policies.yaml` under `routing:`).
+
+- **Difficulty** (`DifficultyStage`, after redaction). `estimate_difficulty(request, facts)` scales
+  nine deterministic signals to 0..1: the task type's base difficulty, input size, files and diff
+  hunks touched, languages (file extensions), stack-trace depth, the kind of error (a plain
+  `KeyError` is easy, a race or a leak is hard), risky areas (concurrency, security, migrations,
+  money, auth) and the question's shape (yes/no 0, lookup 0.25, design 1). Their weighted mean is
+  the score; `easy_below` and `hard_from` cut it into easy, normal and hard. A score within
+  `ambiguity_margin` of a threshold is ambiguous (`confidence` < 0.5), and then one call to the
+  classifier model (a nano model, at most 150 output tokens, ledger stage `route`, role
+  `difficulty`) decides; a failed or unreadable call keeps the signals' level with a warning.
+- **The ladder** (`EscalationPolicy`): rung 0 `solo-haiku-check` (Haiku 5.5 alone, with
+  `self_check: true`, which appends `prompts.self_check_instruction`), rung 1 `panel-nano-auto`
+  (lenses and `union` for review and debugging, approaches and `select+patch` otherwise), rung 2
+  `panel-mid`, rung 3 `solo-opus`, a `frontier: true` rung used only with `allow_frontier`
+  (`strategy: auto-frontier`, or the config). Easy starts at 0, normal at 1, hard at 2. The start
+  moves down past a frontier rung that is not allowed, a rung that cannot run in this mode (a
+  `verified` aggregator outside a benchmark), and a rung forecast over the run's `max_cost_usd`.
+  A rung must be a solo or panel strategy (checked when `RoutingPolicy` is built).
+- **Triggers** (`EscalateStage`, after the claims). Before aggregation (`early_verdict`): a lost
+  quorum; a solo answer whose self-reported `confidence` is below `self_confidence_below` (or that
+  reported none); a panel without lenses or approaches whose agreement is below `agreement_below`
+  (tau). A rung that fails these is never merged, so no synthesis or selection is paid for an answer
+  that will not be returned. After aggregation (`late_verdict`): the selector set `acceptable:
+  false` (no candidate good enough; it still names the least bad); `union` kept no finding the
+  input backs where findings were expected (always for debugging, otherwise when a lens reported
+  one); every candidate patch failed its checks (`verified`). Agreement is not a trigger on lensed
+  or approach runs: those answers differ on purpose.
+- **Climbing.** The next rung's strategy is routed on a fresh copy of the run state
+  (`_fresh_rung`). Models that already answered (by base alias, so seats count) are not asked
+  again; their answers are handed over in `RunState.carried`, and `PanelStage` asks only the new
+  members and merges the two fan-outs (`cascade.merge_fanouts`), carried answers first. A rung
+  that needs at least one new answer and gets none loses its quorum. A rung with nobody new to
+  ask is recorded as `skipped` and the next one is tried. A solo rung never takes carried answers
+  (its answer is its own). Before a rung runs: the soft time limit (the rung's steps, each as long
+  as the slowest call so far or a step of the rung below by the wall clock) and the cost cap
+  (`BudgetGuard.check` on the rung's planned calls, money held until the rung has run) are checked,
+  and `max_rungs` caps the climb. When the next rung cannot run, the latest rung that produced
+  answers is aggregated and returned with a warning ("best answer so far").
+- **The record.** `PipelineResult.escalation` (`EscalationOutcome`, stored under `escalation` in the
+  run's output) holds the estimate and its signals, the classifier's cost, the start rung and why,
+  and per rung tried: who was asked, whose answers were reused, its own cost and wall time, the
+  outcome (`answered`, `escalated`, `stopped`, `skipped`, `interrupted`) and the trigger with its
+  reason. `RoutingDecision.escalation` carries one line ("answered at rung 1 (nano-panel): panel
+  agreed (0.86)") that the compact response shows under **Route** and the tool result returns as
+  `escalation`; the routing reasons start with one line per rung.
+- **Outside a run.** `RoutingPolicy.ladder(strategy, task_type, content)` lists the rung strategies
+  a request may use (from its signals-only start); `RoutingPolicy.route` routes `auto` to the start
+  rung. `fusion bench` forecasts an `auto` arm as its start rung plus the higher rungs at the
+  escalation share (all of them for the worst case), keys its jobs by the ladder and the difficulty
+  settings, and lists every rung's models in the run metadata.
 
 ### Cascade, aggregators and caps
 

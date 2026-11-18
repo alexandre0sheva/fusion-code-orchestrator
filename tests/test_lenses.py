@@ -604,8 +604,14 @@ def _review(**kw: Any) -> PipelineContext:
     )
 
 
-async def test_the_default_strategy_reviews_with_lenses(tmp_path: Path) -> None:
-    result = await _pipe(tmp_path).run(_review())
+async def test_the_default_panels_review_with_lenses(tmp_path: Path) -> None:
+    # panel-duo (the panel default) and panel-nano-auto (rung 1 of strategy auto)
+    for strategy in ("panel-duo", "panel-nano-auto"):
+        await _lensed_review(tmp_path, strategy)
+
+
+async def _lensed_review(tmp_path: Path, strategy: str) -> None:
+    result = await _pipe(tmp_path).run(_review(strategy=strategy))
     lenses = result.disagreement["lenses"]
     assert len(lenses) == len(result.panel_results) >= 2
     assert len(set(lenses.values())) == len(lenses)  # every member covers its own area

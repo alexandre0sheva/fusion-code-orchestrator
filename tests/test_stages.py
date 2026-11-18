@@ -152,6 +152,7 @@ def test_default_stage_order() -> None:
     names = [type(s).__name__ for s in stages]
     assert names == [
         "RedactStage",
+        "DifficultyStage",
         "RouteStage",
         "ContextEvalStage",
         "BudgetStage",
@@ -159,6 +160,7 @@ def test_default_stage_order() -> None:
         "PanelStage",
         "RefineStage",
         "ClaimsStage",
+        "EscalateStage",
         "ConcurrentStages",
         "FinalEvalStage",
         "ShadowStage",

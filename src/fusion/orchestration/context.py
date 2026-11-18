@@ -48,6 +48,7 @@ from fusion.telemetry.traces import OrchestrationTrace
 from fusion.workspace import WorkspaceReport
 
 if TYPE_CHECKING:
+    from fusion.orchestration.escalate import Climb
     from fusion.orchestration.output import ResultPresenter
     from fusion.orchestration.result import PanelResult, PipelineResult
 
@@ -94,6 +95,22 @@ class PipelineDeps:
     # Fixed baseline for shadow comparisons (offline mode); None means "from baseline config".
     shadow_baseline: BaselineEntry | None = None
     clock: Callable[[], float] = time.perf_counter
+
+
+@dataclass
+class Carried:
+    """The answers lower rungs of the escalation ladder produced, reused by the rung now running:
+    their models are not asked again, and their answers join the new ones."""
+
+    fanout: FanoutResult
+    successful: list[tuple[str, ModelResponse]]
+    members: list[PanelMember]
+    answer_lenses: dict[str, str] = field(default_factory=dict)
+    answer_approaches: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def models(self) -> list[str]:
+        return [m.model for m in self.members]
 
 
 @dataclass
@@ -163,6 +180,10 @@ class RunState:
     shadow_task: asyncio.Task[BaselineCall] | None = None
 
     halt: Halt | None = None
+    # strategy auto: the ladder this run climbs (None for any other strategy), and the answers a
+    # lower rung produced that the current rung reuses.
+    climb: Climb | None = None
+    carried: Carried | None = None
     # The soft time limit passed: the answer was built from what the panel had produced so far.
     partial: bool = False
     soft_limit_s: float = 0.0  # the soft time limit this run was held to, for its messages
@@ -243,8 +264,10 @@ class RunState:
         )
         strategy = deps.routing.resolve_strategy(ctx.strategy, ctx.budget)
         # `aggregator: auto` is settled here, once the task is known: every later stage sees a
-        # concrete aggregator and the lenses or approaches that go with it.
-        strategy = resolve_aggregator(strategy, ctx.task_type, patch=ctx.expects_patch)
+        # concrete aggregator and the lenses or approaches that go with it. A `kind: auto`
+        # strategy has no aggregator of its own: each rung's is settled when the rung starts.
+        if strategy.kind != "auto":
+            strategy = resolve_aggregator(strategy, ctx.task_type, patch=ctx.expects_patch)
         if ctx.max_cost_usd is not None:
             cap = ctx.max_cost_usd
             if strategy.max_cost_usd is not None:

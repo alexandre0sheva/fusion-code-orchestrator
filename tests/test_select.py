@@ -29,6 +29,7 @@ from fusion.orchestration.prompts import (
     approach_instruction,
     build_refinement_prompt,
     build_select_prompt,
+    select_schema,
 )
 from fusion.orchestration.select import (
     anonymise,
@@ -668,3 +669,19 @@ async def test_the_structured_answer_speaks_for_the_chosen_candidate_alone(
     assert len(summaries) >= 1
     assert result.structured_output["answer"].count("(mock:") == 1  # not every panelist's
     assert picked in {p.model_name for p in result.panel_results}
+
+
+def test_the_selector_can_mark_no_candidate_acceptable() -> None:
+    def reply(**extra: object) -> ModelResponse:
+        verdict = {"why": "x", "choice": "c2", "runner_up": None, **extra}
+        return ModelResponse(provider="mock", model="m", text=json.dumps(verdict))
+
+    assert parse_selection(reply(), ["c1", "c2"]).acceptable  # type: ignore[union-attr]
+    rejected = parse_selection(reply(acceptable=False), ["c1", "c2"])
+    assert rejected is not None and rejected.choice_id == "c2" and not rejected.acceptable
+    schema = select_schema(with_missing=False)
+    assert "acceptable" in schema["required"]  # type: ignore[operator]
+    prompt = build_select_prompt(
+        task_type=TaskType.DEFAULT, material="m", candidates=[("c1", "a"), ("c2", "b")]
+    )
+    assert "`acceptable`" in prompt

@@ -182,9 +182,11 @@ def test_the_resume_command_has_the_option(fusion_home: Path) -> None:
 # ---------------------------------------------------------------------- the default strategy
 
 
-def test_the_default_strategy_is_the_two_model_panel_the_study_chose() -> None:
+def test_the_panel_default_is_the_two_model_panel_the_study_chose() -> None:
     book = load_strategy_book()
-    assert book.for_budget("medium").name == "panel-duo"
+    # The default is strategy auto (roadmap Task 9); panel-duo stays the two-model panel the
+    # 0.2.0 study chose, by name.
+    assert book.for_budget("medium").name == "auto"
     duo = book.get("panel-duo")
     assert [m.model for m in duo.members] == ["claude-haiku", "gpt-luna"]
     assert duo.aggregator == "llm" and duo.aggregator_model == "claude-haiku"

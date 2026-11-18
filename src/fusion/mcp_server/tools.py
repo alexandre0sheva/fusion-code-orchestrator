@@ -50,6 +50,7 @@ from fusion.orchestration.schemas import (
 from fusion.orchestration.schemas import (
     ImplementationPlanInput as PipelinePlanInput,
 )
+from fusion.orchestration.strategy import Strategy
 from fusion.providers.base import close_providers
 from fusion.routing.budget import BudgetLevel
 from fusion.storage.run_store import RunStore
@@ -463,24 +464,37 @@ class FusionTools:
 
     def strategies_overview(self) -> dict[str, Any]:
         """The strategies a call may name, and which one each budget preset means."""
-        book = self._code_review.deps.routing.strategies
+        routing = self._code_review.deps.routing
+        book = routing.strategies
+
+        def ladder(strategy: Strategy) -> list[dict[str, Any]]:
+            policy = routing.escalation_for(strategy)
+            usable = policy.climbable()
+            return [
+                {"rung": i, "name": r.name, "strategy": r.strategy, "allowed": i in usable}
+                for i, r in enumerate(policy.rungs)
+            ]
+
+        def row(s: Strategy) -> dict[str, Any]:
+            found: dict[str, Any] = {
+                "name": s.name,
+                "kind": s.kind,
+                "description": s.description,
+                "models": [m.model for m in s.members],
+                "rounds": s.rounds,
+                "aggregator": s.aggregator,
+                "aggregator_model": s.aggregator_model,
+                "judge": s.judge,
+                "max_cost_usd": s.max_cost_usd,
+                "max_latency_s": s.max_latency_s,
+            }
+            if s.kind == "auto":  # the strategies that answer are the ladder's
+                found["rungs"] = ladder(s)
+            return found
+
         return {
             "budget_presets": dict(book.budget_map),
-            "strategies": [
-                {
-                    "name": s.name,
-                    "kind": s.kind,
-                    "description": s.description,
-                    "models": [m.model for m in s.members],
-                    "rounds": s.rounds,
-                    "aggregator": s.aggregator,
-                    "aggregator_model": s.aggregator_model,
-                    "judge": s.judge,
-                    "max_cost_usd": s.max_cost_usd,
-                    "max_latency_s": s.max_latency_s,
-                }
-                for s in (book.get(name) for name in book.names())
-            ],
+            "strategies": [row(book.get(name)) for name in book.names()],
         }
 
     async def fusion_compare_claude_runs(

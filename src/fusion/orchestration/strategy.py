@@ -27,7 +27,7 @@ from pydantic import (
 )
 
 from fusion.config.layers import ConfigError, format_validation_error, resolve_config
-from fusion.config.loader import EarlyReturn, FanoutConfig
+from fusion.config.loader import EarlyReturn, EscalationPolicy, FanoutConfig
 from fusion.routing.budget import BudgetLevel
 
 if TYPE_CHECKING:
@@ -42,6 +42,7 @@ __all__ = [
     "MODE_SETTINGS",
     "BenchmarkOnlyError",
     "CascadeSpec",
+    "EscalationOverride",
     "FanoutOverride",
     "Mode",
     "ModeSettings",
@@ -216,15 +217,37 @@ class SkipAggregator(BaseModel):
     escalate_on_high_risk: bool = True
 
 
+class EscalationOverride(BaseModel):
+    """What one ``kind: auto`` strategy changes about the ladder (``routing.escalation``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    allow_frontier: bool | None = None
+    max_rungs: int | None = Field(default=None, ge=1)
+
+    def applied_to(self, policy: EscalationPolicy) -> EscalationPolicy:
+        updates = {
+            name: value
+            for name in self.model_fields_set
+            if (value := getattr(self, name)) is not None
+        }
+        return policy.model_copy(update=updates) if updates else policy
+
+
 class Strategy(BaseModel):
-    """A declarative arm: members, rounds, aggregation, judging and caps."""
+    """A declarative arm: members, rounds, aggregation, judging and caps.
+
+    ``kind: auto`` is the exception: it has no members of its own. It estimates the request's
+    difficulty and climbs the ladder of ``routing.escalation``, whose rungs name the strategies
+    that answer (see ``fusion.orchestration.escalate``).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    kind: Literal["solo", "panel", "cascade"]
+    kind: Literal["solo", "panel", "cascade", "auto"]
     description: str = ""
-    members: list[PanelMember] = Field(min_length=1)  # solo = exactly one member
+    members: list[PanelMember] = Field(default_factory=list)  # solo = exactly one member
     rounds: int = Field(default=1, ge=1, le=4)  # > 1 adds peer-refinement rounds
     # auto (the default): per task, union for review and debugging (answers add together) and
     # select+patch for plans, decisions, asks and patches (answers are rivals).
@@ -252,6 +275,11 @@ class Strategy(BaseModel):
     # (config/approaches.yaml), so the rival answers differ; off: identical prompts. Unset: auto
     # for a panel with a select aggregator, off otherwise.
     approaches: Literal["auto", "off"] | None = None
+    # Ask each member to check its answer against the input and report an honest confidence;
+    # the ladder escalates a single model whose confidence is low (rung 0's "short self-check").
+    self_check: bool = False
+    # kind auto only: what this strategy changes about the ladder (e.g. allow_frontier: true).
+    escalation: EscalationOverride | None = None
 
     @field_validator("lenses", "approaches", mode="before")
     @classmethod
@@ -262,7 +290,13 @@ class Strategy(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> Strategy:
+        if self.kind == "auto":
+            return self._consistent_auto()
         problems: list[str] = []
+        if not self.members:
+            problems.append(f"a {self.kind} strategy needs at least one member")
+        if self.escalation is not None:
+            problems.append("'escalation' is only valid for kind 'auto'")
         selecting = self.aggregator in SELECT_AGGREGATORS
         if self.lenses is None:
             lensable = self.kind == "panel" and self.aggregator in LENS_AGGREGATORS
@@ -352,10 +386,42 @@ class Strategy(BaseModel):
             raise ValueError("; ".join(problems))
         return self
 
+    def _consistent_auto(self) -> Strategy:
+        """kind auto: the rungs' strategies answer, so everything about answering is theirs."""
+        problems: list[str] = []
+        if self.members:
+            problems.append(
+                "an auto strategy takes no members: the strategies named by the rungs of "
+                "routing.escalation answer"
+            )
+        theirs = {
+            "rounds": self.rounds != 1,
+            "aggregator": self.aggregator != "auto",
+            "aggregator_model": self.aggregator_model is not None,
+            "judge": self.judge != "off",
+            "judge_feeds_synthesis": self.judge_feeds_synthesis,
+            "cascade": self.cascade is not None,
+            "fanout": self.fanout is not None,
+            "skip_aggregator": self.skip_aggregator is not None,
+            "speed": self.speed != "balanced",
+            "lenses": self.lenses == "auto",
+            "approaches": self.approaches == "auto",
+            "self_check": self.self_check,
+        }
+        named = [field for field, set_here in theirs.items() if set_here]
+        if named:
+            problems.append(
+                f"an auto strategy leaves {', '.join(named)} to the strategies of its rungs"
+            )
+        if problems:
+            raise ValueError("; ".join(problems))
+        self.lenses = self.approaches = "off"
+        return self
+
     @property
     def calls_aggregator_model(self) -> bool:
         """Whether aggregation makes a model call (llm or union+check, not for a solo run)."""
-        return self.kind != "solo" and self.aggregator in MODEL_AGGREGATORS
+        return self.kind not in ("solo", "auto") and self.aggregator in MODEL_AGGREGATORS
 
     @property
     def models(self) -> list[str]:

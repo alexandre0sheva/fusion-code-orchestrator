@@ -44,6 +44,15 @@
 #              rollout; ...), so the rival answers differ. Unset means auto for a select panel.
 #              A member may name its `approach`. Lenses and select never combine (a lens answers
 #              one area, so there would be no whole answer to pick): such a strategy is refused
+# kind: auto   no members: estimate the request's difficulty and start on the matching rung of
+#              the escalation ladder (routing_policies.yaml, `routing.escalation`), whose rungs
+#              name the strategies that answer; climb a rung only when the answer shows it is not
+#              enough (low self-check confidence, low agreement, no acceptable candidate, no
+#              finding the input backs, every patch failing, a lost quorum). A higher rung reuses
+#              every lower rung's answers. `escalation: {allow_frontier, max_rungs}` changes the
+#              ladder for one strategy. `auto` is the default (`budget: medium`)
+# self_check   true: each member is asked to check its answer against the input and report an
+#              honest confidence (rung 0's self-check; the ladder climbs when it is low)
 # kind: cascade  the `cascade.first` cheapest members answer first; if they agree (agreement >=
 #              `cascade.agreement_threshold`, nothing disputed, task not high risk) the run ends
 #              there with `cascade.early_aggregator` (vote | best_of) and no synthesis call;
@@ -66,6 +75,29 @@
 #        full  light, plus a check of the judge's own output
 
 strategies:
+  auto:
+    kind: auto
+    description: >-
+      The default. Estimates how hard the request is and starts on the matching rung of the
+      escalation ladder: one nano model with a self-check (easy), the nano panel (normal), the mid
+      panel (hard). Climbs a rung only when the answer shows it is not enough, reusing what the
+      lower rungs produced. Never uses the frontier rung.
+  auto-frontier:
+    kind: auto
+    description: >-
+      `auto` with the frontier rung (Claude Opus 5.5 alone) allowed above the mid panel, for
+      requests worth frontier prices when the cheaper rungs fall short.
+    escalation: {allow_frontier: true}
+
+  solo-haiku-check:
+    kind: solo
+    description: >-
+      Claude Haiku 5.5 alone, asked to check its answer and report an honest confidence; rung 0
+      of the `auto` ladder (nano tier).
+    members:
+      - model: claude-haiku
+    self_check: true
+
   # One solo strategy per catalog model: solo-<model>.
   solo-opus:
     kind: solo
@@ -353,7 +385,7 @@ strategies:
 # The legacy `budget` argument of the tools resolves to a strategy through this table.
 budget_strategies:
   low: solo-haiku
-  medium: panel-duo
+  medium: auto
   high: panel-refine
   local_only: panel-local
 

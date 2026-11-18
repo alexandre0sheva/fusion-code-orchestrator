@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from fusion.config.catalog import FREE_PROVIDERS, Catalog
+from fusion.config.loader import EscalationPolicy, load_routing_policies
 from fusion.orchestration.budget_guard import plan_calls
 from fusion.orchestration.strategy import Strategy, StrategyBook
 from fusion.routing.budget import PROMPT_OVERHEAD_TOKENS, forecast_calls
@@ -65,13 +66,48 @@ def _priced(strategy: Strategy, catalog: Catalog) -> bool:
     )
 
 
-def cost_rows(catalog: Catalog, book: StrategyBook, *, on: date) -> list[CostRow]:
+def _ladder_rows(
+    strategy: Strategy,
+    book: StrategyBook,
+    ladder: EscalationPolicy,
+    catalog: Catalog,
+    pricing: PricingRegistry,
+) -> list[CostRow]:
+    """strategy auto: one row per rung that can answer, and the climb from rung 0 to the
+    highest rung one run may reach (an upper bound: a climb reuses the answers below it)."""
+    policy = strategy.escalation.applied_to(ladder) if strategy.escalation else ladder
+    rows: list[CostRow] = []
+    for index in policy.climbable():
+        rung = policy.rungs[index]
+        cost = _cost(book.get(rung.strategy), catalog, pricing, escalate=True)
+        label = f"{strategy.name} (answered at rung {index}, {rung.name})"
+        rows.append(CostRow(label, cost.calls, cost.usd))
+    reach = rows[: policy.max_rungs]
+    if len(reach) > 1:
+        top = policy.climbable()[len(reach) - 1]
+        label = f"{strategy.name} (climbs rungs 0-{top}, at most)"
+        rows.append(CostRow(label, sum(r.calls for r in reach), sum(r.usd for r in reach)))
+    return rows
+
+
+def cost_rows(
+    catalog: Catalog,
+    book: StrategyBook,
+    *,
+    on: date,
+    ladder: EscalationPolicy | None = None,
+) -> list[CostRow]:
     """One row per paid strategy; two for a cascade (it stops early, or it escalates) and for a
-    strategy that skips its aggregator when the panel agrees (it does, or it synthesizes)."""
+    strategy that skips its aggregator when the panel agrees (it does, or it synthesizes); for
+    ``strategy: auto``, a row per rung of ``ladder`` (``routing.escalation`` when not given)."""
     pricing = PricingRegistry(catalog, today=on)
     rows: list[CostRow] = []
     for name in book.names():
         strategy = book.get(name)
+        if strategy.kind == "auto":
+            policy = ladder or load_routing_policies().routing.escalation
+            rows.extend(_ladder_rows(strategy, book, policy, catalog, pricing))
+            continue
         if not _priced(strategy, catalog):
             continue
         if strategy.kind == "cascade":

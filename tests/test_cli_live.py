@@ -137,7 +137,9 @@ async def test_a_terminal_gets_the_live_panel() -> None:
 def test_a_real_run_fills_the_view_through_the_pipeline_hooks() -> None:
     out = StringIO()
     tools = make_tools(None, True)
-    request = FusionAskInput(prompt="How should I retry a failed HTTP call without hammering it?")
+    request = FusionAskInput(
+        prompt="How should I retry a failed HTTP call without hammering it?", strategy="panel-duo"
+    )
     output = run_tool(
         tools,
         lambda t: t.fusion_ask(request),
@@ -146,7 +148,7 @@ def test_a_real_run_fills_the_view_through_the_pipeline_hooks() -> None:
     lines = out.getvalue().splitlines()
     assert output["run_id"]
     panel = [ln for ln in lines if ln.startswith("  ok    panel")]
-    assert len(panel) == 2  # the default panel has two models
+    assert len(panel) == 2  # panel-duo has two models
     assert any(ln.startswith("  ok    synthesis") for ln in lines)
     assert lines.index("panel: asking 2 models") < lines.index(panel[0])
     assert "synthesizing" in lines

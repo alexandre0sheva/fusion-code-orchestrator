@@ -38,7 +38,9 @@ def test_ask_prints_the_answer_on_stdout_and_progress_on_stderr(runner: CliRunne
     result = runner.invoke(app, ["ask", LONG_QUESTION, "--mock"])
     assert result.exit_code == 0, result.output
     assert "## Fusion Answer" in result.stdout and "panel:" not in result.stdout
-    assert "panel: asking 2 models" in result.stderr and "synthesizing" in result.stderr
+    # the default is strategy auto: an easy question starts on rung 0, one model
+    assert "estimating difficulty" in result.stderr and "panel: asking 1 model" in result.stderr
+    assert result.stderr.count("synthesizing") == 1
 
 
 def test_ask_json_is_the_mcp_tool_record(runner: CliRunner) -> None:

@@ -120,7 +120,10 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 <!-- cost-table:start as-of=2026-11-18 -->
 | Strategy | Calls | Cost per task | Relative to `solo-opus` |
 |----------|-------|---------------|----------------------|
+| `auto (answered at rung 0, nano-solo)` | 1 | $0.0013 | 0.02x |
+| `auto-frontier (answered at rung 0, nano-solo)` | 1 | $0.0013 | 0.02x |
 | `solo-haiku` | 1 | $0.0013 | 0.02x |
+| `solo-haiku-check` | 1 | $0.0013 | 0.02x |
 | `solo-luna` | 1 | $0.0013 | 0.02x |
 | `panel-cascade (first wave agrees)` | 2 | $0.0025 | 0.05x |
 | `panel-duo (panel agrees)` | 2 | $0.0026 | 0.05x |
@@ -137,6 +140,8 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `panel-nano-union` | 3 | $0.0124 | 0.25x |
 | `solo-terra` | 1 | $0.0125 | 0.25x |
 | `panel-nano-select` | 4 | $0.0133 | 0.27x |
+| `auto (answered at rung 1, nano-panel)` | 4 | $0.0144 | 0.29x |
+| `auto-frontier (answered at rung 1, nano-panel)` | 4 | $0.0144 | 0.29x |
 | `panel-nano` | 4 | $0.0144 | 0.29x |
 | `panel-nano-auto` | 4 | $0.0144 | 0.29x |
 | `solo-hydrogen` | 1 | $0.0187 | 0.37x |
@@ -145,15 +150,23 @@ typed by hand, and `tests/test_cost_table.py` fails when it drifts from the cata
 | `solo-sol` | 1 | $0.0250 | 0.50x |
 | `solo-sonnet` | 1 | $0.0250 | 0.50x |
 | `panel-refine` | 7 | $0.0297 | 0.59x |
+| `auto-frontier (answered at rung 3, frontier)` | 1 | $0.0500 | 1.00x |
 | `solo-opus` | 1 | $0.0500 | 1.00x |
 | `panel-cascade (escalates)` | 4 | $0.0504 | 1.01x |
 | `panel-cheap-strong-synth` | 4 | $0.0509 | 1.02x |
+| `auto (answered at rung 2, mid-panel)` | 4 | $0.0975 | 1.95x |
+| `auto-frontier (answered at rung 2, mid-panel)` | 4 | $0.0975 | 1.95x |
 | `panel-mid` | 4 | $0.0975 | 1.95x |
 | `solo-astra` | 1 | $0.1000 | 2.00x |
 | `solo-fable` | 1 | $0.1000 | 2.00x |
+| `auto (climbs rungs 0-2, at most)` | 9 | $0.1131 | 2.26x |
+| `auto-frontier (climbs rungs 0-2, at most)` | 9 | $0.1131 | 2.26x |
 <!-- cost-table:end -->
 
-How to read it: a refinement round re-reads the peers' answers, a synthesizer reads every answer
+How to read it: `auto` has a row per rung that can answer (where an easy, normal or hard request
+starts and ends) and one for the longest climb a run may make; a real climb costs less than that
+row, because a higher rung reuses the answers below it instead of asking those models again. A
+refinement round re-reads the peers' answers, a synthesizer reads every answer
 plus the claim clusters, and the cascade rows are its two outcomes (the two cheapest models agree
 and the run stops, or it escalates to the whole panel and the synthesizer). The numbers are an
 illustration of how strategies compare, not a measurement: real answer lengths differ, reasoning

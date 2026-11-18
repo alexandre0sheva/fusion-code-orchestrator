@@ -30,6 +30,54 @@ policies:
     judge_model: gemini-flash
     min_context_score: 0.2
 
+# Difficulty routing for `strategy: auto` (the default). Thresholds are provisional; the 0.3.0
+# study calibrates them on the dev split (roadmap Task 16).
+routing:
+  difficulty:
+    # Each signal is scaled to 0..1 (see `scales`); the weighted mean is the request's score.
+    weights:
+      task: 0.15         # the task type's base difficulty (task_base)
+      size: 0.15         # request + context + files, in tokens
+      files: 0.1         # distinct files named or touched
+      hunks: 0.1         # diff hunks
+      languages: 0.05    # distinct languages by file extension
+      stack_depth: 0.1   # frames in a stack trace
+      error_type: 0.1    # a plain KeyError is easy, a race or a leak is hard
+      risk: 0.2          # concurrency, security, migrations, money, auth
+      question: 0.05     # yes/no 0, lookup 0.25, design question 1
+    task_base:
+      default: 0.1
+      answer_eval: 0.3
+      code_review: 0.4
+      debugging: 0.5
+      implementation_plan: 0.5
+      architecture_decision: 0.7
+    scales: {size_tokens: 8000, files: 5, hunks: 10, languages: 3, stack_frames: 15}
+    easy_below: 0.25
+    hard_from: 0.45
+    # A score this close to a threshold is ambiguous: one nano-model call (at most
+    # classifier_max_tokens out, in the run's ledger) decides. classifier_model: null switches
+    # the call off.
+    ambiguity_margin: 0.05
+    classifier_model: claude-haiku
+    classifier_max_tokens: 150
+  escalation:
+    # Rungs from cheapest to dearest; each names a strategy (strategies.yaml). A higher rung
+    # reuses every answer a lower rung produced and asks only the models that have not answered.
+    rungs:
+      - {name: nano-solo, strategy: solo-haiku-check}   # one nano model with a self-check
+      - {name: nano-panel, strategy: panel-nano-auto}   # lenses + union, or approaches + select
+      - {name: mid-panel, strategy: panel-mid}
+      - {name: frontier, strategy: solo-opus, frontier: true}
+    start_by_level: {easy: 0, normal: 1, hard: 2}
+    # The frontier rung is off: a default run never pays frontier prices. Opt in here, or per
+    # call with `strategy: auto-frontier`.
+    allow_frontier: false
+    max_rungs: 3          # rungs one run may try, the start rung included
+    triggers:
+      self_confidence_below: 0.7   # a single model's own confidence
+      agreement_below: 0.5         # tau, for panels without lenses or approaches
+
 budgets:
   default_max_cost_usd: 1.0
   default_max_latency_ms: 120000

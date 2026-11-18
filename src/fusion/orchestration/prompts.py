@@ -304,6 +304,20 @@ def approach_instruction(approach: Approach) -> str:
     )
 
 
+def self_check_instruction() -> str:
+    """Rung 0 of strategy auto: one model answers alone, so it checks its own answer and its
+    confidence decides whether a stronger setup is asked (``routing.escalation.triggers``)."""
+    return "\n".join(
+        [
+            "\n\n## Self-check",
+            "You answer alone. Before you reply, check every claim against the input above and "
+            "drop what it does not support. Then set `confidence` to the probability that your "
+            "answer is correct and complete. Be honest: when it is low a stronger setup answers "
+            "instead, so a high number you cannot stand behind costs more than a low one.",
+        ]
+    )
+
+
 _PATCH_FIELD = (
     "string — ONE patch for the whole change: a unified diff, or the complete new content of each "
     "changed file under `=== path ===` lines. Build it from the patches in the responses (take the "
@@ -477,6 +491,7 @@ def select_schema(*, with_missing: bool) -> dict[str, object]:
     ``select+patch``, the points a candidate lacks."""
     properties: dict[str, object] = {
         "why": {"type": "string"},
+        "acceptable": {"type": "boolean"},
         "choice": {"type": "string"},
         "runner_up": {"type": ["string", "null"]},
     }
@@ -550,7 +565,10 @@ def build_select_prompt(
         "\n## Output",
         f"Return JSON: `why` (at most {SELECT_OUTPUT_LINES} short lines: the criterion that "
         "decided it, and what the runner-up lacked), `choice` (the id of the best candidate, "
-        'for example "c2"), `runner_up` (the id of the second best, or null).',
+        'for example "c2"), `runner_up` (the id of the second best, or null), and '
+        "`acceptable`: false only when no candidate is good enough to hand over (none delivers "
+        "what was asked, or every one rests on invented specifics); still name the least bad "
+        "one as `choice`.",
     ]
     if patch_points > 0:
         output.append(

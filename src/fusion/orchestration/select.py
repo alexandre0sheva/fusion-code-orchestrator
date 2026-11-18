@@ -78,6 +78,9 @@ class SelectionResult(BaseModel):
     why: str = ""
     runner_up: str | None = None
     missing: list[MissingPoint] = Field(default_factory=list)
+    # False when the selector found no candidate good enough to return (it still names the least
+    # bad one); strategy auto then asks a stronger rung.
+    acceptable: bool = True
 
 
 def _seed(run_id: str) -> int:
@@ -150,6 +153,7 @@ def parse_selection(
             why=why.strip()[:_WHY_CHARS] if isinstance(why, str) else "",
             runner_up=runner if runner != choice else None,
             missing=_points(data.get("missing"), valid, choice, max_points),
+            acceptable=data.get("acceptable") is not False,
         )
     fenced = _FENCED_CHOICE.search(response.content)
     if fenced and (choice := _known(fenced.group("id"), valid)):

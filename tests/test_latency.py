@@ -217,7 +217,7 @@ def test_a_fallback_never_asks_another_member_of_the_strategy() -> None:
     assert any("no other free-tier panel model was available" in w for w in result.warnings)
 
 
-async def test_the_default_duo_survives_a_retired_model(tmp_path: Path) -> None:
+async def test_panel_duo_survives_a_retired_model(tmp_path: Path) -> None:
     provider = Scripted(fail=set())
     original = provider.complete
 
@@ -227,7 +227,7 @@ async def test_the_default_duo_survives_a_retired_model(tmp_path: Path) -> None:
         return await original(request)
 
     provider.complete = retired  # type: ignore[method-assign]
-    result = await pipeline(tmp_path, provider).run(context())
+    result = await pipeline(tmp_path, provider).run(context(strategy="panel-duo"))
     assert result.halt_reason is None and result.final_answer
     assert result.fanout.fallbacks == {FAST: WEAK}
     assert {p.model_name for p in result.panel_results} == {WEAK, SECURITY}
@@ -250,9 +250,9 @@ def test_spares_share_the_failed_models_price_tier_and_prefer_another_vendor() -
 # ------------------------------------------------------------------------- skip the aggregator
 
 
-async def test_the_default_skips_synthesis_when_the_panel_agrees(tmp_path: Path) -> None:
+async def test_panel_duo_skips_synthesis_when_the_panel_agrees(tmp_path: Path) -> None:
     provider = Scripted({FAST: AGREED, SECURITY: AGREED})
-    result = await pipeline(tmp_path, provider).run(context())
+    result = await pipeline(tmp_path, provider).run(context(strategy="panel-duo"))
     assert "synthesis" not in stages(result)
     assert any(r.startswith("Synthesis skipped") for r in result.routing.reasons)
     assert result.final_answer
@@ -266,11 +266,11 @@ async def test_the_default_skips_synthesis_when_the_panel_agrees(tmp_path: Path)
     ],
     ids=["disagree", "high-risk"],
 )
-async def test_the_default_still_synthesizes_disagreement_and_high_risk(
+async def test_panel_duo_still_synthesizes_disagreement_and_high_risk(
     tmp_path: Path, answers: dict[str, str], prompt: str | None, why: str
 ) -> None:
     provider = Scripted(answers)
-    ctx = context(prompt) if prompt else context()
+    ctx = context(prompt, strategy="panel-duo") if prompt else context(strategy="panel-duo")
     result = await pipeline(tmp_path, provider).run(ctx)
     assert "synthesis" in stages(result)
     assert any(r.startswith("Synthesis ran") and why in r for r in result.routing.reasons)
@@ -291,7 +291,7 @@ def test_skip_aggregator_needs_an_llm_aggregator() -> None:
 
 async def test_the_aggregator_call_is_streamed(tmp_path: Path) -> None:
     provider = Scripted({FAST: AGREED, SECURITY: UNRELATED})
-    await pipeline(tmp_path, provider).run(context())
+    await pipeline(tmp_path, provider).run(context(strategy="panel-duo"))
     synth = [r for r in provider.requests if r.metadata.get("role") == "synthesizer"]
     assert synth and all(r.stream for r in synth)
 

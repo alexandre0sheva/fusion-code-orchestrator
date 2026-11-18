@@ -267,6 +267,8 @@ async def test_stats_and_strategies_are_resources(server: Any) -> None:
     names = {s["name"] for s in strategies["strategies"]}
     assert {"solo-haiku", "panel-duo", "panel-digest"} <= names
     assert strategies["budget_presets"]["medium"] in names
+    auto = next(s for s in strategies["strategies"] if s["name"] == "auto")
+    assert [r["allowed"] for r in auto["rungs"]] == [True, True, True, False]  # frontier is off
     assert stats.strip()
 
 

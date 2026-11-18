@@ -65,6 +65,25 @@ def _confidence_line(result: PipelineResult) -> str:
     )
 
 
+def _route_lines(result: PipelineResult, *, full: bool = False) -> list[str]:
+    """strategy auto: the rung that answered and why, so the reader sees what was paid for;
+    ``full`` adds a line per rung tried."""
+    climb = result.escalation
+    if climb is None or not climb.summary:
+        return []
+    lines = ["", "### Route", climb.summary]
+    if full:
+        lines.append(f"- difficulty: {climb.difficulty.describe()}")
+        for attempt in climb.rungs:
+            cost = f"${attempt.cost_usd:.4f}" if attempt.cost_known else "cost unknown"
+            why = f": {attempt.reason}" if attempt.reason else ""
+            lines.append(
+                f"- rung {attempt.rung} ({attempt.name}, {attempt.strategy}) {attempt.outcome}, "
+                f"{cost}, {attempt.latency_ms / 1000:.1f}s{why}"
+            )
+    return lines
+
+
 def step_name(record: CallRecord) -> str:
     return "synthesis" if record.stage == "synthesis" else f"{record.stage}:{record.model_alias}"
 
@@ -237,6 +256,7 @@ class ResultPresenter:
         lines = [f"## {title}", "", "### Answer", _headline(result)]
         lines.extend(self._claim_lines(result, "Key claims", limit=5))
         lines.extend(["", "### Confidence", _confidence_line(result)])
+        lines.extend(_route_lines(result))
         lines.extend(["", "### Cost", self._compact_cost(result, usage, cost_comparison)])
         if result.warnings:
             lines.extend(["", "### Caveats"])
@@ -255,6 +275,7 @@ class ResultPresenter:
         lines = [f"## {title}", "", "### Recommendation", result.final_answer.strip()]
         lines.extend(self._claim_lines(result, "Claims", limit=1000))
         lines.extend(["", "### Confidence", _confidence_line(result)])
+        lines.extend(_route_lines(result, full=True))
         lines.extend(["", "### Cost & usage"])
         lines.extend(self._cost_lines(result, usage, cost_comparison))
         lines.extend(self._shadow_lines(result))
@@ -436,6 +457,7 @@ class ResultPresenter:
             "claims": [c.model_dump() for c in result.claims],
             "agreement": result.agreement.model_dump() if result.agreement else {},
             "cascade": result.cascade.model_dump() if result.cascade else {},
+            "escalation": result.escalation.model_dump() if result.escalation else {},
             "budget": result.budget.model_dump() if result.budget else {},
             "warnings": result.warnings,
         }

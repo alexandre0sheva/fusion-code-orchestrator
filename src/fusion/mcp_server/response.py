@@ -97,6 +97,7 @@ def present_run(
         "warnings": list(output.get("warnings", [])),
         "run_id": run_id,
         "strategy": routing.get("strategy"),
+        "escalation": routing.get("escalation") or None,
         "confidence": output.get("confidence"),
         "cost_usd": cost.get("total_cost_usd") if cost.get("total_cost_known", True) else None,
         "latency_s": round(float(cost.get("total_latency_ms", 0.0)) / 1000, 2),

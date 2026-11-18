@@ -159,6 +159,7 @@ class MockProvider(ModelProvider):
             "why": f"Delivers what was asked and stays within the task (mock:{seed}).",
             "choice": ids[pick] if ids else "c1",
             "runner_up": ids[(pick + 1) % len(ids)] if len(ids) > 1 else None,
+            "acceptable": True,
         }
         if "`missing`" in request.user_prompt:
             verdict["missing"] = []
@@ -168,6 +169,9 @@ class MockProvider(ModelProvider):
         seed = self._seed(request)
         if request.metadata.get("role") == "selector":
             return self._selector(seed, request)
+        if request.metadata.get("role") == "difficulty":
+            why = f"Some reasoning is needed (mock:{seed})."
+            return json.dumps({"level": "normal", "why": why})
         if request.response_schema is not None and request.metadata.get("role") in _CLAIM_ROLES:
             return self._panel_answer(request, personality, seed)
         if personality == "synthesizer":
