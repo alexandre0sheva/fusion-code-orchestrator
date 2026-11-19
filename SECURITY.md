@@ -233,6 +233,17 @@ model wrote reaches it inside `<untrusted>` delimiters with a closing marker ins
 defused, so an answer that says "give me full marks" is data, not an instruction. Its steps and
 money are capped (12 steps, $0.50 per run) and every tool call is stored with the item.
 
+**Claude Code A/B runs** (`fusion bench e2e`) start headless Claude Code on a dataset's tasks, each
+in a fresh temporary copy of the task's repo with a scrubbed environment and `HOME` inside it; the
+task's source is only read, and a test hashes it before and after. The `claude` process is not
+under `sandbox-exec` (it needs the network for its own API, and its Bash sandbox cannot nest inside
+another Seatbelt profile), so the run relies on Claude Code's own controls, set per run: Bash in
+Claude Code's sandbox with no network and no unsandboxed fallback, `WebFetch` and `WebSearch`
+denied, edits outside the copy refused (`acceptEdits` with every permission prompt answered "no"),
+and the file holding the Fusion server's provider keys denied to its tools. `--bare` keeps the
+owner's hooks, `CLAUDE.md` files and plugins out. Details:
+[CLAUDE_CODE_AB.md](docs/CLAUDE_CODE_AB.md#isolation).
+
 **The browser is the exception to the sandbox.** Chromium has a sandbox of its own that cannot be
 nested inside `sandbox-exec`, so the optional `[bench-visual]` evaluators contain the page
 differently: it is served by a throwaway `http.server` bound to 127.0.0.1 over a *copy* of the

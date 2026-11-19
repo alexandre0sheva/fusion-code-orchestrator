@@ -158,7 +158,7 @@ Flags, exit codes, the live view and shell completion: [docs/CONFIGURATION.md](d
 | Cost and pricing methodology | [docs/COSTS.md](docs/COSTS.md) |
 | Measuring Fusion vs a single model | [docs/BENCHMARKING.md](docs/BENCHMARKING.md) |
 | Claude Code / Cursor / Codex setup, tool reference | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
-| Manual Claude Code A/B runbook | [docs/CLAUDE_CODE_AB.md](docs/CLAUDE_CODE_AB.md) |
+| Claude Code A/B (`fusion bench e2e`, manual runbook) | [docs/CLAUDE_CODE_AB.md](docs/CLAUDE_CODE_AB.md) |
 | Security model | [SECURITY.md](SECURITY.md) |
 | Contributing and docs rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Release history | [CHANGELOG.md](CHANGELOG.md) |

@@ -1,262 +1,169 @@
-# Claude Code + Opus vs Claude Code + Fusion A/B Runbook
+# Claude Code A/B: with and without Fusion
 
-Canonical for the manual Claude Code A/B procedure. The automated, ground-truth measurement is in
-[BENCHMARKING.md](BENCHMARKING.md).
+Canonical for the Claude Code A/B procedure: the automated end-to-end harness (`fusion bench e2e`)
+and the manual comparison on your own tasks. Benchmark methodology in general (datasets, scoring,
+statistics, reports) is in [BENCHMARKING.md](BENCHMARKING.md).
 
-This runbook describes the intended production workflow:
+The question is the one that matters for cost: inside a real Claude Code session, with the host
+model's own tokens counted, does a cheaper executor that consults Fusion solve as many tasks as a
+frontier executor, for less? Fusion never edits files: Claude Code stays the executor in every arm.
 
-- **Arm A:** Claude Code uses its native large model, for example Opus.
-- **Arm B:** Claude Code keeps all normal Claude Code capabilities, but calls Fusion MCP as
-  the reasoning/model panel using cheaper models.
-- **Comparison:** Fusion evaluates both outputs and reports quality, cost, and latency
-  differences.
+## Automated: `fusion bench e2e`
 
-## What Fusion can and cannot replace
+Each run is headless Claude Code (`claude -p`) on one executable coding task of a dataset (default
+`v2`: every `coding` task with hidden tests, synthetic and real-repo), in a sandboxed temporary copy
+of the task's repo. The hidden tests decide whether it solved the task.
 
-Fusion MCP cannot invisibly change Claude Code's internal model selector. Claude Code still
-owns repository reads, edits, shell commands, tests, tool calls, and final delivery.
+| Arm | Executor | Fusion |
+|-----|----------|--------|
+| `opus`, `sonnet`, `haiku` | Claude Code on Opus 5.5, Sonnet 5.5 or Haiku 5.5 (the catalog's model ids) | off: no MCP server |
+| `opus+fusion`, `sonnet+fusion`, `haiku+fusion` | the same | on: Fusion's MCP server and plugin |
 
-Fusion acts as a model-like reasoning backend that Claude Code calls through MCP:
+The `haiku+fusion` and `sonnet+fusion` arms (a cheap executor with a cheap advisor) are the cost
+play; `opus` is the baseline.
 
-```text
-Claude Code tools/editing/testing stay the same.
-Only the expensive reasoning step is routed through Fusion's cheaper model panel.
-```
-
-For a fair A/B test, the Fusion arm should call `fusion_ask` or a specialized Fusion tool for
-each substantive reasoning checkpoint:
-
-- initial plan;
-- architecture/design choice;
-- debugging hypothesis;
-- pre-edit implementation strategy;
-- after a test failure;
-- final self-review.
-
-That is the closest practical MCP-based equivalent of “replace the LLM with Fusion panel”
-while preserving normal Claude Code behavior.
-
-## Prerequisites
-
-Set up the MCP server and plugin as described in [INTEGRATIONS.md](INTEGRATIONS.md), put provider
-keys in `.env` (see [CONFIGURATION.md](CONFIGURATION.md)), and verify:
+### Commands
 
 ```bash
-uv run fusion config validate
+# Free and deterministic: a simulated `claude` replays seeded runs (no API keys, no network).
+uv run fusion bench e2e --mock --limit 4
+
+# Live, within a cap you state (costs money: host tokens plus Fusion's panels).
+uv run fusion bench e2e --limit 6 --executors opus,haiku --max-usd 3
+
+# Continue a stopped run (finished runs are skipped, errors are tried again).
+uv run fusion bench e2e --run-id bench-20261119-101500-ab12 --max-usd 4
+
+# Read the results: the usual reports, with a "Claude Code end to end" section.
+uv run fusion bench show RUN_ID
+uv run fusion bench report RUN_ID --format html
 ```
 
-## Recommended run folder
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `--dataset` | `v2` | Any dataset; only its executable `coding` tasks are used |
+| `--split`, `--limit`, `--seed` | `dev`, all, `0` | Which tasks (a seeded sample spread evenly) |
+| `--executors` | `opus,sonnet,haiku` | Executors to run |
+| `--fusion` | `both` | `both`, `off` or `on` |
+| `--repeats` | `1` | Runs of each (task, arm) |
+| `--max-usd` | required live | The run's cap |
+| `--run-budget-usd` | `1.0` | Claude Code's own `--max-budget-usd` for each run |
+| `--fusion-allowance-usd` | `0.25` | Reserved for Fusion's calls in each Fusion run |
+| `--spend-stop-usd` | the ledger's cap | Stop before cumulative live spend would pass this |
+| `--timeout` | `900` | Seconds before a run is killed |
+| `--concurrency` | `1` | Runs at once |
+| `--plugin-dir` | this checkout's `plugin/` | The plugin the Fusion arms load |
+| `--claude` | `claude` | The executable |
 
-For each benchmark case, create a folder like:
+### Before a live run
 
-```text
-evals/claude-code-runs/CASE_ID/
-  task.md
-  opus-output.md
-  fusion-output.md
-  verification.md
-  metrics.json
-  comparison.json
-```
+- Claude Code on `PATH` (`claude --version`; the version is stored with the run), new enough to
+  know every executor's model id. A build that predates a model prints `unrecognized_model`, prices
+  it at a default rate and so stops early on its own `--max-budget-usd`; the item then carries a
+  warning. Claude Code 2.1.287 knows Opus 5.5 and Sonnet 5.5 but not Haiku 5.5; 2.1.327 knows all three
+  (`claude update`).
+- `ANTHROPIC_API_KEY`: runs use `--bare`, which reads no login, keychain, hooks, `CLAUDE.md` or
+  installed plugins, so every arm starts from the same clean setup and the host cost is billed to
+  that key.
+- Provider keys for the Fusion server (`.env`, see [CONFIGURATION.md](CONFIGURATION.md)); they are
+  handed to the server only, never to Claude Code's environment.
+- A share of the live budget: `fusion bench spend` shows what is left. Each run reserves its worst
+  case (`--run-budget-usd`, plus `--fusion-allowance-usd` for a Fusion arm) against `--max-usd` and
+  the spend ledger before it starts, and the run stops cleanly, resumable, when the next one would
+  not fit. Its measured cost (host plus Fusion) is appended to the ledger afterwards.
 
-`task.md` should contain the exact user prompt and acceptance criteria. Use the same file for
-both arms.
+### What one run does
 
-Example `metrics.json`:
+1. Copies the task's files into a fresh temporary directory (`bench/sandbox.py`) and commits them to
+   a throwaway git repository there, so `git diff` and Fusion's `diff_ref` work. The task's source
+   is only read.
+2. Starts `claude -p "<task>" --output-format stream-json --model <id> --max-budget-usd <cap>
+   --bare --permission-mode acceptEdits --permission-prompts none --settings <file>
+   --strict-mcp-config --mcp-config <file>` in that copy, with `HOME` and `CLAUDE_CONFIG_DIR` inside
+   it and a scrubbed environment. A Fusion arm also gets `--plugin-dir` (a copy of the plugin
+   without its `.mcp.json`), `--allowedTools mcp__fusion`, and one appended system-prompt paragraph
+   telling it which Fusion tools to use when. The task prompt itself is the same in every arm: the
+   task's text, asking for edits in place.
+3. In a Fusion arm, the MCP config starts this checkout's server (`python -m fusion.cli.main mcp`)
+   with its project root on the copy and its run database inside the sandbox.
+4. Reads the result: Claude Code's final `result` event (cost, usage, turns), every `tool_use` in
+   the transcript, and the Fusion server's ledger (`runs.db`: one row per Fusion run, with its cost).
+5. Diffs the edited copy against the task and runs the hidden tests on that diff in a second,
+   network-less sandbox, exactly as a patch from any bench arm is judged
+   ([Coding tasks and the sandbox](BENCHMARKING.md#coding-tasks-and-the-sandbox)). Then deletes the
+   copy.
 
-```json
-{
-  "case_id": "retry-handling-001",
-  "opus": {
-    "label": "Claude Code + Opus",
-    "model": "opus",
-    "latency_ms": 0,
-    "cost_usd": null,
-    "notes": "Fill from Claude Code usage/cost UI or API billing export."
-  },
-  "fusion": {
-    "label": "Claude Code + Fusion",
-    "fusion_run_ids": [],
-    "latency_ms": 0,
-    "cost_usd": null,
-    "notes": "Use Fusion MCP output usage/cost_comparison or fusion runs show RUN_ID."
-  }
-}
-```
+### Isolation
 
-## Arm A: Claude Code + Opus/native model
+| Control | How |
+|---------|-----|
+| Task source | Copied, never written; a test hashes the dataset before and after a run |
+| Bash commands | Claude Code's own sandbox (`sandbox.enabled`, `failIfUnavailable`, no unsandboxed retry), with an empty strict network allow-list: the task's code gets no network |
+| Web tools | `WebFetch` and `WebSearch` denied |
+| File edits | `acceptEdits` covers the working directory only; anything else needs a permission prompt, and `--permission-prompts none` answers every prompt "no" |
+| Secrets | The run's MCP config (with the provider keys) sits beside the copy, in a directory Claude Code's file tools and sandbox are denied |
+| Limits | A wall-clock timeout that kills the process group, Claude Code's `--max-budget-usd` |
 
-Start a fresh Claude Code thread or reset context enough that the two arms are comparable.
-Select Opus/native model in Claude Code.
+The `claude` process itself is not under Fusion's `sandbox-exec`: Claude Code needs the network for
+its own API calls, and on macOS its Bash sandbox cannot start inside another Seatbelt profile. The
+guarantees above therefore rest on Claude Code's sandbox and permission settings. See
+[SECURITY.md](../SECURITY.md#benchmark-sandbox).
 
-Use this prompt template:
+### What is measured
 
-```text
-You are running the OPUS baseline arm.
+Stored with every item (`BenchItem.e2e`; the bench's own `metrics` hold the same in its terms):
 
-Do not call Fusion MCP tools in this arm.
-Use normal Claude Code capabilities: inspect files, edit files, run tests, and iterate.
+| Field | Source |
+|-------|--------|
+| `tests_passed` / `tests_expected`, `solved` | The task's hidden tests on the edited copy |
+| `wall_seconds` | Wall time of the `claude` process (`claude_seconds`: Claude Code's own figure) |
+| `host_cost_usd` | Claude Code's per-model token counts (`modelUsage` in its JSON) at the catalog's prices; a model the catalog lacks counts at Claude Code's own `costUSD` (the item says which). Unknown when neither applies, and the report marks such totals as a lower bound |
+| `host_cost_reported_usd`, `host_usage` | Claude Code's own `total_cost_usd` and `modelUsage`, kept for comparison: for a model it does not know, its cost uses a default price |
+| `fusion_cost_usd`, `fusion_calls` | The Fusion server's ledger in the sandbox |
+| `total_cost_usd` | Host plus Fusion |
+| `turns`, `tool_calls`, `fusion_tool_calls` | `num_turns`; `tool_use` blocks in the transcript |
+| `input_tokens`, `output_tokens`, `cache_read_tokens` | Claude Code's `usage` (input counts cache reads and writes) |
+| `files_changed`, `patch` | The diff of the edited copy |
 
-Task:
-<paste the exact contents of task.md>
+Claude Code's raw output of each run is kept beside the results, in
+`bench-results/<run>/evidence/e2e/<job key>.jsonl` (and `.stderr.txt`).
 
-When done, provide:
-1. Final answer / implementation summary.
-2. Files changed.
-3. Tests run and results.
-4. Any remaining risks.
-```
+An item is `completed` when Claude Code finished, `halted` when it stopped on its own limit, its
+budget or the timeout (the tests still judge what it left), and `error` when it produced no result
+or a Fusion arm's server did not connect (such a run is not a Fusion run; `--run-id` tries errors
+again).
 
-Record:
+### Simulated runs (`--mock`)
 
-- final Claude Code answer in `opus-output.md`;
-- changed files and test results in `verification.md`;
-- wall-clock latency in `metrics.json`;
-- Opus cost in `metrics.json` if available from Claude Code usage, billing export, or API logs.
+`--mock` replaces `claude` with `python -m fusion.bench.e2e.fake_claude`, which replays a seeded
+recording per (task, arm): the executor's invented success rate decides whether it writes the task's
+reference fix, one of its known flaws, or nothing; tokens are priced from the catalog; Fusion arms
+record Fusion runs in the sandboxed ledger. Everything else (the copy, the hidden tests, the store,
+the reports) is the real code path. The numbers test the harness and say nothing about real models.
 
-If exact Opus cost is unavailable, leave `cost_usd: null`. The comparison tool will report the
-cost winner as `unknown`.
+## Manual: your own tasks
 
-## Arm B: Claude Code + Fusion MCP
+To compare on a task from your own repository instead of a dataset:
 
-Start from the same clean repository state and use the same `task.md`.
+1. Start from the same clean repository state for both arms, with the same `task.md` (the exact
+   prompt and acceptance criteria).
+2. **Arm A:** Claude Code on Opus, told not to call Fusion. **Arm B:** Claude Code on a cheaper
+   model with Fusion installed ([INTEGRATIONS.md](INTEGRATIONS.md)), told to call `fusion_ask` or
+   `fusion_plan_feature` before editing, `fusion_debug_error` after a failing test, and
+   `fusion_review_diff` before finishing. Let both edit, run tests and iterate normally;
+   `/fusion:ab` does this inside one session.
+3. Record for each arm: the final answer, the tests run and their results, the whole wall-clock
+   time, and the cost (Claude Code's usage; Fusion's from `fusion runs show RUN_ID`). Leave a cost
+   unknown rather than guess it.
+4. Compare with the MCP tool `fusion_compare_claude_runs`, or from files:
 
-Use this prompt template:
+   ```bash
+   uv run fusion compare-claude-runs \
+     --task-file task.md --opus-file opus-output.md --fusion-file fusion-output.md \
+     --context-file verification.md \
+     --opus-cost 0.42 --fusion-cost 0.07 --opus-latency-ms 90000 --fusion-latency-ms 45000
+   ```
 
-```text
-You are running the FUSION arm.
-
-Keep all normal Claude Code capabilities. You may inspect files, edit files, run tests, and
-iterate exactly as usual.
-
-For substantive reasoning, use Fusion MCP as the model backend:
-- call fusion_ask for general planning/implementation reasoning;
-- call fusion_plan_feature for larger implementation plans;
-- call fusion_debug_error after test failures or stack traces;
-- call fusion_review_diff before finalizing a non-trivial diff.
-
-After each Fusion call, use the returned answer like a model response and continue with normal
-Claude Code editing/testing.
-
-Task:
-<paste the exact contents of task.md>
-
-When done, provide:
-1. Final answer / implementation summary.
-2. Files changed.
-3. Tests run and results.
-4. Fusion run IDs used.
-5. Fusion cost/usage summary from MCP outputs.
-6. Any remaining risks.
-```
-
-Record:
-
-- final Claude Code answer in `fusion-output.md`;
-- Fusion `run_id` values from MCP outputs in `metrics.json`;
-- test results in `verification.md`;
-- wall-clock latency in `metrics.json`;
-- Fusion cost from MCP outputs or from:
-
-```bash
-uv run fusion runs show RUN_ID
-uv run fusion runs costs
-```
-
-For multiple Fusion calls, sum the Fusion run costs and use the whole Fusion-arm wall time.
-
-## Compare the two arms inside Claude Code
-
-After both arms are complete, call MCP tool `fusion_compare_claude_runs` with:
-
-```json
-{
-  "task_prompt": "<contents of task.md>",
-  "opus_output": "<contents of opus-output.md>",
-  "fusion_output": "<contents of fusion-output.md>",
-  "context": "<verification.md, relevant diffs, test results, and notes>",
-  "opus_cost_usd": 0.42,
-  "fusion_cost_usd": 0.07,
-  "opus_latency_ms": 90000,
-  "fusion_latency_ms": 45000,
-  "opus_label": "Claude Code + Opus",
-  "fusion_label": "Claude Code + Fusion",
-  "include_raw_evals": true
-}
-```
-
-The response includes:
-
-- `display_markdown`: human-readable verdict;
-- `result.better_arm`: quality winner from LLM-as-judge;
-- `result.cheaper_arm`: cost winner if both costs are provided;
-- `result.faster_arm`: latency winner if both latencies are provided;
-- `result.opus` and `result.fusion`: per-arm scores, strengths, weaknesses, unsupported claims;
-- eval run IDs for auditing.
-
-## Compare the two arms from CLI
-
-Use the CLI when outputs are stored in files:
-
-```bash
-uv run fusion compare-claude-runs \
-  --task-file evals/claude-code-runs/CASE_ID/task.md \
-  --opus-file evals/claude-code-runs/CASE_ID/opus-output.md \
-  --fusion-file evals/claude-code-runs/CASE_ID/fusion-output.md \
-  --context-file evals/claude-code-runs/CASE_ID/verification.md \
-  --opus-cost 0.42 \
-  --fusion-cost 0.07 \
-  --opus-latency-ms 90000 \
-  --fusion-latency-ms 45000 \
-  > evals/claude-code-runs/CASE_ID/comparison.json
-```
-
-If a metric is unknown, omit it. The comparison will keep that dimension as `unknown`.
-
-## How to interpret results
-
-Use all dimensions together:
-
-| Dimension | Meaning |
-|-----------|---------|
-| Better result | Fusion LLM-as-judge quality comparison on the same task/context |
-| Cheaper | Requires measured cost for both arms |
-| Faster | Requires measured wall-clock latency for both arms |
-| Unsupported claims | Lower is better; check whether claims are grounded in repo evidence |
-| Tests | Prefer the arm with passing, relevant verification |
-| Iterations | Track how many Claude Code turns/tool loops were needed |
-
-Fusion is successful when it preserves normal Claude Code capability and improves one or more
-of these:
-
-- lower cost;
-- lower latency;
-- better review/debug/planning quality;
-- fewer missed risks;
-- fewer unsupported claims;
-- fewer correction turns.
-
-## Common pitfalls
-
-- Do not compare “Fusion answer only” against “Claude Code implemented result.” The Fusion arm
-  should still let Claude Code edit and test normally.
-- Do not count only Fusion MCP latency if Claude Code spent additional time applying edits.
-  Use full wall-clock latency for each arm.
-- Do not invent Opus cost. If unavailable, leave it unknown.
-- Do not use different context between arms unless the benchmark explicitly measures that.
-- Do not treat a cheaper result as better if tests fail or the answer is less grounded.
-
-## Minimal manual checklist
-
-```text
-[ ] Same repo state for both arms
-[ ] Same task prompt
-[ ] Opus arm did not call Fusion
-[ ] Fusion arm used Fusion for substantive reasoning
-[ ] Claude Code could edit/run/test normally in both arms
-[ ] Outputs captured
-[ ] Costs captured or marked unknown
-[ ] Latencies captured or marked unknown
-[ ] Tests/verification captured
-[ ] fusion_compare_claude_runs executed
-```
+   It returns a judged quality winner and the cheaper and faster arm (`unknown` where a value is
+   missing). Prefer passing tests over a judge's opinion, and do not count a cheaper arm as better
+   when its tests fail. One task proves little.

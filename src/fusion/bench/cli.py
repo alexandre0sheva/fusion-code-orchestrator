@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 import typer
 import yaml
+from rich import box
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
@@ -35,6 +36,17 @@ from fusion.bench.datasets.manifest import (
     update_review,
 )
 from fusion.bench.datasets.validate import Rules, validate_dataset
+from fusion.bench.e2e.metrics import e2e_rows
+from fusion.bench.e2e.runner import (
+    E2EConfig,
+    E2EEnv,
+    default_plugin_dir,
+    e2e_tasks,
+    is_e2e_run,
+    load_e2e_config,
+    parse_e2e_arms,
+    run_e2e,
+)
 from fusion.bench.judges import check_neutral_judges
 from fusion.bench.meta import RunMeta, load_meta, reconstruct_meta
 from fusion.bench.plan import BenchPlan, make_plan
@@ -77,6 +89,7 @@ from fusion.bench.store import BenchItem, BenchRunRecord, BenchStore
 from fusion.bench.suite import list_suites, load_suite
 from fusion.bench.summary import summarize
 from fusion.bench.virtual import run_virtual
+from fusion.config.env import PROVIDER_KEY_ENV
 from fusion.config.layers import ConfigError
 from fusion.config.paths import bench_results_dir
 from fusion.providers.base import close_providers
@@ -540,6 +553,12 @@ def resume_cmd(
 ) -> None:
     """Continue a stopped or interrupted run: finished jobs are skipped, errors are retried."""
     store = BenchStore(bench_results_dir())
+    if is_e2e_run(store, run_id):
+        msg = (
+            f"'{run_id}' is a Claude Code A/B run: continue it with "
+            f"`fusion bench e2e --run-id {run_id}`"
+        )
+        raise ConfigError(msg)
     try:
         cfg = store.load_config(run_id)
     except FileNotFoundError as exc:
@@ -557,6 +576,200 @@ def resume_cmd(
         err.print("Interrupted. Finished jobs are saved; continue with `fusion bench resume`.")
         raise typer.Exit(130) from None
     _report(run)
+
+
+def _print_e2e(items: list[BenchItem]) -> None:
+    rows = e2e_rows(items)
+    if not rows:
+        return
+    table = Table(
+        title="Claude Code end to end (means per run)",
+        box=box.SIMPLE_HEAD,
+        collapse_padding=True,
+        pad_edge=False,
+    )
+    table.add_column("Arm", no_wrap=True)
+    for column in ("Solved", "Host $", "Fusion $", "Total $", "$/solved", "p50 s", "Turns",
+                   "Tools", "Fusion calls"):
+        table.add_column(column, justify="right", min_width=5)
+
+    def usd(value: float | None, known: bool = True) -> str:
+        return "-" if value is None else f"{value:.3f}" + ("" if known else "+")
+
+    for r in rows:
+        table.add_row(
+            r.arm,
+            "-" if r.solved_rate is None else f"{r.solved_rate * 100:.0f}%",
+            usd(r.host_cost_usd, r.cost_known),
+            usd(r.fusion_cost_usd),
+            usd(r.total_cost_usd, r.cost_known),
+            usd(r.cost_per_solved_usd),
+            "-" if r.seconds_p50 is None else f"{r.seconds_p50:.0f}",
+            f"{r.turns:.1f}",
+            f"{r.tool_calls:.1f}",
+            f"{r.fusion_calls:.1f}",
+        )
+    console.print(table)
+
+
+def _claude_version(path: str) -> str | None:
+    import subprocess
+
+    try:
+        done = subprocess.run(  # noqa: S603 — the resolved claude executable, fixed arguments
+            [path, "--version"], capture_output=True, text=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() or None
+
+
+@bench_app.command("e2e")
+def e2e_cmd(
+    dataset: _Dataset = "v2",
+    executors: Annotated[
+        str | None,
+        typer.Option(help="Claude Code models, comma-separated: opus, sonnet, haiku (all)"),
+    ] = None,
+    fusion: Annotated[
+        str, typer.Option("--fusion", help="both (default), off or on: arms without/with Fusion")
+    ] = "both",
+    split: _Split = None,
+    limit: _Limit = None,
+    repeats: Annotated[int, typer.Option(help="Runs of each (task, arm)")] = 1,
+    seed: Annotated[int, typer.Option(help="Seed for the task sample (and --mock)")] = 0,
+    max_usd: _MaxUsd = None,
+    run_budget_usd: Annotated[
+        float,
+        typer.Option(help="Claude Code's --max-budget-usd per run (reserved before it starts)"),
+    ] = 1.0,
+    fusion_allowance_usd: Annotated[
+        float, typer.Option(help="Also reserved for Fusion's own calls in each Fusion run")
+    ] = 0.25,
+    timeout: Annotated[float, typer.Option(help="Seconds before a run is killed")] = 900.0,
+    concurrency: Annotated[int, typer.Option(help="Claude Code runs at once")] = 1,
+    spend_stop_usd: Annotated[
+        float | None,
+        typer.Option(help="Stop before cumulative live spend would pass this (keep a reserve)"),
+    ] = None,
+    mock: Annotated[
+        bool,
+        typer.Option("--mock", help="A simulated `claude` replays seeded runs: free, no API keys"),
+    ] = False,
+    run_id: Annotated[
+        str | None, typer.Option(help="Name the run, or continue the run of that name")
+    ] = None,
+    plugin_dir: Annotated[
+        Path | None,
+        typer.Option(help="The Fusion plugin for the Fusion arms (default: this checkout's)"),
+    ] = None,
+    claude: Annotated[str, typer.Option(help="The claude executable")] = "claude",
+) -> None:
+    """End-to-end Claude Code A/B: headless `claude -p` on each executable coding task, in a
+    sandboxed temp copy of its repo, for executor x Fusion arms. Measures hidden tests, wall time,
+    host cost (Claude Code's own JSON) + Fusion cost (its ledger), turns, tool and Fusion calls."""
+    store = BenchStore(bench_results_dir())
+    existing = run_id is not None and is_e2e_run(store, run_id)
+    if existing:
+        assert run_id is not None
+        cfg = load_e2e_config(store, run_id)
+        if max_usd is not None:
+            cfg = cfg.model_copy(update={"max_usd": max_usd})
+    else:
+        if not mock and max_usd is None:
+            msg = "--max-usd is required for a live run (or pass --mock)"
+            raise ConfigError(msg)
+        try:
+            arms = parse_e2e_arms(executors, fusion)
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        cfg = E2EConfig(
+            dataset=resolve_dataset(dataset),
+            arms=arms,
+            split=split or "dev",  # type: ignore[arg-type]
+            limit=limit,
+            repeats=repeats,
+            seed=seed,
+            max_usd=max_usd if max_usd is not None else 1000.0,
+            run_budget_usd=run_budget_usd,
+            fusion_allowance_usd=fusion_allowance_usd,
+            timeout_s=timeout,
+            concurrency=concurrency,
+            mock=mock,
+            spend_stop_usd=spend_stop_usd,
+        )
+    registry = ModelRegistry.for_mode(use_mock=False)
+    if cfg.mock:
+        import sys
+
+        command = [sys.executable, "-m", "fusion.bench.e2e.fake_claude"]
+        auth: dict[str, str] = {}
+        spend = None
+    else:
+        key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not key:
+            msg = (
+                "A live run needs ANTHROPIC_API_KEY: Claude Code runs with --bare, which reads no "
+                "login or keychain, and the host cost is billed to that key"
+            )
+            raise ConfigError(msg)
+        import shutil
+
+        found = shutil.which(claude)
+        if found is None:
+            msg = f"'{claude}' is not on PATH: install Claude Code or pass --claude /path/to/claude"
+            raise ConfigError(msg)
+        command, auth, spend = [found], {"ANTHROPIC_API_KEY": key}, default_ledger()
+        if not existing:
+            cfg = cfg.model_copy(update={"claude_version": _claude_version(found)})
+    tasks = e2e_tasks(cfg)
+    if not tasks:
+        msg = f"No executable coding tasks in {cfg.dataset} (split {cfg.split})"
+        raise ConfigError(msg)
+    jobs = len(tasks) * len(cfg.arms) * cfg.repeats
+    worst = sum(cfg.reserve_for(a) for a in cfg.arms) * len(tasks) * cfg.repeats
+    console.print(
+        f"[bold]Claude Code A/B[/bold]{' (simulated)' if cfg.mock else ''}: {len(tasks)} tasks x "
+        f"{len(cfg.arms)} arms x {cfg.repeats} = {jobs} runs; worst case ${worst:.2f}"
+        + ("" if cfg.mock else f", cap ${cfg.max_usd:.2f}")
+    )
+    if spend is not None:
+        console.print(f"Live budget {spend.budget}: ${spend.remaining():.4f} left")
+    env = E2EEnv(
+        claude_cmd=command,
+        store=store,
+        registry=registry,
+        spend=spend,
+        plugin_dir=plugin_dir or default_plugin_dir(),
+        auth_env=auth,
+        provider_env={
+            name: os.environ[name] for name in PROVIDER_KEY_ENV.values() if os.environ.get(name)
+        },
+    )
+    if env.plugin_dir is None and any(a.fusion for a in cfg.arms):
+        err.print("No Fusion plugin found: Fusion arms get the MCP server only (see --plugin-dir)")
+
+    def on_item(item: BenchItem, state: BenchProgress) -> None:
+        err.print(
+            f"[{state.done}/{state.total}] {item.arm} {item.task_id}: {item.status}"
+            + (f" solved={item.metrics.solved}" if item.metrics.quality is not None else "")
+            + f" ${item.metrics.cost_usd:.4f}"
+        )
+
+    try:
+        run = run_e2e(cfg, env, run_id=run_id, on_item=on_item)
+    except KeyboardInterrupt:
+        err.print("Interrupted. Finished runs are saved; continue with `bench e2e --run-id`.")
+        raise typer.Exit(130) from None
+    console.print(
+        f"\n[bold]Run {run.run_id}[/bold]: {run.status}, {run.done_jobs}/{run.total_jobs} runs "
+        f"finished ({run.failed_jobs} errors), spent ${run.spent_usd:.4f}"
+    )
+    if run.stop_reason:
+        console.print(f"[yellow]Stopped: {run.stop_reason}[/yellow]")
+        console.print(f"Continue with: fusion bench e2e --run-id {run.run_id} --max-usd <more>")
+    _print_e2e(run.items)
+    console.print(f"Report: fusion bench report {run.run_id} [--format html]")
 
 
 @bench_app.command("list")
@@ -620,6 +833,7 @@ def show_cmd(
     if record.stop_reason:
         console.print(f"Stopped: {record.stop_reason}")
     _print_arms(items)
+    _print_e2e(items)
     _print_gate(gate)
     if task:
         _print_evidence(items, task)

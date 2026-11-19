@@ -10,7 +10,7 @@ canonical home for its topic (see the docs contract in [../CONTRIBUTING.md](../C
 | [COSTS.md](COSTS.md) | Pricing registry, baseline comparison, cost and latency limitations |
 | [BENCHMARKING.md](BENCHMARKING.md) | How to measure Fusion against a single model |
 | [INTEGRATIONS.md](INTEGRATIONS.md) | Claude Code, Cursor and Codex setup, MCP tool reference |
-| [CLAUDE_CODE_AB.md](CLAUDE_CODE_AB.md) | Manual Claude Code + Opus vs Claude Code + Fusion runbook |
+| [CLAUDE_CODE_AB.md](CLAUDE_CODE_AB.md) | Claude Code A/B with and without Fusion: `fusion bench e2e` and the manual runbook |
 | [superpowers/plans/2026-11-17-v0.3.0-roadmap.md](superpowers/plans/2026-11-17-v0.3.0-roadmap.md) | Task-by-task plan for 0.3.0 |
 
 Core idea:

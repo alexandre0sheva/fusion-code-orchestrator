@@ -67,6 +67,9 @@ class BenchItem(BaseModel):
     # verified-synth: the cross-check matrix, the checks kept or dropped and why, and the reason
     # for the pick (``CrossCheckReport.record``); None for every other arm.
     verification: dict[str, Any] | None = None
+    # ``fusion bench e2e``: host and Fusion cost, turns, tool calls, Fusion calls, files changed
+    # and the diff of one Claude Code run (``E2EMetrics`` plus ``patch``); None for every other run.
+    e2e: dict[str, Any] | None = None
 
 
 class BenchRunRecord(BaseModel):

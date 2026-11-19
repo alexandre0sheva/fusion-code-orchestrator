@@ -31,6 +31,7 @@ __all__ = [
     "build_meta",
     "dataset_hash",
     "load_meta",
+    "model_meta",
     "reconstruct_meta",
     "write_meta",
 ]
@@ -88,7 +89,7 @@ def dataset_hash(tasks: list[BenchTask]) -> str:
     return digest.hexdigest()[:16]
 
 
-def _model_meta(alias: str, entry: ModelEntry) -> ModelMeta:
+def model_meta(alias: str, entry: ModelEntry) -> ModelMeta:
     price = entry.price_at()
     return ModelMeta(
         alias=alias,
@@ -152,7 +153,7 @@ def build_meta(
         task_count=len(tasks),
         tasks={t.id: TaskMeta(category=t.category, difficulty=t.difficulty) for t in tasks},
         arms=arms,
-        models={a: _model_meta(a, models[a]) for a in dict.fromkeys(used) if a in models},
+        models={a: model_meta(a, models[a]) for a in dict.fromkeys(used) if a in models},
     )
 
 

@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fusion.bench.e2e.metrics import E2EArmRow, e2e_rows
 from fusion.bench.meta import RunMeta
 from fusion.bench.scoring.calibration import JudgeGate
 from fusion.bench.stats import Rules, StudyStats, build_cells, study_stats
@@ -100,6 +101,7 @@ class Report(BaseModel):
     timeline_task: dict[str, str] = Field(default_factory=dict)  # arm -> the task shown
     notes: list[str] = Field(default_factory=list)
     spend_total_usd: float | None = None  # the roadmap-wide ledger, when one is available
+    e2e: list[E2EArmRow] = Field(default_factory=list)  # a Claude Code A/B run (``bench e2e``)
 
 
 def _side(item: BenchItem) -> ExampleSide:
@@ -338,6 +340,7 @@ def build_report(
         timeline_task=timeline_task,
         notes=_notes(record, items, stats, meta, gate, retried_after_halt or {}),
         spend_total_usd=spend_total_usd,
+        e2e=e2e_rows(items),
     )
 
 

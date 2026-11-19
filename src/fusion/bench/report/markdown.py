@@ -270,6 +270,45 @@ def _example(example: Example) -> list[str]:
     return out
 
 
+def _e2e(report: Report) -> list[str]:
+    if not report.e2e:
+        return []
+    out = [
+        "## Claude Code end to end",
+        "",
+        "Each run is headless Claude Code on a temp copy of the task; the hidden tests decide "
+        "solved. Costs are means per run: the host's from Claude Code's own JSON, Fusion's from "
+        "its ledger.",
+        "",
+    ]
+    rows = [
+        [
+            r.arm,
+            r.executor,
+            "on" if r.fusion else "off",
+            str(r.runs),
+            pct(r.solved_rate),
+            money(r.host_cost_usd) + ("" if r.cost_known else "+"),
+            money(r.fusion_cost_usd),
+            money(r.total_cost_usd) + ("" if r.cost_known else "+"),
+            money(r.cost_per_solved_usd),
+            seconds(r.seconds_p50),
+            f"{r.turns:.1f}",
+            f"{r.tool_calls:.1f}",
+            f"{r.fusion_calls:.1f}",
+        ]
+        for r in report.e2e
+    ]
+    header = [
+        "Arm", "Executor", "Fusion", "Runs", "Solved", "Host $", "Fusion $", "Total $",
+        "$/solved", "p50", "Turns", "Tool calls", "Fusion calls",
+    ]
+    out += _table(header, rows)
+    if not all(r.cost_known for r in report.e2e):
+        out += ["`+`: some runs printed no host cost; the figure is a lower bound.", ""]
+    return out
+
+
 def render_markdown(report: Report) -> str:
     run = report.run
     out = [f"# Benchmark report: {run.run_id}", ""]
@@ -278,6 +317,7 @@ def render_markdown(report: Report) -> str:
         out.append("")
     out += _headline(report)
     out += _arms(report)
+    out += _e2e(report)
     out += _comparisons(report)
     out += _breakdowns(report)
     gate = report.judge_gate

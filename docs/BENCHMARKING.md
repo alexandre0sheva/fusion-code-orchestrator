@@ -792,39 +792,20 @@ Add custom cases to `evals/datasets/*.jsonl`:
 
 ## Claude Code A/B
 
-Compare "Claude Code + Opus" against "Claude Code + Fusion MCP + cheaper models" on the same tasks.
-Claude Code stays the executor in both arms; Fusion only replaces the expensive reasoning step.
+`fusion bench` measures Fusion's answers; `fusion bench e2e` measures what matters for cost: whole
+Claude Code sessions. It runs headless Claude Code on every executable coding task of a dataset,
+each in a sandboxed temporary copy of the task's repo, for executor (Opus, Sonnet, Haiku) x Fusion
+(off, on) arms, and records whether the hidden tests pass, wall time, host cost (Claude Code's own
+token counts at catalog prices) plus Fusion's cost from its ledger, turns, tool calls and Fusion calls. Results go to the
+same store and reports as any study (`fusion bench report` adds a "Claude Code end to end" table).
 
-1. Pick 5 to 10 real tasks from your repo (diffs, bugs, architecture decisions).
-2. Run each task in Claude Code with the Opus/native model; save the answer and note time, cost and
-   iterations.
-3. Run the same task in Claude Code calling `fusion_ask` or the matching specialized tool; let Claude
-   Code apply the answer and run tests.
-4. Compare with `fusion_compare_claude_runs`, or from saved files:
+```bash
+uv run fusion bench e2e --mock --limit 4                  # simulated: free, no keys
+uv run fusion bench e2e --limit 6 --max-usd 3             # live: needs claude and ANTHROPIC_API_KEY
+```
 
-   ```bash
-   uv run fusion compare-claude-runs \
-     --task-file task.md \
-     --opus-file claude-opus-output.md \
-     --fusion-file claude-fusion-output.md \
-     --context-file verification.md \
-     --opus-cost 0.42 --fusion-cost 0.07 \
-     --opus-latency-ms 90000 --fusion-latency-ms 45000
-   ```
-
-The exact prompts, folder layout and checklist are in [CLAUDE_CODE_AB.md](CLAUDE_CODE_AB.md).
-
-Dimensions to compare:
-
-| Dimension | What to measure |
-|-----------|-----------------|
-| Correctness | Did it catch the bug / pick the right architecture? |
-| Groundedness | Unsupported claims (`evals.deterministic`, `unsupported_claims`) |
-| Specificity | Actionable steps vs vague advice (`evals.llm_judge.specificity`) |
-| Safety | Secret leakage, dangerous commands flagged |
-| Disagreement value | Did the panel surface issues a single model missed? |
-| Cost and latency | `total_cost_usd`, `total_latency_ms` in the run record |
-| Iterations | Back-and-forth turns needed to reach an acceptable result |
+Arms, isolation, every metric and the manual comparison on your own tasks are in
+[CLAUDE_CODE_AB.md](CLAUDE_CODE_AB.md).
 
 Where Fusion is expected to help: security-sensitive review, high-stakes architecture decisions,
 debugging with ambiguous symptoms, and answers you want scored before merging. A single frontier

@@ -469,6 +469,34 @@ def _gate(report: Report) -> str:
     )
 
 
+def _e2e_table(report: Report) -> str:
+    """The Claude Code A/B numbers of a ``bench e2e`` run (nothing for any other run)."""
+    if not report.e2e:
+        return ""
+    head = (
+        "Arm|Executor|Fusion|Runs|Solved|Host $|Fusion $|Total $|$/solved|p50|Turns|Tool calls|"
+        "Fusion calls"
+    )
+    rows = "".join(
+        f"<tr><td>{_e(r.arm)}</td><td>{_e(r.executor)}</td><td>{'on' if r.fusion else 'off'}</td>"
+        f"<td>{r.runs}</td><td>{pct(r.solved_rate)}</td>"
+        f"<td>{money(r.host_cost_usd)}{'' if r.cost_known else '+'}</td>"
+        f"<td>{money(r.fusion_cost_usd)}</td>"
+        f"<td>{money(r.total_cost_usd)}{'' if r.cost_known else '+'}</td>"
+        f"<td>{money(r.cost_per_solved_usd)}</td><td>{seconds(r.seconds_p50)}</td>"
+        f"<td>{r.turns:.1f}</td><td>{r.tool_calls:.1f}</td><td>{r.fusion_calls:.1f}</td></tr>"
+        for r in report.e2e
+    )
+    th = "".join(f"<th>{_e(h)}</th>" for h in head.split("|"))
+    return (
+        "<h3>Claude Code end to end</h3><p>Headless Claude Code on a temp copy of each task; the "
+        "hidden tests decide solved. Means per run: host cost from Claude Code&#39;s own JSON, "
+        "Fusion&#39;s from its ledger.</p>"
+        f'<div class="card"><div class="scroll"><table><thead><tr>{th}</tr></thead>'
+        f"<tbody>{rows}</tbody></table></div></div>"
+    )
+
+
 def render_html(report: Report, run_dir: Path | None = None) -> str:
     """The report as one HTML document. ``run_dir`` lets screenshots be found beside the run."""
     run = report.run
@@ -488,7 +516,7 @@ def render_html(report: Report, run_dir: Path | None = None) -> str:
         f"{_verdict_cards(report)}"
         "<h2>Arms</h2>"
         f"{_legend(report)}{_pareto_charts(report)}{_category_chart(report)}{_timeline(report)}"
-        f'<div class="card">{_arm_table(report)}</div>'
+        f'<div class="card">{_arm_table(report)}</div>{_e2e_table(report)}'
         "<h2>Comparisons by category</h2>"
         f'<div class="card">{_comparison_table(report)}</div>'
         f'<div class="card">{_difficulty_table(report)}{_variance_table(report)}</div>'

@@ -102,6 +102,9 @@ def methodology(report: Report) -> list[tuple[str, str]]:
         extra = f", overrides {arm.overrides}" if arm.overrides else ""
         models = ", ".join(arm.members) or "-"
         synth = f", synthesizer {arm.aggregator_model}" if arm.aggregator_model else ""
+        if not arm.aggregator:  # not a Fusion strategy: a ``bench e2e`` Claude Code arm
+            rows.append((f"Arm {arm.name}", f"{arm.strategy}, model {models}"))
+            continue
         rows.append(
             (
                 f"Arm {arm.name}",
