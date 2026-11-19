@@ -25,6 +25,15 @@ def _reader(root: Path, *, total: int = 100_000, per_file: int = 50_000) -> Work
 def _git(root: Path, *args: str) -> str:
     env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid"}
     env |= {"GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+    # `git commit` starts a detached `git maintenance`, which creates and removes
+    # .git/objects/maintenance.lock while _tree_hash walks the tree (a CI race). Turn it off.
+    env |= {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "maintenance.auto",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "gc.auto",
+        "GIT_CONFIG_VALUE_1": "0",
+    }
     done = subprocess.run(
         ["git", *args], cwd=root, env=env, capture_output=True, text=True, check=True
     )
