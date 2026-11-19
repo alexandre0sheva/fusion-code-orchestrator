@@ -2,6 +2,7 @@
 
 Operator and maintainer documentation for Fusion Code Orchestrator. Each document is the single
 canonical home for its topic (see the docs contract in [../CONTRIBUTING.md](../CONTRIBUTING.md)).
+These files are also published as a website, see [The website](../CONTRIBUTING.md#the-website).
 
 | Document | Purpose |
 |----------|---------|

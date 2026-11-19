@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" width="960" height="330" role="img" aria-labelledby="t d" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">How a Fusion call works: lenses, select, verify</title>
+  <desc id="d">Claude Code calls an MCP tool. Fusion redacts and reads the project itself, asks a panel of cheap models in parallel with one lens or approach each, merges the findings with union or picks one whole answer with select, optionally verifies patches against panel-written checks in a sandbox copy, and returns text with cost and confidence.</desc>
+  <style>
+    :root { --bg: #ffffff; --box: #f3f5f9; --line: #8a94a6; --ink: #1d2433; --sub: #566074; --accent: #1f6feb; --panel: #e6f0ff; --ok: #1a7f4b; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0d1117; --box: #161b22; --line: #6e7681; --ink: #e6edf3; --sub: #9aa4b2; --accent: #58a6ff; --panel: #14284a; --ok: #3fb950; }
+    }
+    .bg { fill: var(--bg); }
+    .box { fill: var(--box); stroke: var(--line); stroke-width: 1.2; }
+    .lens { fill: var(--panel); stroke: var(--accent); stroke-width: 1.2; }
+    .key { fill: none; stroke: var(--accent); stroke-width: 2; }
+    .verify { fill: var(--box); stroke: var(--ok); stroke-width: 1.6; stroke-dasharray: 5 3; }
+    .h { fill: var(--ink); font-size: 14px; font-weight: 600; }
+    .s { fill: var(--sub); font-size: 11px; }
+    .l { fill: var(--ink); font-size: 11px; }
+    .arrow { stroke: var(--line); stroke-width: 1.6; fill: none; marker-end: url(#a); }
+    .cap { fill: var(--accent); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
+    #a path { fill: var(--line); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <rect class="bg" width="960" height="330"/>
+
+  <text class="cap" x="20" y="28">ONE FUSION CALL</text>
+
+  <!-- 1 Claude Code -->
+  <rect class="box" x="20" y="50" width="120" height="150" rx="8"/>
+  <text class="h" x="80" y="82" text-anchor="middle">Claude Code</text>
+  <text class="s" x="80" y="104" text-anchor="middle">MCP tool call</text>
+  <text class="s" x="80" y="122" text-anchor="middle">diff_ref, paths,</text>
+  <text class="s" x="80" y="138" text-anchor="middle">a question</text>
+  <text class="s" x="80" y="170" text-anchor="middle">stays the executor</text>
+
+  <!-- 2 Read + redact -->
+  <rect class="box" x="170" y="50" width="130" height="150" rx="8"/>
+  <text class="h" x="235" y="82" text-anchor="middle">Read, redact</text>
+  <text class="s" x="235" y="104" text-anchor="middle">reads files and</text>
+  <text class="s" x="235" y="120" text-anchor="middle">git diff itself,</text>
+  <text class="s" x="235" y="136" text-anchor="middle">read-only; secrets</text>
+  <text class="s" x="235" y="152" text-anchor="middle">and ignored files</text>
+  <text class="s" x="235" y="168" text-anchor="middle">never leave</text>
+
+  <!-- 3 Lenses -->
+  <rect class="box" x="330" y="50" width="180" height="150" rx="8"/>
+  <text class="h" x="420" y="72" text-anchor="middle">Lenses</text>
+  <rect class="lens" x="346" y="82" width="148" height="26" rx="5"/>
+  <text class="l" x="420" y="99" text-anchor="middle">nano model · correctness</text>
+  <rect class="lens" x="346" y="114" width="148" height="26" rx="5"/>
+  <text class="l" x="420" y="131" text-anchor="middle">nano model · security</text>
+  <rect class="lens" x="346" y="146" width="148" height="26" rx="5"/>
+  <text class="l" x="420" y="163" text-anchor="middle">nano model · API, tests</text>
+  <text class="s" x="420" y="190" text-anchor="middle">in parallel, one lens each</text>
+
+  <!-- 4 Select -->
+  <rect class="key" x="540" y="50" width="190" height="150" rx="8"/>
+  <text class="h" x="635" y="72" text-anchor="middle">Select</text>
+  <text class="s" x="635" y="96" text-anchor="middle">review, debug: union of</text>
+  <text class="s" x="635" y="112" text-anchor="middle">findings, each checked</text>
+  <text class="s" x="635" y="128" text-anchor="middle">against the input</text>
+  <text class="s" x="635" y="152" text-anchor="middle">plans, answers, patches:</text>
+  <text class="s" x="635" y="168" text-anchor="middle">one cheap call picks the</text>
+  <text class="s" x="635" y="184" text-anchor="middle">best whole answer</text>
+
+  <!-- 5 Verify -->
+  <rect class="verify" x="760" y="50" width="180" height="150" rx="8"/>
+  <text class="h" x="850" y="72" text-anchor="middle">Verify</text>
+  <text class="s" x="850" y="96" text-anchor="middle">patches only</text>
+  <text class="s" x="850" y="118" text-anchor="middle">panel-written checks</text>
+  <text class="s" x="850" y="134" text-anchor="middle">run on every candidate</text>
+  <text class="s" x="850" y="150" text-anchor="middle">in a sandbox copy;</text>
+  <text class="s" x="850" y="166" text-anchor="middle">your repository is</text>
+  <text class="s" x="850" y="182" text-anchor="middle">never touched</text>
+
+  <path class="arrow" d="M140 125 H166"/>
+  <path class="arrow" d="M300 125 H326"/>
+  <path class="arrow" d="M510 125 H536"/>
+  <path class="arrow" d="M730 125 H756"/>
+
+  <!-- result -->
+  <path class="arrow" d="M850 200 V232 H100 V250"/>
+  <rect class="box" x="20" y="252" width="920" height="56" rx="8"/>
+  <text class="h" x="480" y="276" text-anchor="middle">Text back to Claude Code: answer, top claims, confidence, cost, run trace</text>
+  <text class="s" x="480" y="295" text-anchor="middle">A patch comes back as a diff for Claude Code to apply. Fusion never edits files or runs anything in your project.</text>
+</svg>

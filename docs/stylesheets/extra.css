@@ -1,0 +1,13 @@
+/* Landing page and tables: the docs are wide, so use the room. */
+.md-grid { max-width: 72rem; }
+
+/* Result tables read better with numbers aligned and no wrapping in the figures. */
+.md-typeset table:not([class]) { display: table; width: 100%; font-size: 0.78rem; }
+.md-typeset table:not([class]) td { vertical-align: top; }
+
+/* The landing page: the verdict as three cards, the figures as images that fit the column. */
+.md-typeset .verdict { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); margin: 1.2rem 0; }
+.md-typeset .verdict > div { border: 1px solid var(--md-default-fg-color--lightest); border-radius: 0.3rem; padding: 0.2rem 0.9rem; }
+.md-typeset .verdict strong { display: block; font-size: 0.95rem; }
+.md-typeset img { max-width: 100%; height: auto; }
+.md-typeset .hero-links a + a { margin-left: 0.8em; }

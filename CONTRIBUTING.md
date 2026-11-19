@@ -1,8 +1,8 @@
 # Contributing
 
 Thanks for helping improve Fusion Code Orchestrator. This file is canonical for how to contribute:
-setup, the quality gate, tests, the docs contract below, the changelog rule and how to publish a
-release.
+setup, the quality gate, tests, the docs contract below, the website, the changelog rule and how to
+publish a release.
 
 ## Development setup
 
@@ -119,9 +119,41 @@ rather than copying paragraphs into a second place.
 | Security model | `SECURITY.md` |
 | User-visible changes | `CHANGELOG.md` |
 | How to contribute, the quality gate, the docs contract, releasing | `CONTRIBUTING.md` (agents: `CLAUDE.md` points here) |
+| The website's landing page, navigation and build | `docs/index.md`, `mkdocs.yml`, "The website" below (the site holds no text of its own beyond the landing page) |
 
 `tests/test_docs_links.py` checks that relative links and anchors resolve and that the canonical
 docs exist.
+
+## The website
+
+The documentation is published at <https://alexandre0sheva.github.io/fusion-code-orchestrator/>
+(MkDocs Material, GitHub Pages). The pages are the files in `docs/` as they are; only the landing
+page (`docs/index.md`) is written for the site, and it links to the canonical files instead of
+copying them. `mkdocs.yml` holds the navigation, and `scripts/mkdocs_hooks.py` turns a link that
+leaves `docs/` (`../SECURITY.md`, `../evals/...`) or points at a page kept off the site
+(`docs/superpowers/`, the plans) into a link to the same path in the repository. `docs/benchmark-report.html` and
+`docs/assets/` are served as they are. Heading anchors use GitHub's rule, so a link works on both.
+
+```bash
+uv sync --group site
+uv run mkdocs build --strict      # a broken link or anchor fails the build; output in site/
+uv run mkdocs serve               # live preview at http://127.0.0.1:8000
+```
+
+CI runs the strict build on every pull request (the `site` job). The **Website** workflow
+(`.github/workflows/pages.yml`) builds it again and deploys it when a push to `main` touches
+`docs/**`, `mkdocs.yml`, `scripts/mkdocs_hooks.py` or the workflow, or when run by hand; a pull
+request builds but never deploys, and no secrets are used.
+
+**One-time owner step** (not automated): in the repository's *Settings -> Pages*, set *Source* to
+*GitHub Actions*; then add the site URL to the repository's *About* box (the website field) and
+topics such as `mcp`, `claude-code`, `llm`, `code-review`. Until then the first deploy fails with
+"Pages not enabled".
+
+The README's demo is recorded with [vhs](https://github.com/charmbracelet/vhs) from
+`docs/assets/demo.tape` (`vhs docs/assets/demo.tape` from the repository root, with `ttyd` and
+`ffmpeg` installed). It runs the offline `--mock` provider, so its findings are canned; re-record it
+if the CLI's output format changes.
 
 ## Changelog
 

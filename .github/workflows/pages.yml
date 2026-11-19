@@ -1,0 +1,75 @@
+name: Website
+
+# Builds the public site (MkDocs Material: docs/ and the interactive benchmark report) and deploys it
+# to GitHub Pages. One-time setup by the repository owner (CONTRIBUTING.md, "The website"):
+# Settings -> Pages -> Source: "GitHub Actions". The site is then published at
+# https://alexandre0sheva.github.io/fusion-code-orchestrator/ on every push to main that touches
+# the paths below, or when this workflow is run by hand. No secrets are used: the build runs
+# offline, and a pull request builds the site (a broken link fails it) but never deploys.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "scripts/mkdocs_hooks.py"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "scripts/mkdocs_hooks.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Material for MkDocs prints a long end-of-life banner on every build; the build is unaffected.
+  NO_MKDOCS_2_WARNING: "1"
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install the site dependencies
+        run: uv sync --locked --only-group site
+      - name: Build the site (strict, so a broken link or anchor fails the build)
+        run: uv run --only-group site mkdocs build --strict
+      - name: Set up Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Upload the site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -14,8 +14,8 @@ returns the result with token, cost and latency telemetry. It never edits files 
 
 > **Thesis, tested in the 0.3.0 study:** a panel of cheap models can give advice close to a
 > frontier model's for a fraction of the cost and time. The measured answer, below: **cheaper,
-> yes; faster, yes; better, not shown, and one cheap model alone did as well.** See the
-> [changelog](CHANGELOG.md) for what is in each release.
+> yes; faster, yes; better, not shown, and one cheap model alone did as well.** Docs and
+> evidence: **[the website](https://alexandre0sheva.github.io/fusion-code-orchestrator/)**; each release: [changelog](CHANGELOG.md).
 
 ## Does a cheap panel match a frontier model?
 
@@ -95,14 +95,15 @@ uvx --python '>=3.11' --from git+https://github.com/alexandre0sheva/fusion-code-
 claude                         # then try /fusion:review, /fusion:debug or /fusion:ask
 ```
 
+![Fusion reviewing a git range: the host names diff_ref, Fusion reads the diff and returns claims with cost](docs/assets/demo.gif)
+
+*`fusion review-diff --diff-ref` on a throwaway repository, offline with `--mock`: canned answers, no API call (tape: [demo.tape](docs/assets/demo.tape)).*
+
 Options, the server-only install, Cursor (`fusion install cursor`), Codex (`fusion install codex`) and troubleshooting: [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## How it works
 
-```text
-Claude Code -> MCP tool -> redact -> route (strategy) -> cheap panel (parallel) -> [refine]
-                                                   -> synthesize -> answer + cost/latency + run trace
-```
+![One Fusion call: read and redact, lenses, select, verify, text back to Claude Code](docs/assets/architecture.svg)
 
 Panel calls run concurrently and tolerate partial failure. Which models run is a *strategy*
 (`fusion strategies list`). The default, `panel-nano-pick`, asks three `nano` models and one cheap
@@ -182,8 +183,7 @@ src/fusion/
   dashboard/      `fusion dashboard`: read-only local web UI
   install/        `fusion install`: one-command client setup
 plugin/           Claude Code plugin (commands, skills, subagent, MCP config)
-evals/            datasets and runners
-tests/            offline pytest suite (mock providers)
+evals/, tests/    datasets and runners; the offline pytest suite (mock providers)
 ```
 
 ## Development

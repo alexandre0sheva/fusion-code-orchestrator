@@ -114,3 +114,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "ruff>=0.17",
 ]
+# The public website (MkDocs Material, GitHub Pages): `uv sync --group site`, see CONTRIBUTING.md.
+site = [
+    "mkdocs-material>=9.7,<10",
+]
