@@ -89,6 +89,7 @@ task by task in `docs/superpowers/plans/2026-11-17-v0.3.0-roadmap.md`.
 ### Fixed
 
 - The dashboard's Runs filters read "All strategies" and "All statuses" (they said "All strategys" and "All statuss").
+- `fusion models list` prints its full-width table on a dumb terminal (`TERM=dumb`); it was cut to 80 columns.
 - The JavaScript syntax check of `fusion bench` (`node --check`, used by the `build` evaluator) crashed on Linux, so every JavaScript file looked broken: the sandbox's 1 GB address-space limit (`RLIMIT_AS`, enforced on Linux, not on macOS) is below what V8 reserves at start-up. That one call now runs without the address-space limit (the timeout and the CPU and file-size limits still apply). It made `tests/test_evaluators.py` fail on every CI run on GitHub.
 - A panel call that finished while the client was being sent a progress notification was never collected: its answer was reported as "Still pending after global panel timeout" and the run could lose its quorum (seen under load, in about one MCP call in six on a busy machine).
 - `fusion bench dataset validate` reports a performance-task flaw whose timing was too noisy to measure as a warning (nothing is known about its speed), not as an error saying the flaw is not wrong.

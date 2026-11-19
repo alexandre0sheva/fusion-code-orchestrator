@@ -24,7 +24,6 @@ from fusion.orchestration.ledger import CallGateway, RunLedger
 from fusion.routing.model_registry import ModelRegistry
 from fusion.telemetry.cost import PricingRegistry
 
-WIDE = {"COLUMNS": "200"}  # rich shortens column titles in a narrow terminal
 PAGE = "fe-landing-page"
 FAST = "perf-unique-order"
 
@@ -284,17 +283,17 @@ def test_measuring_is_never_added_to_the_arms_time_or_cost(study) -> None:
 
 
 def test_the_report_shows_evidence_gates_and_the_price_of_measuring(
-    study, monkeypatch: pytest.MonkeyPatch
+    study, monkeypatch: pytest.MonkeyPatch, wide_consoles: None
 ) -> None:
     cfg, env, run, root = study
     monkeypatch.setenv("FUSION_BENCH_DIR", str(root))
-    shown = CliRunner().invoke(bench_app, ["show", "art"], env=WIDE)
+    shown = CliRunner().invoke(bench_app, ["show", "art"])
     assert shown.exit_code == 0 and "Eval $" in shown.output and "Eval s" in shown.output
-    detail = CliRunner().invoke(bench_app, ["show", "art", "--task", PAGE], env=WIDE)
+    detail = CliRunner().invoke(bench_app, ["show", "art", "--task", PAGE])
     assert detail.exit_code == 0, detail.output
     assert "gate tests-pass" in detail.output and "criterion correctness" in detail.output
     assert "[E1] tests" in detail.output and "not part of the arm's cost or time" in detail.output
-    perf = CliRunner().invoke(bench_app, ["show", "art", "--task", FAST], env=WIDE)
+    perf = CliRunner().invoke(bench_app, ["show", "art", "--task", FAST])
     assert "[E5] perf" in perf.output or "perf " in perf.output
     missing = CliRunner().invoke(bench_app, ["show", "art", "--task", "nope"])
     assert missing.exit_code != 0

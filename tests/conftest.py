@@ -42,6 +42,23 @@ def fusion_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
+def wide_consoles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give the CLI's module-level Rich consoles a fixed 200-column width.
+
+    Rich shortens table headers in a narrow terminal. It reads ``COLUMNS`` only when it does not
+    take the output for a dumb terminal, and CI can look like one (``TERM=dumb`` plus a forced
+    terminal), so tests that read table text pin the width instead of passing ``COLUMNS``.
+    """
+    from fusion.bench import cli as bench_cli
+    from fusion.cli import common, models_cmd
+
+    for console in (bench_cli.console, common.console, models_cmd.console):
+        # Rich uses a fixed size only when both are set; with one missing it detects the terminal.
+        monkeypatch.setattr(console, "_width", 200)
+        monkeypatch.setattr(console, "_height", 50)
+
+
+@pytest.fixture
 def three_model_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make ``budget: medium`` run the three-model ``panel-nano``, as it did before 0.2.0 chose
     ``panel-duo``. For tests of pipeline mechanics (quorum, claims, golden outputs) that need three

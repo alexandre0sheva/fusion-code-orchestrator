@@ -122,7 +122,9 @@ def models_list(
             row["verified"] or "",
             ", ".join(row["roles"]),
         )
-    Console(width=max(console.width, 150)).print(table)
+    # The height too: Rich uses a fixed width only when both are given, and on a dumb terminal
+    # it would otherwise fall back to 80 columns and cut the table.
+    Console(width=max(console.width, 150), height=console.height).print(table)
 
 
 def _api_keys() -> dict[str, str]:

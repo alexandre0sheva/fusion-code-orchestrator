@@ -28,7 +28,6 @@ from fusion.bench.scoring.calibration import (
 )
 from fusion.bench.spec import load_dataset
 
-WIDE = {"COLUMNS": "200"}
 TASK = "perf-unique-order"
 
 
@@ -199,7 +198,7 @@ def test_the_floor_defaults_to_eighty_percent_and_reads_the_environment(
 
 
 def test_the_command_calibrates_simulated_judges_and_stores_the_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wide_consoles: None
 ) -> None:
     dataset = dataset_of(tmp_path, TASK, "fe-landing-page")
     monkeypatch.setenv("FUSION_BENCH_DIR", str(tmp_path / "results"))
@@ -214,7 +213,6 @@ def test_the_command_calibrates_simulated_judges_and_stores_the_report(
             "--cases-per-set",
             "2",
         ],
-        env=WIDE,
     )
     assert done.exit_code == 0, done.output
     assert "perf acc." in done.output and "visual acc." in done.output
@@ -244,7 +242,7 @@ def test_the_command_calibrates_simulated_judges_and_stores_the_report(
 
 
 def test_a_study_is_unblocked_once_its_judges_are_calibrated_above_the_floor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wide_consoles: None
 ) -> None:
     from _bench import config, sim_env
     from fusion.bench.runner import run_bench
@@ -261,10 +259,10 @@ def test_a_study_is_unblocked_once_its_judges_are_calibrated_above_the_floor(
     ]
     assert blocked["blocked"] is True
     save_report(report(mock=True, **{"gemini-flash": 0.9, "gpt-sol": 0.85}), root)
-    shown = CliRunner().invoke(bench_app, ["show", "r"], env=WIDE)
+    shown = CliRunner().invoke(bench_app, ["show", "r"])
     assert "Judge reliability" in shown.output and "headline verdict allowed" in shown.output
     save_report(report(mock=True, **{"gemini-flash": 0.9, "gpt-sol": 0.5}), root)
-    again = CliRunner().invoke(bench_app, ["show", "r"], env=WIDE)
+    again = CliRunner().invoke(bench_app, ["show", "r"])
     assert (
         "Headline verdict blocked" in again.output
         and "gpt-sol picked the better output 50%" in again.output

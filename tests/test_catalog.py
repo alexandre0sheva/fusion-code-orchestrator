@@ -323,7 +323,9 @@ def test_models_list_command_shows_ids_and_prices() -> None:
         assert text in result.output
 
 
-def test_models_list_shows_blended_price_tier_and_upcoming_tier_changes() -> None:
+def test_models_list_shows_blended_price_tier_and_upcoming_tier_changes(
+    wide_consoles: None,
+) -> None:
     result = CliRunner().invoke(app, ["models", "list", "--json", "--on", "2026-11-17"])
     assert result.exit_code == 0, result.output
     rows = {row["alias"]: row for row in json.loads(result.output)}
@@ -334,7 +336,7 @@ def test_models_list_shows_blended_price_tier_and_upcoming_tier_changes() -> Non
     assert rows["gemini-flash"]["tier_changes"] == [{"on": "2027-01-01", "tier": "medium"}]
     assert rows["claude-opus"]["tier_changes"] == []
 
-    table = CliRunner(env={"COLUMNS": "200"}).invoke(app, ["models", "list", "--on", "2026-11-17"])
+    table = CliRunner().invoke(app, ["models", "list", "--on", "2026-11-17"])
     assert table.exit_code == 0
     assert "high from 2026-12-01" in table.output
 
