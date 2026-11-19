@@ -111,8 +111,8 @@ switches with `use_prompt_pack` for the length of one bench run.
 - `fusion_review_diff`
 - `fusion_ask`
 - `fusion_debug_error`
-- `fusion_decide_architecture`
-- `fusion_plan_feature`
+- `fusion_plan` (`kind: feature | decision`; the 0.2.0 names `fusion_plan_feature` and
+  `fusion_decide_architecture` stay callable but unlisted, see below)
 - `fusion_eval_answer`
 - `fusion_compare_claude_runs`
 - `fusion_stats`
@@ -634,7 +634,9 @@ estimates, per-task-type breakdown, shadow win/tie/loss counts, and the host tok
 runs that read the project themselves (summed from the stored `workspace` input). Rendering lives in
 `src/fusion/telemetry/stats_format.py`, surfaced through the `fusion stats` CLI command,
 the `fusion_stats` MCP tool, and a one-line lifetime footer on every real-mode run's
-`display_markdown` at `detail: full` (benchmark mode omits it).
+`display_markdown` at `detail: full` (benchmark mode omits it). Both also show the latest
+`fusion bench e2e` study, read from the benchmark store by `bench/e2e/summary.py` (a simulated one
+is labelled), so the host-token savings and the Claude Code A/B sit next to the spend.
 
 ### Claims and agreement
 
@@ -786,7 +788,8 @@ is being benchmarked beyond the mode.
 serves one static page (`static/index.html`, `app.js`, `style.css`; no build step, no CDN, no inline
 script) and a small JSON API. `api.py` holds the queries: the run database is opened through
 `ReadOnlyStore`, a `RunStore` whose connection is `mode=ro`, and a missing database is an empty
-dashboard rather than a created file. The overview reads `get_stats()` plus per-day sums; a run's
+dashboard rather than a created file. The overview reads `get_stats()` plus per-day sums (and the host tokens saved and the latest
+end-to-end study, `bench/e2e/summary.py`); a run's
 detail reads its stored output (the `ledger.calls` records, with their `started_at_ms`, are the
 latency timeline) and returns the *sanitized* input; the stored raw input is reached only when
 `SecurityPolicy.log_raw_prompts` is true. Benchmarks reuse `fusion.bench`: `build_report` and

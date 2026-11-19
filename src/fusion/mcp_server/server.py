@@ -41,6 +41,7 @@ from fusion.mcp_server.schemas import (
     FusionToolResult,
     PatchToolResult,
     PlanFeatureInput,
+    PlanInput,
     ProposePatchInput,
     ReviewDiffInput,
     SelectPatchInput,
@@ -57,121 +58,122 @@ DEFAULT_HTTP_PORT = 8765
 
 INSTRUCTIONS = (
     "Fusion asks a panel of cheap models and returns text; you stay the executor and apply edits "
-    "yourself. Use it for a second opinion on review, debugging, architecture, planning and "
-    "hard coding questions, not for trivial edits. Each call takes tens of seconds and costs "
-    "cents; progress is reported while it runs. Name files in `paths`/`globs` and a git range "
-    "in `diff_ref` instead of pasting them: Fusion reads them itself, read-only, under the "
-    "project root, and fusion_digest answers questions about large material in a few hundred "
-    "tokens. fusion_propose_patch returns a patch as a unified diff (never applied: you apply "
-    "it) chosen by running the panel's own checks and your tests in a sandbox copy of the "
-    "project, which is only read. Responses are compact: the answer, the top "
-    "claims, confidence and one cost line. Pass detail='full' for everything, or read "
-    "fusion://runs/{run_id} later. Pass max_cost_usd to cap spend and strategy to pick a "
-    "cheaper or faster form (see fusion://strategies). With the panel-digest strategy no model "
-    "merges the panel's answers: the response lists the shared, disputed and single-model "
-    "points and each model's answer, and you decide what to keep. If a call runs past the soft "
-    "time limit it returns the panel's digest and says so."
+    "yourself. Use it for a second opinion on review, debugging, design, planning and hard coding "
+    "questions, not for trivial edits. A call takes tens of seconds and costs cents. Name files in "
+    "`paths`/`globs` and a git range in `diff_ref` instead of pasting them: Fusion reads them "
+    "itself, read-only, and fusion_digest answers questions about large material in a few "
+    "hundred tokens. fusion_propose_patch returns a unified diff (never applied: you apply it) "
+    "chosen by running the panel's checks and your tests in a sandbox copy. Responses are "
+    "compact (answer, top claims, confidence, cost); detail='full' or fusion://runs/{run_id} "
+    "has the rest. max_cost_usd caps spend, strategy picks a cheaper or faster form "
+    "(fusion://strategies); with panel-digest you merge the panel's answers yourself. A call "
+    "past the soft time limit returns the panel's digest and says so."
 )
 
 _TEXT_ONLY = (
-    " Fusion returns text and runs nothing, so check its claims against the code before "
-    "editing. A call takes tens of seconds (a panel is slower than one model) and costs cents; "
-    "the response states the cost."
+    " Fusion returns text and runs nothing: check its claims against the code before editing. "
+    "A call takes tens of seconds and costs cents; the response states the cost."
 )
-_READS = (
-    " Name files in `paths` (or `globs`) instead of pasting them: Fusion reads them itself, "
-    "read-only, under the project root, and skips secret, ignored, binary and oversize files."
-)
-_VERIFY = (
-    _TEXT_ONLY + " Use strategy='solo-haiku' for the quickest answer or max_cost_usd to cap spend."
-)
+_READS = " Name files in `paths` or `globs` instead of pasting them: Fusion reads them itself."
+_VERIFY = _TEXT_ONLY
 
 ASK_DESCRIPTION = (
-    "Ask a panel of cheap models a self-contained coding question or task and get one answer "
-    "with the points the models agree on. Call it for a second opinion on a hard implementation "
-    "question when a wrong answer would be costly, or when you are unsure. Do not call it for "
-    "trivial edits, for questions the code in front of you already answers, or for anything "
-    "that needs commands run." + _READS + _VERIFY
+    "Ask a panel of cheap models a self-contained coding question and get one answer with the "
+    "points the models agree on. Call it for a second opinion on a hard implementation question "
+    "when a wrong answer would be costly. Do not call it for trivial edits or questions the code "
+    "in front of you answers." + _READS + _VERIFY
 )
 REVIEW_DESCRIPTION = (
-    "Review a code diff with a panel of cheap models and get findings grouped by how many "
-    "models agree. Call it before committing or merging a non-trivial or risky change "
-    "(security, concurrency, migrations, public APIs), or for an independent check of your own "
-    "patch. Do not call it for typo, formatting or one-line changes. Pass `diff_ref` (such as "
-    "'HEAD~1' or 'main...HEAD') and Fusion reads the diff itself with a read-only `git diff`; "
-    "send `diff` text only for a change git cannot show. Put background in `context`, and name "
-    "related files in `paths` rather than pasting them." + _VERIFY
+    "Review a code diff with a panel of cheap models; findings are grouped by how many models "
+    "agree. Call it before committing or merging a risky change (security, concurrency, "
+    "migrations, public APIs) or to check your own patch. Do not call it for typo, formatting or "
+    "one-line changes. Pass `diff_ref` (such as 'HEAD~1' or 'main...HEAD'): Fusion reads the "
+    "diff itself (send `diff` text only for a change git cannot show) and name related files in "
+    "`paths`." + _VERIFY
 )
 DEBUG_DESCRIPTION = (
-    "Rank the likely root causes of an error and get steps to verify each one and a minimal fix "
-    "strategy. Call it when you have an error message or stack trace and the cause is not "
-    "obvious after a first look, or after a fix attempt failed. Do not call it when the message "
-    "already names the cause (a missing import, a typo). Name the files involved in `paths` and "
-    "pass `diff_ref` when a recent change may be the cause." + _VERIFY
-)
-ARCHITECTURE_DESCRIPTION = (
-    "Compare design options and get a recommendation with tradeoffs, risks, reversibility and "
-    "a migration plan. Call it before committing to a choice that is hard to reverse (storage, "
-    "queues, framework, service boundaries). Do not call it for choices that are easy to "
-    "reverse or that project conventions already settle." + _READS + _VERIFY
+    "Rank the likely root causes of an error, with steps to verify each and a minimal fix. Call "
+    "it when the cause is not obvious after a first look, or after a fix failed. Do not call it "
+    "when the message already names the cause. Name the files involved in `paths`; pass "
+    "`diff_ref` when a recent change may be the cause." + _VERIFY
 )
 PLAN_DESCRIPTION = (
-    "Draft an implementation plan for a feature: the sequence of steps, affected modules, API "
-    "and data changes, tests to add, risks and open questions. Call it at the start of a "
-    "multi-file feature when the approach is not obvious. Do not call it for small changes you "
-    "can already sketch." + _READS + _VERIFY
+    "Plan with a panel of cheap models. kind='feature' (default): an implementation plan with "
+    "steps, affected modules, tests, risks and open questions. kind='decision': compare design "
+    "options and get a recommendation with tradeoffs, reversibility and a migration plan. Call "
+    "it at the start of a multi-file feature, or before a choice that is hard to reverse "
+    "(storage, queues, service boundaries). Do not call it for small changes you can already "
+    "sketch or choices that project conventions settle." + _READS + _VERIFY
 )
 EVAL_DESCRIPTION = (
     "Score an answer against its question and a rubric: strengths, weaknesses, unsupported "
-    "claims and missing points. Call it to check a draft answer or explanation before you act on "
-    "it or present it. Do not call it to find out whether code works or a fact is true: it "
-    "judges only the text you pass in and can run nothing." + _TEXT_ONLY
+    "claims, missing points. Call it to check a draft answer before you act on or present it. "
+    "Do not call it to find out whether code works or a fact is true: it judges only the text "
+    "you pass in and runs nothing." + _TEXT_ONLY
 )
 DIGEST_DESCRIPTION = (
-    "Have cheap models read large material from the project (files in `paths`/`globs`, or a "
-    "`diff_ref` diff) and return a short answer to one question, at most `max_answer_tokens`. "
-    "Call it when answering would mean reading many or long files into your own context: a "
-    "summary of a module, where something is handled, what a large diff changes. Do not call "
-    "it for a file you need to edit (read that yourself) or for one short file. Fusion reads "
-    "read-only under the project root and skips secret, ignored, binary and oversize files."
-    + _TEXT_ONLY
+    "Have cheap models read large material (`paths`/`globs`, or a `diff_ref` diff) and return a "
+    "short answer to one question, at most `max_answer_tokens`. Call it when answering would "
+    "mean reading many or long files into your own context. Do not call it for a file you need "
+    "to edit or for one short file." + _TEXT_ONLY
 )
 PATCH_DESCRIPTION = (
-    "Get a patch for a code change from a panel of cheap models, each writing a complete patch "
-    "and checks that judge any fix; every patch is run against everyone's checks (and your "
-    "`tests_cmd`) in a sandbox copy of the project, and the one that passes the most checks "
-    "the others wrote is returned as a unified diff. Fusion never applies it or changes your "
-    "files: you apply it. Call it for a bug fix or small change where a wrong patch is costly "
-    "and checks can tell right from wrong. Do not call it for large refactors or for edits you "
-    "can make directly. Name the files in `paths`. verify='host' runs nothing: you get two "
-    "candidates and their checks to run, then call fusion_select_patch. A call takes tens of "
-    "seconds to a few minutes and costs cents; the response states the cost."
+    "Get a patch for a change from a panel of cheap models: each writes a patch and checks, "
+    "every patch is run against everyone's checks (and your `tests_cmd`) in a sandbox copy of "
+    "the project, and the one passing the most checks is returned as a unified diff. Fusion "
+    "never applies it or changes your files: you apply it. Call it for a bug fix or small change "
+    "where a wrong patch is costly and checks can tell right from wrong. Do not call it for large "
+    "refactors or edits you can make directly. Name the files in `paths`. verify='host' runs "
+    "nothing: you get two candidates and their checks, then call fusion_select_patch. A call "
+    "takes tens of seconds to a few minutes and costs cents."
 )
 SELECT_PATCH_DESCRIPTION = (
     "After fusion_propose_patch with verify='host': pass its run_id and the results of running "
-    "its checks on each candidate (and on the code as it is) to get the patch that passes the "
-    "most checks the others wrote. Free and instant: no model is called and nothing runs. Only "
-    "for that second step."
+    "its checks on each candidate (and on the code as it is) to get the best patch. Free: no "
+    "model is called and nothing runs. Only for that second step."
 )
 FEEDBACK_DESCRIPTION = (
-    "Tell Fusion what became of one of its answers: used, partly, wrong or ignored, with a "
-    "one-line note on why. With the experience library on (library.enabled), one cheap call "
-    "distils at most one per-project lesson from it, which later panel prompts carry as a "
-    "hypothesis; with it off nothing is stored and no model is called. Call it after you "
-    "acted on, or rejected, a Fusion answer, especially a wrong one. Do not call it for runs "
-    "you have not checked. The note is redacted and stays in Fusion's local database."
+    "Tell Fusion what became of one of its answers (used, partly, wrong, ignored) with a "
+    "one-line note. With library.enabled one cheap call distils at most one per-project lesson "
+    "that later panel prompts carry; otherwise nothing is stored and no model is called. Call it "
+    "after you acted on, or rejected, a Fusion answer, especially a wrong one. Do not call it for "
+    "runs you have not checked. The note is redacted and stays in Fusion's local database."
 )
 STATS_DESCRIPTION = (
-    "Show cumulative Fusion usage: money spent against the baseline model's estimated cost, "
-    "savings, call counts and the shadow A/B win-rate. Free and instant: it reads the local "
-    "run database and calls no model. Call it when asked whether Fusion is paying off."
+    "Cumulative Fusion usage: spend against the baseline model's estimated cost, savings, host "
+    "tokens saved, call counts, shadow A/B win-rate. Free: it reads the local run database and "
+    "calls no model. Call it when asked whether Fusion is paying off."
 )
 COMPARE_DESCRIPTION = (
     "Score two finished Claude Code outputs for the same task (one made with Opus alone, one "
-    "with Fusion) against the same rubric, and report which is better, cheaper and faster. "
-    "Only for measuring Fusion against a baseline when the user asks; do not use it in normal "
-    "work. It runs two evaluation panels, so it costs more than other tools."
+    "with Fusion) against one rubric and report which is better, cheaper and faster. Only for "
+    "measuring Fusion against a baseline when the user asks; it runs two evaluation panels, so "
+    "it costs more than other tools."
 )
+
+
+ALIAS_TAG = "alias"
+
+
+def deprecated(output: dict[str, Any], old: str, new: str, how: str) -> dict[str, Any]:
+    """The response of a 0.2.0 tool name that is no longer listed: its answer plus what to call."""
+    note = f"`{old}` is deprecated and will be removed after 0.3.0: call `{new}` with {how}."
+    output["warnings"] = [*output.get("warnings", []), note]
+    output["display_markdown"] = f"{output.get('display_markdown', '')}\n\n_{note}_"
+    return output
+
+
+def _unlisted_aliases() -> Any:
+    from fastmcp.server.middleware import Middleware
+
+    class UnlistedAliases(Middleware):
+        """Hide the alias tools from ``tools/list``; ``tools/call`` still reaches them."""
+
+        async def on_list_tools(self, context: Any, call_next: Any) -> Any:
+            tools = await call_next(context)
+            return [t for t in tools if ALIAS_TAG not in (t.tags or set())]
+
+    return UnlistedAliases()
 
 
 def _progress_to(ctx: Any) -> AbstractContextManager[None]:
@@ -235,6 +237,7 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
             await tools.aclose()
 
     mcp = FastMCP(name="fusion-code-orchestrator", instructions=INSTRUCTIONS, lifespan=lifespan)
+    mcp.add_middleware(_unlisted_aliases())
 
     def panel_tool(title: str) -> ToolAnnotations:
         # Fusion changes nothing on the user's machine (readOnly), calls provider APIs (open
@@ -280,7 +283,20 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
-        description=ARCHITECTURE_DESCRIPTION,
+        description=PLAN_DESCRIPTION,
+        annotations=panel_tool("Plan a feature or decide a design"),
+        output_schema=run_schema,
+    )
+    async def fusion_plan(input: PlanInput, ctx: Context) -> ToolResult:
+        with _progress_to(ctx):
+            output = await tools.fusion_plan(input, root=await _root_for(input, ctx))
+        return to_tool_result(present_run(output, input.detail))
+
+    # The 0.2.0 names stay callable for one release but are not listed: a listed tool costs the
+    # host its schema on every turn. Their answers say what to call instead.
+    @mcp.tool(
+        description="Deprecated: use fusion_plan with kind='decision'.",
+        tags={ALIAS_TAG},
         annotations=panel_tool("Decide an architecture question"),
         output_schema=run_schema,
     )
@@ -290,16 +306,19 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         with _progress_to(ctx):
             root = await _root_for(input, ctx)
             output = await tools.fusion_decide_architecture(input, root=root)
+        output = deprecated(output, "fusion_decide_architecture", "fusion_plan", "kind='decision'")
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
-        description=PLAN_DESCRIPTION,
+        description="Deprecated: use fusion_plan with kind='feature'.",
+        tags={ALIAS_TAG},
         annotations=panel_tool("Plan a feature"),
         output_schema=run_schema,
     )
     async def fusion_plan_feature(input: PlanFeatureInput, ctx: Context) -> ToolResult:
         with _progress_to(ctx):
             output = await tools.fusion_plan_feature(input, root=await _root_for(input, ctx))
+        output = deprecated(output, "fusion_plan_feature", "fusion_plan", "kind='feature'")
         return to_tool_result(present_run(output, input.detail))
 
     @mcp.tool(
@@ -466,8 +485,9 @@ def create_mcp_server(*, db_path: str | None = None) -> Any:
         what = feature.strip() or "the feature we just discussed"
         limits = f" Constraints: {constraints}." if constraints.strip() else ""
         return (
-            f"Plan this feature: {what}.{limits}\n\nCall the `fusion_plan_feature` tool with a "
-            "description, the existing patterns it should follow and the relevant file excerpts. "
+            f"Plan this feature: {what}.{limits}\n\nCall the `fusion_plan` tool with a "
+            "description, the existing patterns it should follow and the relevant files in "
+            "`paths`. "
             "Then turn its plan into concrete steps for this repository and flag anything that "
             "does not fit the code."
         )

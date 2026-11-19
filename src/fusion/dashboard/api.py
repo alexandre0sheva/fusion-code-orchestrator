@@ -188,7 +188,11 @@ def overview(src: Sources, days: int = 90) -> dict[str, Any]:
                     "completed": stats.completed_runs,
                     "cost_usd": stats.total_fusion_cost_usd,
                     "avg_latency_ms": stats.avg_latency_ms,
+                    # What Fusion's own reading of files and diffs spared the host (bytes / 4)
+                    "host_tokens_saved": stats.host_tokens_saved_estimate,
+                    "workspace_runs": stats.workspace_runs,
                 },
+                "e2e": _e2e(src),
                 "paired": {
                     "runs": paired_runs,
                     "fusion_usd": paired_fusion,
@@ -239,6 +243,14 @@ def overview(src: Sources, days: int = 90) -> dict[str, Any]:
         )
     finally:
         store.close()
+
+
+def _e2e(src: Sources) -> dict[str, Any] | None:
+    """The latest Claude Code A/B (``fusion bench e2e``), if the benchmark store has one."""
+    from fusion.bench.e2e.summary import latest_e2e
+
+    summary = latest_e2e(src.bench_dir)
+    return None if summary is None else summary.model_dump(mode="json")
 
 
 # -- runs ---------------------------------------------------------------------------------------

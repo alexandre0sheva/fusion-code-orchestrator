@@ -12,7 +12,7 @@ from typing import Any
 
 from fusion.config.env import is_test_mode
 from fusion.config.loader import LibraryConfig, load_library_config, load_verify_config
-from fusion.config.paths import resolve_db_path
+from fusion.config.paths import bench_results_dir, resolve_db_path
 from fusion.library.distil import (
     Distillation,
     apply_distillation,
@@ -33,6 +33,7 @@ from fusion.mcp_server.schemas import (
     FusionAskInput,
     FusionStatsInput,
     PlanFeatureInput,
+    PlanInput,
     ProposePatchInput,
     ReviewDiffInput,
     SelectPatchInput,
@@ -220,6 +221,14 @@ def gather_workspace(input: _OrchestrationInput, root: Path | None) -> Gathered:
         diff=diff,
         report=reader.report(),
     )
+
+
+def _latest_e2e() -> Any:
+    """The latest Claude Code A/B in the benchmark store (imported here: the server's start-up
+    does not need the benchmark code)."""
+    from fusion.bench.e2e.summary import latest_e2e
+
+    return latest_e2e(bench_results_dir())
 
 
 def _with_workspace(output: dict[str, Any], gathered: Gathered) -> dict[str, Any]:
@@ -657,6 +666,12 @@ class FusionTools:
         )
         return await self._noted(_with_workspace(result.model_dump(), got), lessons)
 
+    async def fusion_plan(self, input: PlanInput, *, root: Path | None = None) -> dict[str, Any]:
+        """A feature plan or an architecture decision, by ``input.kind``."""
+        if input.kind == "decision":
+            return await self.fusion_decide_architecture(input.as_decision(), root=root)
+        return await self.fusion_plan_feature(input.as_feature(), root=root)
+
     async def fusion_digest(
         self, input: DigestInput, *, root: Path | None = None
     ) -> dict[str, Any]:
@@ -787,9 +802,10 @@ class FusionTools:
         """Return cumulative Fusion cost, latency, and shadow win-rate statistics."""
         stats = await self.run_store.aget_stats()
         recent = self.run_store.list_shadow_comparisons(limit=input.recent_shadow_limit)
+        e2e = await asyncio.to_thread(_latest_e2e)
         return {
-            "display_markdown": format_stats_markdown(stats, recent),
-            "result": stats_to_dict(stats, recent),
+            "display_markdown": format_stats_markdown(stats, recent, e2e),
+            "result": stats_to_dict(stats, recent, e2e),
             "warnings": [],
         }
 

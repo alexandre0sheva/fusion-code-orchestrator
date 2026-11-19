@@ -120,8 +120,8 @@ records a blind pairwise verdict. Details: [docs/ARCHITECTURE.md](docs/ARCHITECT
 | `fusion_ask` | General model-like coding answer |
 | `fusion_review_diff` | Multi-model code review |
 | `fusion_debug_error` | Debug analysis with fix recommendations |
-| `fusion_decide_architecture` | Architecture decision support |
-| `fusion_plan_feature` | Implementation planning |
+| `fusion_plan` | Implementation plan (`kind: feature`) or architecture decision (`kind: decision`) |
+| `fusion_propose_patch` | Patch from checks the panel wrote, run in a sandbox copy; returned as a diff to apply |
 | `fusion_eval_answer` | Answer quality evaluation |
 | `fusion_compare_claude_runs` | Compare Claude Code + Opus vs Claude Code + Fusion |
 | `fusion_stats` | Cumulative spend vs baseline, savings, shadow A/B win-rate |
@@ -137,7 +137,7 @@ uv run fusion doctor                              # is this machine ready? (keys
 uv run fusion ask "Why does this retry loop never back off?" -f src/http.py
 git diff main | uv run fusion review-diff -f -    # review a diff
 uv run fusion debug --file trace.txt              # debug an error
-uv run fusion stats                               # cumulative spend, savings, shadow win-rate
+uv run fusion stats                               # spend, savings, host tokens saved, latest A/B, shadow win-rate
 uv run fusion dashboard                           # local web view of spend, runs, benchmarks (read-only)
 uv run fusion --help                              # everything else
 ```

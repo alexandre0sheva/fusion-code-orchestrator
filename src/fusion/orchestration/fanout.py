@@ -339,6 +339,13 @@ class _Panel:
     def _live(self) -> set[asyncio.Task[PanelCallResult]]:
         return {a.task for a in self._attempts if not a.task.done()}
 
+    def _unsettled(self) -> bool:
+        """A call has finished but its result is not collected yet. ``_report_progress`` awaits
+        the client between settling and the next look, so calls can finish in that window."""
+        return any(
+            a.result is None and a.task.done() and not a.task.cancelled() for a in self._attempts
+        )
+
     def _usable(self, alias: str) -> bool:
         provider = self.providers.get(self.registry_models[alias].provider)
         return provider is not None and provider.is_available()
@@ -459,15 +466,17 @@ class _Panel:
         deadline = loop.time() + self.config.global_timeout_seconds
         quorum_deadline: float | None = None
         timed_out = early_returned = False
-        while self._live():
-            wake = min(
-                t for t in (deadline, quorum_deadline, self._hedge_due()) if t is not None
-            )
-            await asyncio.wait(
-                self._live(),
-                timeout=max(wake - loop.time(), 0),
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+        while self._live() or self._unsettled():
+            live = self._live()
+            if live:  # none left when the last calls finished during the progress await below
+                wake = min(
+                    t for t in (deadline, quorum_deadline, self._hedge_due()) if t is not None
+                )
+                await asyncio.wait(
+                    live,
+                    timeout=max(wake - loop.time(), 0),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
             self._settle()
             await self._report_progress()
             now = loop.time()

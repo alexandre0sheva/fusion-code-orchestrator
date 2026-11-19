@@ -26,7 +26,18 @@ PLUGIN = ROOT / "plugin"
 FIXTURES = Path(__file__).parent / "fixtures"
 TOOL_PREFIX = f"mcp__plugin_{PLUGIN_NAME}_fusion__"
 COMMANDS = {
-    "ask", "review", "debug", "plan", "decide", "stats", "bench", "eval", "ab", "digest", "patch"
+    "ask",
+    "review",
+    "debug",
+    "plan",
+    "decide",
+    "stats",
+    "bench",
+    "eval",
+    "ab",
+    "digest",
+    "patch",
+    "feedback",
 }
 SKILLS = {
     "fusion-orchestrator",
@@ -158,6 +169,42 @@ async def test_the_advisor_subagent_is_confined_to_reading_and_fusion(tmp_path: 
     assert not {"permissionMode", "hooks", "mcpServers", "initialPrompt"} & set(meta)
     for mentioned in re.findall(r"`(fusion_[a-z_]+)`", body):
         assert mentioned in tools, mentioned
+
+
+async def test_the_advisor_runs_on_haiku_5_5_and_calls_only_listed_tools(tmp_path: Path) -> None:
+    """Roadmap Task 17: the advisor only relays and checks, so it runs on the cheap model."""
+    meta, body = _frontmatter(PLUGIN / "agents" / "fusion-advisor.md")
+    assert meta["model"] == "claude-haiku-5-5"  # the catalog's ID, not an alias that may move
+    listed = await _server_tools(tmp_path)
+    assert "fusion_plan_feature" not in body and "fusion_decide_architecture" not in body
+    assert "fusion_plan" in listed and "`fusion_plan`" in body
+
+
+async def test_nothing_in_the_plugin_or_client_rules_names_a_tool_that_is_not_listed(
+    tmp_path: Path,
+) -> None:
+    """The 0.2.0 plan and decide tools are hidden aliases: what we ship must call fusion_plan."""
+    listed = await _server_tools(tmp_path)
+    files = [
+        *PLUGIN.rglob("*.md"),
+        ROOT / "integrations" / "codex" / "AGENTS.fusion.md",
+        ROOT / "integrations" / "cursor" / "rules" / "fusion.mdc",
+    ]
+    for path in files:
+        for mentioned in re.findall(r"`(fusion_[a-z_]+)`", path.read_text(encoding="utf-8")):
+            assert mentioned in listed, (path.name, mentioned)
+        text = path.read_text(encoding="utf-8")
+        assert not {"fusion_plan_feature", "fusion_decide_architecture"} & set(
+            re.findall(r"fusion_[a-z_]+", text)
+        ), path.name
+
+
+def test_feedback_command_sends_the_run_id_and_the_outcome() -> None:
+    meta, body = _frontmatter(PLUGIN / "commands" / "feedback.md")
+    assert str(meta["allowed-tools"]).split() == [f"{TOOL_PREFIX}fusion_feedback"]
+    assert "$ARGUMENTS" in body
+    for field in ("`run_id`", "`outcome`", "`note`", "used", "partly", "wrong", "ignored"):
+        assert field in body, field
 
 
 def test_plugin_tells_the_host_to_name_files_instead_of_pasting_them() -> None:

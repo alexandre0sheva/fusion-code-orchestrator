@@ -136,16 +136,19 @@ def stats(
     as_json: JsonOption = False,
     recent_shadow: Annotated[int, typer.Option(help="Recent shadow comparisons to show")] = 10,
 ) -> None:
-    """Show cumulative Fusion stats: spend vs baseline, savings, shadow win-rate."""
+    """Show cumulative Fusion stats: spend vs baseline, savings, host tokens saved, the latest
+    Claude Code A/B and the shadow win-rate."""
+    from fusion.bench.e2e.summary import latest_e2e
     from fusion.telemetry.stats_format import format_stats_markdown, stats_to_dict
 
     store = RunStore(db_path=db_path)
     fusion_stats = store.get_stats()
     recent = store.list_shadow_comparisons(limit=recent_shadow)
+    e2e = latest_e2e(fusion_paths.bench_results_dir())
     if as_json:
-        echo_json(stats_to_dict(fusion_stats, recent))
+        echo_json(stats_to_dict(fusion_stats, recent, e2e))
         return
-    console.print(format_stats_markdown(fusion_stats, recent))
+    console.print(format_stats_markdown(fusion_stats, recent, e2e))
 
 
 @app.command("init")

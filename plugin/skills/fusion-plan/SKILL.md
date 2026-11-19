@@ -6,8 +6,8 @@ user-invocable: false
 
 # Fusion plan
 
-Look at the repository first, then call `fusion_plan_feature` with the feature in
-`feature_description`, `constraints`, the conventions the code already follows in
+Look at the repository first, then call `fusion_plan` (`kind: "feature"`) with the feature in
+`request`, `constraints`, the conventions the code already follows in
 `existing_patterns`, what the project is in `context`, and the files the feature touches in
 `paths` (Fusion reads them itself; do not paste them).
 

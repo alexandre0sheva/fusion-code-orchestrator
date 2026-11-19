@@ -4,69 +4,75 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelResponseEval
 
 STRATEGY_DESCRIPTION = (
-    "Strategy name; overrides budget. Read resource fusion://strategies to see them. Examples: "
-    "panel-nano-pick (default: three cheap models answer, one cheap call picks the best), "
-    "auto (estimates the request's difficulty, starts with one cheap model with a "
-    "self-check, a cheap panel or a mid panel, and asks more models only when the answer shows "
-    "it is not enough; the response's `escalation` says which rung answered), auto-frontier "
-    "(auto, allowed to end at Opus 5.5 alone), "
-    "solo-haiku (one cheap model), panel-duo (two cheap models; a synthesis call only "
-    "when they disagree), "
-    "panel-nano (three cheap models), "
-    "panel-cascade (two cheap models, the rest only if they disagree), panel-refine (adds a "
-    "refinement round), panel-vote (the points most models backed, no synthesis). "
-    "panel-digest returns every panel answer plus the shared, disputed and single-model points "
-    "WITHOUT a synthesis call, so you are the aggregator: keep what several models agree on and "
-    "check disputed or single-model points against the code before relying on them. A strategy "
-    "may carry a hard cost cap (max_cost_usd): the run is then shifted to a cheaper form and "
-    "the response says so in its warnings."
+    "Strategy name; default panel-nano-pick. auto escalates only when the answer is not enough, "
+    "solo-haiku is quickest; panel-digest skips the merge, so you are the aggregator: keep what "
+    "several models agree on and check the rest. All: fusion://strategies"
 )
 
 
 DETAIL_DESCRIPTION = (
-    "compact (default): the answer, the top five claims, confidence and one cost line, about 1.5k "
-    "tokens at most; the rest is kept under run_id (resource fusion://runs/{run_id}). "
-    "full: every claim, the cost breakdown, all warnings and the structured result"
+    "compact (default; about 1.5k tokens, the rest at fusion://runs/{run_id}) or full"
 )
 MAX_COST_DESCRIPTION = (
-    "Hard cost cap in USD for this call. It can only lower the strategy's own cap. If the "
-    "strategy cannot fit, it is shifted to a cheaper form (and the warnings say so); if even the "
-    "cheapest form cannot fit, no model is called. Omit for the strategy's default."
+    "Hard cost cap in USD; a strategy that cannot fit is shifted to a cheaper form, and if none "
+    "fits no model is called"
 )
 CONTEXT_DESCRIPTION = (
-    "Background the panel needs and cannot see: what the code does, the relevant files or "
-    "constraints. More relevant context gives better answers; do not paste whole files here."
+    "Background the panel cannot see (what the code does, constraints), not whole files"
 )
-SNIPPETS_DESCRIPTION = (
-    "Short code excerpts, one per item, each prefixed with its file path. Prefer `paths`: "
-    "Fusion reads the files itself, so you do not spend tokens pasting them"
-)
+SNIPPETS_DESCRIPTION = "Short code excerpts, each prefixed with its file path"
 PATHS_DESCRIPTION = (
-    "Files for the panel to read, relative to the project root (the client's first root, else "
-    "the server's working directory). Read-only; files outside the root, ignored by "
-    ".gitignore, secret (.env, keys), binary or too large are skipped and the warnings say why"
+    "Files for the panel to read, relative to the project root. Read-only; secret, ignored, "
+    "binary and oversize files are skipped (the warnings say why)"
 )
-GLOBS_DESCRIPTION = (
-    "Glob patterns of files to read under the project root, such as 'src/**/*.py'; the same "
-    "rules as `paths` apply, and at most 200 files are read"
-)
+GLOBS_DESCRIPTION = "Glob patterns of files to read, such as 'src/**/*.py' (at most 200 files)"
 DIFF_REF_DESCRIPTION = (
-    "A git revision or range whose diff Fusion reads itself (read-only `git diff <ref>`, no "
-    "checkout), such as 'HEAD~1', 'main...HEAD' or a commit sha. For a review it replaces "
-    "`diff`; for other tools the diff is added as background"
+    "A git revision or range whose diff Fusion reads itself, such as 'HEAD~1', 'main...HEAD' or "
+    "'HEAD' for uncommitted work"
 )
-SHADOW_DESCRIPTION = (
-    "Force (true) or suppress (false) a shadow A/B run against the real baseline model; "
-    "defaults to FUSION_SHADOW_MODE env behavior. A shadow run spends extra money."
-)
+SHADOW_DESCRIPTION = "Force or suppress a shadow A/B run against the baseline model (costs extra)"
+BUDGET_DESCRIPTION = "Budget preset; ignored when strategy is set"
 
 
-class _OrchestrationInput(BaseModel):
+def _compact_schema(schema: dict[str, Any], model: type[BaseModel]) -> None:
+    """Make a tool's JSON schema cheap for the host, which pays for it on every turn.
+
+    Fields in the model's ``HIDDEN_FROM_SCHEMA`` stay accepted but are not advertised (they are
+    documented in docs/INTEGRATIONS.md); ``anyOf: [X, null]`` becomes ``X``; defaults a model
+    would assume anyway (null, empty, false) and the class docstring are dropped.
+    """
+    hidden: frozenset[str] = getattr(model, "HIDDEN_FROM_SCHEMA", frozenset())
+    properties: dict[str, Any] = schema.get("properties", {})
+    for name in hidden:
+        properties.pop(name, None)
+    required = [r for r in schema.get("required", []) if r not in hidden]
+    if required:
+        schema["required"] = required
+    for prop in properties.values():
+        options = prop.get("anyOf")
+        if options and len(options) == 2 and {"type": "null"} in options:
+            kept = next(o for o in options if o != {"type": "null"})
+            del prop["anyOf"]
+            prop.update(kept)
+        if prop.get("default") in (None, "", [], {}, False):
+            prop.pop("default", None)
+    schema.pop("description", None)
+    schema.pop("title", None)
+
+
+class _ToolInput(BaseModel):
+    """Base of every tool input: its schema is compacted for the host (``_compact_schema``)."""
+
+    model_config = ConfigDict(json_schema_extra=_compact_schema)
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = frozenset()
+
+
+class _OrchestrationInput(_ToolInput):
     """Inputs shared by every tool that runs the panel.
 
     ``context`` is the one place for background text. Older clients sent it as ``repo_context``,
@@ -75,6 +81,9 @@ class _OrchestrationInput(BaseModel):
     """
 
     CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ()
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = frozenset(
+        {"file_snippets", "budget", "shadow_baseline"}
+    )
 
     context: str = Field(default="", description=CONTEXT_DESCRIPTION)
     file_snippets: list[str] = Field(default_factory=list, description=SNIPPETS_DESCRIPTION)
@@ -82,7 +91,7 @@ class _OrchestrationInput(BaseModel):
     globs: list[str] = Field(default_factory=list, description=GLOBS_DESCRIPTION)
     diff_ref: str | None = Field(default=None, description=DIFF_REF_DESCRIPTION)
     budget: Literal["low", "medium", "high", "local_only"] = Field(
-        default="medium", description="Budget preset; ignored when strategy is set"
+        default="medium", description=BUDGET_DESCRIPTION
     )
     strategy: str | None = Field(default=None, description=STRATEGY_DESCRIPTION)
     max_cost_usd: float | None = Field(default=None, gt=0, description=MAX_COST_DESCRIPTION)
@@ -113,14 +122,17 @@ class _OrchestrationInput(BaseModel):
 class ReviewDiffInput(_OrchestrationInput):
     """Input for fusion_review_diff tool."""
 
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = _OrchestrationInput.HIDDEN_FROM_SCHEMA | {
+        "changed_files",
+        "max_models",
+        "include_raw_outputs",
+    }
+
     CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ("repo_context", "repo_summary")
 
     diff: str = Field(
         default="",
-        description=(
-            "The unified diff to review. Leave it empty and pass `diff_ref` instead to have "
-            "Fusion read the diff itself"
-        ),
+        description="The unified diff to review; leave empty and pass `diff_ref` instead",
     )
 
     @model_validator(mode="after")
@@ -139,6 +151,12 @@ class ReviewDiffInput(_OrchestrationInput):
 class FusionAskInput(_OrchestrationInput):
     """Input for model-like fusion_ask tool."""
 
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = _OrchestrationInput.HIDDEN_FROM_SCHEMA | {
+        "changed_files",
+        "max_models",
+        "include_raw_outputs",
+    }
+
     prompt: str = Field(description="The coding question or task, stated so it stands alone")
     changed_files: list[str] = Field(default_factory=list, description="Relevant file paths")
     max_models: int | None = Field(default=None, description="Maximum panel models to use")
@@ -147,6 +165,11 @@ class FusionAskInput(_OrchestrationInput):
 
 class DebugErrorInput(_OrchestrationInput):
     """Input for fusion_debug_error tool."""
+
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = _OrchestrationInput.HIDDEN_FROM_SCHEMA | {
+        "recent_changes",
+        "environment",
+    }
 
     CONTEXT_ALIASES: ClassVar[tuple[str, ...]] = ("code_context",)
 
@@ -173,6 +196,51 @@ class PlanFeatureInput(_OrchestrationInput):
     existing_patterns: str = Field(default="", description="Existing patterns to follow")
 
 
+class PlanInput(_OrchestrationInput):
+    """Input for fusion_plan: a feature plan or an architecture decision, by ``kind``."""
+
+    kind: Literal["feature", "decision"] = Field(
+        default="feature",
+        description="feature: an implementation plan; decision: weigh design options and pick one",
+    )
+    request: str = Field(
+        min_length=1, description="The feature to implement, or the decision to make"
+    )
+    options: list[str] = Field(
+        default_factory=list, description="Options under consideration (decision)"
+    )
+    constraints: str = Field(default="", description="Constraints and requirements")
+    existing_patterns: str = Field(default="", description="Patterns to follow (feature)")
+
+    def _shared(self) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in _OrchestrationInput.model_fields}
+
+    def as_feature(self) -> PlanFeatureInput:
+        shared = self._shared()
+        if self.options:  # not lost: the panel sees them as background
+            options = "Options under consideration: " + "; ".join(self.options)
+            shared["context"] = _background(shared["context"], options)
+        return PlanFeatureInput(
+            feature_description=self.request,
+            constraints=self.constraints,
+            existing_patterns=self.existing_patterns,
+            **shared,
+        )
+
+    def as_decision(self) -> DecideArchitectureInput:
+        shared = self._shared()
+        if self.existing_patterns.strip():
+            patterns = "Existing patterns: " + self.existing_patterns
+            shared["context"] = _background(shared["context"], patterns)
+        return DecideArchitectureInput(
+            question=self.request, options=self.options, constraints=self.constraints, **shared
+        )
+
+
+def _background(context: str, extra: str) -> str:
+    return f"{context}\n\n{extra}" if context.strip() else extra
+
+
 class DigestInput(_OrchestrationInput):
     """Input for fusion_digest: cheap models read large material and return a small answer."""
 
@@ -197,18 +265,15 @@ class DigestInput(_OrchestrationInput):
 
 
 VERIFY_DESCRIPTION = (
-    "Where the panel's checks run. sandbox (default): Fusion copies the project (never ignored "
-    "or secret files) to a temporary directory and runs every check and `tests_cmd` there, with "
-    "no network and no writes outside the copy, then deletes it; your project is only read. "
-    "host: Fusion runs nothing and returns the top two candidates and the checks for you to run, "
-    "then pick with fusion_select_patch. none: no checks, one patch is selected. Where the "
-    "sandbox is off or unavailable, sandbox falls back to host and the warnings say so"
+    "Where the checks run. sandbox (default): in a temporary copy of the project, no network, "
+    "deleted afterwards; your project is only read. host: nothing runs; you get the top two "
+    "candidates and their checks to run, then call fusion_select_patch. none: no checks. A "
+    "sandbox that is off or unavailable falls back to host (the warnings say so)"
 )
 TESTS_CMD_DESCRIPTION = (
-    "A shell command that runs the project's tests from the project root, such as "
-    "'python -m pytest -q tests/test_parser.py'. In sandbox mode it runs only in the temporary "
-    "copy (no network: the tools it needs must already be installed) and counts as a check every "
-    "candidate must pass. Omit it when there are no tests to run"
+    "Shell command that runs the project's tests from its root, e.g. 'python -m pytest -q "
+    "tests/test_parser.py'. Sandbox mode runs it only in the copy (no network) and every "
+    "candidate must pass it. Omit when there are no tests"
 )
 Cell = Literal["pass", "fail", "error", "timeout"]
 
@@ -225,10 +290,7 @@ class ProposePatchInput(_OrchestrationInput):
     )
     strategy: str | None = Field(
         default=None,
-        description=(
-            "Strategy name; default verified-synth (three cheap models, each writing a patch and "
-            "the checks that judge any fix). With verify=none the default is panel-nano-select"
-        ),
+        description="Strategy name; default verified-synth (verify=none: panel-nano-select)",
     )
 
     @model_validator(mode="after")
@@ -239,28 +301,24 @@ class ProposePatchInput(_OrchestrationInput):
         return self
 
 
-class SelectPatchInput(BaseModel):
+class SelectPatchInput(_ToolInput):
     """Input for fusion_select_patch: the host's check results for a host-mode proposal."""
 
     run_id: str = Field(description="The run_id of the host-mode fusion_propose_patch response")
     results: dict[str, dict[str, Cell]] = Field(
         min_length=1,
         description=(
-            "For each candidate you tried (its id from the proposal), each check's result with "
-            "that candidate applied: {candidate: {check id: pass|fail|error|timeout}}. Add your "
-            "own test command's result under a new id such as 'tests': it counts in full"
+            "{candidate id: {check id: pass|fail|error|timeout}} with that candidate applied. "
+            "Add your own test command's result under a new check id such as 'tests'"
         ),
     )
     baseline: dict[str, Cell] = Field(
         default_factory=dict,
-        description=(
-            "Each check's result on the code as it is, before any candidate: a repro check that "
-            "already passes (or an invariant that already fails) is then not counted"
-        ),
+        description="Each check's result on the code as it is; checks that cannot tell are dropped",
     )
 
 
-class FeedbackInput(BaseModel):
+class FeedbackInput(_ToolInput):
     """Input for fusion_feedback: what became of one run's answer."""
 
     run_id: str = Field(description="The run_id of the Fusion response the feedback is about")
@@ -280,8 +338,10 @@ class FeedbackInput(BaseModel):
     )
 
 
-class EvalAnswerInput(BaseModel):
+class EvalAnswerInput(_ToolInput):
     """Input for fusion_eval_answer tool."""
+
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = frozenset({"expected_criteria"})
 
     answer: str = Field(description="Answer to evaluate")
     question: str = Field(default="", description="Original question or task")
@@ -291,7 +351,7 @@ class EvalAnswerInput(BaseModel):
     detail: Literal["compact", "full"] = Field(default="compact", description=DETAIL_DESCRIPTION)
 
 
-class FusionStatsInput(BaseModel):
+class FusionStatsInput(_ToolInput):
     """Input for fusion_stats tool."""
 
     recent_shadow_limit: int = Field(
@@ -300,8 +360,20 @@ class FusionStatsInput(BaseModel):
     )
 
 
-class CompareClaudeRunsInput(BaseModel):
+class CompareClaudeRunsInput(_ToolInput):
     """Input for comparing Claude Code + Opus vs Claude Code + Fusion outputs."""
+
+    HIDDEN_FROM_SCHEMA: ClassVar[frozenset[str]] = frozenset(
+        {
+            "opus_label",
+            "fusion_label",
+            "opus_run_id",
+            "fusion_run_id",
+            "opus_latency_ms",
+            "fusion_latency_ms",
+            "include_raw_evals",
+        }
+    )
 
     task_prompt: str = Field(description="Original user prompt/task given to both arms")
     opus_output: str = Field(description="Result from Claude Code using Opus/native model")
@@ -477,6 +549,10 @@ class PatchToolResult(ToolEnvelope):
     )
     isolation: str | None = Field(
         default=None, description="sandbox: the isolation used (sandbox-exec or unshare)"
+    )
+    confidence: float | None = Field(
+        default=None,
+        description="sandbox: the share of the checks (and your tests) the returned patch passes",
     )
     strategy: str | None = Field(default=None, description="The strategy that produced it")
     cost_usd: float | None = Field(default=None, description="Model spend; null if unknown")

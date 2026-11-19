@@ -28,11 +28,7 @@ ARGUMENTS: dict[str, dict[str, Any]] = {
     "fusion_ask": {"prompt": "How should I retry a failed HTTP call in httpx?"},
     "fusion_review_diff": {"diff": "+ query = 'SELECT * FROM t WHERE id=' + uid", "context": "py"},
     "fusion_debug_error": {"error_message": "KeyError: 'id'", "stack_trace": "File x.py, line 3"},
-    "fusion_decide_architecture": {
-        "question": "Redis or Postgres for a job queue?",
-        "options": ["Redis", "Postgres"],
-    },
-    "fusion_plan_feature": {"feature_description": "Add a dark mode toggle to the settings page"},
+    "fusion_plan": {"request": "Add a dark mode toggle to the settings page"},
     "fusion_eval_answer": {"question": "What is 2+2?", "answer": "4"},
     # read-only, from the test run's cwd (this repository)
     "fusion_digest": {"question": "What is this project?", "paths": ["pyproject.toml"]},
@@ -217,7 +213,14 @@ async def test_every_context_field_reaches_the_models(tmp_path: Path) -> None:
 # ------------------------------------------------------------------------------ progress
 
 
-async def test_progress_messages_arrive_in_order_and_only_increase(server: Any) -> None:
+async def test_progress_messages_arrive_in_order_and_only_increase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Early return stops waiting for the third model once two have answered, so under load
+    # "panel 3/3 done" may never be sent; this test is about the order of all three.
+    monkeypatch.setenv("FUSION__FANOUT__EARLY_RETURN", "false")
+    monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "false")
+    server = create_mcp_server(db_path=str(tmp_path / "progress.db"))
     seen: list[tuple[float, float | None, str | None]] = []
 
     async def on_progress(progress: float, total: float | None, message: str | None) -> None:
@@ -298,7 +301,7 @@ async def test_the_prompts_name_the_tool_to_call(server: Any) -> None:
     assert "fusion_review_diff" in text(review) and "+ x" in text(review)
     assert "security" in text(review)
     assert "fusion_debug_error" in text(debug) and "KeyError" in text(debug)
-    assert "fusion_plan_feature" in text(plan) and "dark mode" in text(plan)
+    assert "fusion_plan" in text(plan) and "dark mode" in text(plan)
     assert "git diff" in text(bare)
 
 

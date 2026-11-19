@@ -1,7 +1,7 @@
 ---
 description: Run the same task with and without Fusion and compare the two results
 argument-hint: <task>
-allowed-tools: mcp__plugin_fusion_fusion__fusion_compare_claude_runs mcp__plugin_fusion_fusion__fusion_ask mcp__plugin_fusion_fusion__fusion_review_diff mcp__plugin_fusion_fusion__fusion_debug_error mcp__plugin_fusion_fusion__fusion_plan_feature
+allowed-tools: mcp__plugin_fusion_fusion__fusion_compare_claude_runs mcp__plugin_fusion_fusion__fusion_ask mcp__plugin_fusion_fusion__fusion_review_diff mcp__plugin_fusion_fusion__fusion_debug_error mcp__plugin_fusion_fusion__fusion_plan
 ---
 Run an A/B comparison on this task: $ARGUMENTS
 

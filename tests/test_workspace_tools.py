@@ -272,7 +272,7 @@ async def test_descriptions_tell_the_host_to_name_files_not_paste_them(db: str) 
         tools = {t.name: t for t in await client.list_tools()}
     review = tools["fusion_review_diff"].description or ""
     assert "diff_ref" in review and "paths" in review
-    for name in ("fusion_ask", "fusion_debug_error", "fusion_plan_feature"):
+    for name in ("fusion_ask", "fusion_debug_error", "fusion_plan"):
         assert "paths" in (tools[name].description or ""), name
     assert "reads no files" not in review
 

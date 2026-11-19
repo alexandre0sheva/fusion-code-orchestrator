@@ -15,8 +15,8 @@ stay the executor.
 
 - a diff is non-trivial or risky (security, concurrency, migrations, public APIs): `fusion_review_diff`
 - an error is not explained by its message, or a fix did not work: `fusion_debug_error`
-- a choice is hard to reverse (storage, queues, framework, service boundaries): `fusion_decide_architecture`
-- a feature spans several files and the approach is unclear: `fusion_plan_feature`
+- a choice is hard to reverse (storage, queues, framework, service boundaries): `fusion_plan` (`kind: "decision"`)
+- a feature spans several files and the approach is unclear: `fusion_plan` (`kind: "feature"`)
 - you are unsure and a wrong answer would be costly: `fusion_ask`
 - you are about to rely on a draft answer: `fusion_eval_answer`
 - answering means reading many or long files (what a module does, where something is handled,

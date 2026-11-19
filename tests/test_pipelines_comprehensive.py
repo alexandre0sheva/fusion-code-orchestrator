@@ -120,6 +120,9 @@ async def test_debug_structured_output(pipelines: dict) -> None:
             error_message="TimeoutError: pool exhausted",
             logs="waiting for connection...",
             environment="production, k8s",
+            # a synthesis: under the default (select) the mock selector may pick the mock weak or
+            # security model's answer, which is shaped for a review and has no causes to parse
+            strategy="panel-nano",
         )
     )
     assert result.most_likely_causes

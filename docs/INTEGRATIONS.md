@@ -72,30 +72,69 @@ and, from a local clone, `claude mcp add --scope user fusion -- uv run --directo
 
 | | Name | Use |
 |--|------|-----|
-| Commands (you type them) | `/fusion:ask`, `/fusion:review`, `/fusion:debug`, `/fusion:plan`, `/fusion:decide`, `/fusion:eval`, `/fusion:digest`, `/fusion:patch` | One per tool; they name the input (the files, the `diff_ref` range, the error) and tell Claude how to read the answer |
+| Commands (you type them) | `/fusion:ask`, `/fusion:review`, `/fusion:debug`, `/fusion:plan`, `/fusion:decide`, `/fusion:eval`, `/fusion:digest`, `/fusion:patch`, `/fusion:feedback` | One per tool (`/fusion:plan` and `/fusion:decide` are the two kinds of `fusion_plan`); they name the input (the files, the `diff_ref` range, the error) and tell Claude how to read the answer. `/fusion:patch` returns a diff for Claude to apply, `/fusion:digest` answers a question about large files in a few hundred tokens, `/fusion:feedback` tells Fusion what became of its last answer |
 | | `/fusion:stats` | Spend, savings and shadow A/B win-rate |
 | | `/fusion:bench` | Summarise the latest benchmark run from `bench-results/` (read-only; never starts a study) |
 | | `/fusion:ab` | Run a task with and without Fusion and compare the two |
 | Skills (Claude loads them) | `fusion-orchestrator`, `fusion-review`, `fusion-debug`, `fusion-decide`, `fusion-plan`, `fusion-eval`, `fusion-patch` | Each says when to call Fusion and when not to, so Claude skips it for trivial edits |
-| Subagent | `fusion-advisor` | Calls Fusion in its own context and returns a verdict of at most 15 lines, with what it checked against the code. It can read files and call Fusion; it cannot edit or run commands |
+| Subagent | `fusion-advisor` | Runs on Haiku 5.5 (`model: claude-haiku-5-5`, so Claude Code 2.1.327 or newer), calls Fusion in its own context and returns a verdict of at most 15 lines, with what it checked against the code. It can read files and call Fusion; it cannot edit or run commands |
 
 Example prompts: "Use Fusion to review this diff before I merge", "Have the fusion-advisor look at
-this stack trace", "Run `fusion_decide_architecture` for Redis vs Postgres caching".
+this stack trace", "Run `fusion_plan` with `kind: decision` for Redis vs Postgres caching".
 
 Treat Fusion output like another model's answer: apply changes and run tests yourself. For
 measuring whether Fusion helps, see [BENCHMARKING.md](BENCHMARKING.md).
+
+### The cheap-executor recipe
+
+Claude Code's own model is most of what a session costs, so the cheap setup is a small executor
+with Fusion as its advisor: install the plugin, then start Claude Code on Haiku 5.5 or Sonnet 5.5
+(`claude --model claude-haiku-5-5`; Claude Code 2.1.327 or newer knows it). The executor edits and
+runs the tests; when it reaches a risky diff, a hard bug or a design choice it calls `/fusion:review`,
+`/fusion:debug` or `/fusion:plan`, or hands the question to the `fusion-advisor` subagent (also on
+Haiku 5.5, so even the go-between is cheap). `/fusion:digest` replaces reading many files into the
+executor's context, and `/fusion:patch` returns a patch checked in a sandbox for the executor to
+apply.
+
+What the [live study](BENCHMARK_RESULTS.md#claude-code-end-to-end) measured (4 test coding tasks, hidden tests decide, host
+tokens counted at catalog prices; one run per task and arm, so it shows direction, not a result):
+
+| Arm | Solved | Total $ per run | Fusion calls per run |
+|-----|:------:|:---------------:|:--------------------:|
+| Opus 5.5 alone | 4 of 4 | $0.0678 | 0 |
+| Sonnet 5.5 alone | 4 of 4 | $0.0256 | 0 |
+| Haiku 5.5 alone | 3 of 4 | $0.0027 | 0 |
+| Haiku 5.5 + Fusion | 4 of 4 | $0.0058 | 0.2 |
+
+Haiku with Fusion solved what Sonnet and Opus solved at 23% of Sonnet's and 9% of Opus's cost per
+solved task, but most of that is Haiku being cheap: Fusion was called
+in 2 of its 12 runs, and the one task it solved that Haiku alone did not is one task. Sonnet and
+Opus *with* Fusion cost about twice as much as without it in that study, because the tool list and
+the prompt sent to the host every turn cost more than Fusion saved on four small tasks. The tool
+list has since been cut by more than half ([how large it is](#the-size-of-the-tool-list)); no
+live study was re-run after that, so the cost of the Fusion arms is unmeasured since then.
 
 ### Smoke test
 
 After installing, in a project directory with keys set:
 
-1. `/mcp` lists `plugin:fusion:fusion` (or `fusion` after a server-only install) as connected.
-2. `/fusion:stats` returns a summary without calling a model.
+1. `/mcp` lists `plugin:fusion:fusion` (or `fusion` after a server-only install) as connected, with
+   eleven tools.
+2. `/fusion:stats` returns a summary without calling a model: spend, savings, host tokens saved
+   and, once a `fusion bench e2e` study exists, its table.
 3. `/fusion:ask How should I retry a failed HTTP call?` shows progress (`panel 1/2 done` ...) and
    returns a short answer with a cost line.
-4. Make a small change, then `/fusion:review`: it reads the diff and reports findings.
-5. Ask "use the fusion-advisor to review my last change": the reply is a short verdict.
-6. `fusion install claude-code --plugin` again reports "nothing to do".
+4. Make a small change, then `/fusion:review`: it reads the diff and reports findings with a cost
+   line and `~N host tokens saved`.
+5. `/fusion:digest What does src/ do? src/**/*.py` returns a few hundred tokens and names any path
+   it could not read.
+6. `/fusion:plan Add a retry to the HTTP client` and `/fusion:decide Redis or Postgres?` both call
+   `fusion_plan` (check with `/mcp`: no `fusion_plan_feature` or `fusion_decide_architecture`).
+7. `/fusion:patch Fix <a small bug> tests: python -m pytest -q tests/test_x.py` returns a diff and
+   an apply line; apply it, run the tests, then `/fusion:feedback used` (or `wrong` and why).
+8. Ask "use the fusion-advisor to review my last change": the reply is a short verdict, and `/agents`
+   shows the advisor on Haiku 5.5.
+9. `fusion install claude-code --plugin` again reports "nothing to do".
 
 ### Troubleshooting
 
@@ -136,7 +175,7 @@ Every refusal is decided before anything is written. By hand, the file is
 [`integrations/cursor/mcp.json`](../integrations/cursor/mcp.json). Provider keys come from the
 environment Cursor starts in (launch it from a shell that has them exported).
 
-**Smoke test.** (1) Settings > Tools & MCP lists `fusion` with nine tools. (2) In Agent chat ask
+**Smoke test.** (1) Settings > Tools & MCP lists `fusion` with eleven tools. (2) In Agent chat ask
 "call fusion_stats": it answers with a spend summary and calls no model. (3) Ask "use Fusion to
 review this diff" with a staged change: the agent calls `fusion_review_diff` and reports findings.
 (4) `fusion install cursor` again says "nothing to do".
@@ -224,13 +263,16 @@ one only with the experience library on) and `idempotentHint: false`. Each has a
 descriptions the client shows the model say when to call the tool, when not to, and that a call
 takes tens of seconds and costs cents.
 
+`fusion_plan` replaces 0.2.0's `fusion_decide_architecture` (now `kind: "decision"`, the question in `request`) and
+`fusion_plan_feature` (`kind: "feature"`, `feature_description` is now `request`). The old names
+still answer for this release, with a deprecation line in `warnings`, but are no longer listed.
+
 | Tool | Call it for | Do not call it for |
 |------|-------------|--------------------|
 | `fusion_ask` | A second opinion on a hard, self-contained coding question | Trivial edits; anything the code in front of you answers |
 | `fusion_review_diff` | A non-trivial or risky diff before commit or merge | Typo, formatting or one-line changes |
 | `fusion_debug_error` | Ranked root causes and verification steps for an error that is not obvious | An error whose message names the cause |
-| `fusion_decide_architecture` | A hard-to-reverse design choice | Choices that are easy to reverse or settled by convention |
-| `fusion_plan_feature` | A plan for a multi-file feature whose approach is unclear | Small changes |
+| `fusion_plan` | `kind: "feature"` (default): a plan for a multi-file feature whose approach is unclear. `kind: "decision"`: a hard-to-reverse design choice, with `options` | Small changes; choices that are easy to reverse or settled by convention |
 | `fusion_eval_answer` | Scoring a draft answer against a rubric | Finding out whether code works or a fact is true |
 | `fusion_digest` | A short answer about material too large to read yourself: what a module does, where something is handled, what a big diff changes | A file you are about to edit; one short file |
 | `fusion_propose_patch` | A bug fix or small change where a wrong patch is costly and checks can tell right from wrong: a patch returned as a diff, never applied ([Patches](#patches)) | Large refactors; edits you can make directly |
@@ -238,6 +280,24 @@ takes tens of seconds and costs cents.
 | `fusion_feedback` | After you acted on or rejected a Fusion answer: `run_id`, `outcome` (`used`, `partly`, `wrong`, `ignored`) and a one-line `note`. With the [experience library](CONFIGURATION.md#experience-library) on, one cheap call distils at most one per-project lesson (the response says whether one was created, updated, dropped or none); off, nothing is stored | Runs you have not checked |
 | `fusion_compare_claude_runs` | Measuring Claude Code + Opus against Claude Code + Fusion | Normal work |
 | `fusion_stats` | Spend, savings and shadow A/B win-rate (free, calls no model) | |
+
+### The size of the tool list
+
+The host pays for every listed tool's name, description and input schema on every turn, whether or
+not Fusion is called, so the list is kept small: 11 tools and about 6,700 tokens (20,000 characters
+at Fusion's 3 characters per token), down from 12 tools and about 14,600 in 0.2.0. A test
+(`tests/test_mcp_tool_surface.py`) fails if the list grows past its budget. What was cut: the two
+planning tools were merged, descriptions were shortened (the long strategy text lives in the
+`fusion://strategies` resource), and the schema leaves out inputs a host rarely sets and empty
+defaults. The left-out inputs are still accepted:
+
+| Tool | Accepted, not advertised |
+|------|--------------------------|
+| every panel tool | `file_snippets`, `budget`, `shadow_baseline` (described below) |
+| `fusion_ask`, `fusion_review_diff` | `changed_files`, `max_models`, `include_raw_outputs` |
+| `fusion_debug_error` | `recent_changes`, `environment` (put them in `context`, or name the change in `diff_ref`) |
+| `fusion_eval_answer` | `expected_criteria` |
+| `fusion_compare_claude_runs` | `opus_label`, `fusion_label`, `opus_run_id`, `fusion_run_id`, `opus_latency_ms`, `fusion_latency_ms`, `include_raw_evals` |
 
 ### Inputs
 
@@ -302,7 +362,7 @@ The text content is `display_markdown`; the same record is returned as structure
 | `run_id`, `details_uri` | yes | Handle for the stored run: `fusion://runs/{run_id}` |
 | `strategy`, `confidence`, `cost_usd`, `latency_s`, `models_called` | yes | Headline numbers; `cost_usd` is absent when a price is unknown |
 | `warnings` | yes | Timeouts, provider failures, cost-cap shifts, soft-limit notices, project paths not read |
-| `host_tokens_saved_estimate` | yes | Present when the call named `paths`, `globs` or `diff_ref`: tokens the host did not send |
+| `host_tokens_saved_estimate` | yes | Present when the call named `paths`, `globs` or `diff_ref`: tokens the host did not send. The compact text ends with the same figure (`~N host tokens saved`), so the host sees it without parsing the record |
 | `lessons_used` | yes | Present when the [experience library](CONFIGURATION.md#experience-library) added lessons to the panel prompt: their ids. Send `fusion_feedback` for the run so they keep or lose their standing |
 | `partial`, `halted` | yes | `partial`: the soft time limit cut the run short and the answer is the panel digest. `halted`: why there is no answer (`insufficient_context`, `quorum`, `budget`, `timeout`) |
 | `result` | `full` only | Task-specific structured result |
@@ -311,13 +371,19 @@ The text content is `display_markdown`; the same record is returned as structure
 | `raw_outputs` | `full` only, with `include_raw_outputs` | Each panel answer |
 | `workspace` | `full` only | What was read from the project (path, bytes, redactions) and what was skipped, with reasons |
 
+`fusion_propose_patch` returns the same headline fields: `cost_usd`, `host_tokens_saved_estimate`,
+`apply` (how to apply the diff, or what to do next) and, in `sandbox` mode, `confidence`: the share
+of the checks (and your `tests_cmd`) that the returned patch passes.
+
 `fusion_digest` cuts its compact text at `max_answer_tokens` plus about 200 tokens for the
 heading and cost line.
 
 `fusion_feedback` returns `recorded`, `action` (`created`, `updated`, `dropped` or `none`), the
 `lesson` it created or updated and `cost_usd`. `fusion_stats` returns `display_markdown`,
-`warnings` and `result`; `fusion_compare_claude_runs`
-adds `evals`.
+`warnings` and `result`: spend against the baseline, the host tokens saved, the shadow A/B and, when
+`fusion bench e2e` has run in the benchmark directory, `result.e2e` and a "Claude Code end to end"
+section with the latest study's arms (a simulated study is labelled as such);
+`fusion_compare_claude_runs` adds `evals`.
 
 ### Patches
 
@@ -374,7 +440,7 @@ saved by reading the files itself.
 |--------|--------|
 | `review-this-diff` (`diff`, `focus`) | A review with `fusion_review_diff` (by `diff_ref` when no diff is given), then checking each finding against the code |
 | `debug-this-error` (`error`, `context`) | A diagnosis with `fusion_debug_error`, then running its verification steps |
-| `plan-this-feature` (`feature`, `constraints`) | A plan with `fusion_plan_feature`, then fitting it to the repository |
+| `plan-this-feature` (`feature`, `constraints`) | A plan with `fusion_plan`, then fitting it to the repository |
 
 ### Transports
 

@@ -45,6 +45,11 @@ def details_uri(run_id: str) -> str:
     return f"fusion://runs/{run_id}"
 
 
+def saved_line(tokens: int) -> str:
+    """The one line that tells the host what reading the files itself spared it."""
+    return f"_~{tokens:,} host tokens saved (files Fusion read itself)._"
+
+
 def cap_markdown(text: str, run_id: str, *, max_tokens: int = COMPACT_MAX_TOKENS) -> str:
     """Cut an over-long compact text at a line boundary and say where the rest is."""
     limit = int(max_tokens * CHARS_PER_TOKEN)
@@ -91,10 +96,12 @@ def present_run(
     routing = output.get("routing") or {}
     markdown = str(output.get("display_markdown", ""))
     full = detail == "full"
+    saved = output.get("host_tokens_saved_estimate")
+    shown = markdown if full else cap_markdown(markdown, run_id, max_tokens=max_tokens)
+    if saved:
+        shown += "\n\n" + saved_line(int(saved))
     fields: dict[str, Any] = {
-        "display_markdown": (
-            markdown if full else cap_markdown(markdown, run_id, max_tokens=max_tokens)
-        ),
+        "display_markdown": shown,
         "warnings": list(output.get("warnings", [])),
         "run_id": run_id,
         "strategy": routing.get("strategy"),
@@ -106,7 +113,7 @@ def present_run(
         "partial": bool(output.get("partial", False)),
         "halted": output.get("halt_reason"),
         "details_uri": details_uri(run_id),
-        "host_tokens_saved_estimate": output.get("host_tokens_saved_estimate"),
+        "host_tokens_saved_estimate": saved,
         "lessons_used": output.get("lessons_used") or None,
     }
     if full:

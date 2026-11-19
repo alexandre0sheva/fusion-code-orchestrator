@@ -204,6 +204,8 @@ def patch_output(
             checks = _sandbox_checks(report, winner)
             out.update(checks=checks, matrix=report.matrix.cells, isolation=report.isolation)
             passed = sum(c["result"] == "pass" for c in checks)
+            if chosen is not None and checks:
+                out["confidence"] = round(passed / len(checks), 2)
             lines += [
                 "",
                 "### Verification",

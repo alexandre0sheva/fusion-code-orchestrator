@@ -149,7 +149,7 @@ To compare on a task from your own repository instead of a dataset:
    prompt and acceptance criteria).
 2. **Arm A:** Claude Code on Opus, told not to call Fusion. **Arm B:** Claude Code on a cheaper
    model with Fusion installed ([INTEGRATIONS.md](INTEGRATIONS.md)), told to call `fusion_ask` or
-   `fusion_plan_feature` before editing, `fusion_debug_error` after a failing test, and
+   `fusion_plan` before editing, `fusion_debug_error` after a failing test, and
    `fusion_review_diff` before finishing. Let both edit, run tests and iterate normally;
    `/fusion:ab` does this inside one session.
 3. Record for each arm: the final answer, the tests run and their results, the whole wall-clock

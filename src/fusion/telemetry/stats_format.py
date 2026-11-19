@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fusion.storage.run_store import FusionStats, ShadowComparisonRecord
+
+if TYPE_CHECKING:
+    from fusion.bench.e2e.summary import E2ESummary
 
 
 def stats_to_dict(
     stats: FusionStats,
     recent_shadow: list[ShadowComparisonRecord] | None = None,
+    e2e: E2ESummary | None = None,
 ) -> dict[str, Any]:
     """Serialize stats plus derived metrics for MCP/CLI JSON output."""
     data = asdict(stats)
@@ -19,12 +23,15 @@ def stats_to_dict(
     data["estimated_savings_percent"] = stats.estimated_savings_percent
     if recent_shadow is not None:
         data["recent_shadow"] = [asdict(record) for record in recent_shadow]
+    if e2e is not None:
+        data["e2e"] = e2e.model_dump(mode="json")
     return data
 
 
 def format_stats_markdown(
     stats: FusionStats,
     recent_shadow: list[ShadowComparisonRecord] | None = None,
+    e2e: E2ESummary | None = None,
 ) -> str:
     """Render the cumulative stats dashboard as markdown."""
     lines = ["## Fusion Stats", "", "### Runs"]
@@ -93,6 +100,9 @@ def format_stats_markdown(
                 f"avg {task.avg_latency_ms / 1000:.1f}s"
             )
 
+    if e2e is not None:
+        lines.extend(_e2e_lines(e2e))
+
     if recent_shadow:
         lines.extend(["", "### Recent shadow comparisons"])
         for record in recent_shadow:
@@ -104,3 +114,32 @@ def format_stats_markdown(
                 f"winner: {record.winner}{scores} · run {record.run_id}"
             )
     return "\n".join(lines)
+
+
+def _money(value: float, known: bool) -> str:
+    return f"${value:.4f}" + ("" if known else "+")
+
+
+def _e2e_lines(e2e: E2ESummary) -> list[str]:
+    """The latest Claude Code A/B: per arm, what solving a task cost with the host's own tokens."""
+    when = e2e.created_at.split(" ")[0] if e2e.created_at else ""
+    lines = ["", f"### Claude Code end to end (run {e2e.run_id}{', ' + when if when else ''})"]
+    if e2e.mock:
+        lines.append(
+            "- **Simulated run: invented numbers, not a measurement.** Run `fusion bench e2e` "
+            "with keys for a real one."
+        )
+    for row in e2e.rows:
+        solved = "n/a" if row.solved_rate is None else f"{row.solved_rate:.0%}"
+        per_solved = (
+            "no task solved"
+            if row.cost_per_solved_usd is None
+            else _money(row.cost_per_solved_usd, row.cost_known) + " per solved task"
+        )
+        lines.append(
+            f"- {row.arm}: solved {solved} of {row.runs} runs · host "
+            f"{_money(row.host_cost_usd, row.cost_known)} + Fusion "
+            f"{_money(row.fusion_cost_usd, True)} per run · {per_solved} · "
+            f"{row.fusion_calls:.1f} Fusion calls"
+        )
+    return lines

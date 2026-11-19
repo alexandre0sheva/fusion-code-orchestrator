@@ -6,7 +6,7 @@ user-invocable: false
 
 # Fusion decide
 
-Call `fusion_decide_architecture` with the decision in `question`, the candidates in `options`,
+Call `fusion_plan` with `kind: "decision"`, the decision in `request`, the candidates in `options`,
 `constraints` (scale, team, deadline, existing stack), a short `context` description of the
 system, and the files that show the current design in `paths`.
 

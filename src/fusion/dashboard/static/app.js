@@ -344,6 +344,8 @@
         h('div', { class: 'kpi' }, h('div', { class: 'eyebrow', text: 'Saved' }), h('div', { class: 'v', text: p.runs ? usd(p.savings_usd) : '—' }), h('div', { class: 's', text: p.savings_percent === null ? 'no estimate stored' : pct(p.savings_percent / 100) + ' below the baseline' })),
         h('div', { class: 'kpi' }, h('div', { class: 'eyebrow', text: 'Completed' }), h('div', { class: 'v', text: pct(done) }), h('div', { class: 's', text: t.completed + ' of ' + t.runs })),
         h('div', { class: 'kpi' }, h('div', { class: 'eyebrow', text: 'Average latency' }), h('div', { class: 'v', text: secs(t.avg_latency_ms) }), h('div', { class: 's', text: 'wall time per run' })),
+        h('div', { class: 'kpi' }, h('div', { class: 'eyebrow', text: 'Host tokens saved' }), h('div', { class: 'v', text: t.workspace_runs ? '~' + int(t.host_tokens_saved) : '—' }),
+          h('div', { class: 's', text: t.workspace_runs ? 'Fusion read the files in ' + plural(t.workspace_runs, 'run') : 'no run named files to read yet' })),
         h('div', { class: 'kpi' }, h('div', { class: 'eyebrow', text: 'Shadow win rate' }), h('div', { class: 'v', text: o.shadow.total ? pct(o.shadow.win_rate) : '—' }),
           h('div', { class: 's', text: o.shadow.total ? '95% CI ' + pct(o.shadow.ci_low) + ' to ' + pct(o.shadow.ci_high) : 'no comparisons yet' }))));
       if (p.runs) root.append(section('1', 'Spend against the baseline', 'cumulative', panel(spendChart(o.daily))));
@@ -356,8 +358,24 @@
         panel(h('div', { class: 'cap', text: 'By strategy' }), hbars(o.by_strategy.map(function (r) {
           return { label: r.strategy, value: r.runs, text: plural(r.runs, 'run') + ' · ' + usd(r.cost) + ' · ' + secs(r.avg_latency_ms) };
         }))))));
+      if (o.e2e) root.append(section('4', 'Claude Code end to end', 'latest A/B', e2eTable(o.e2e)));
       return root;
     });
+  }
+
+  // The latest `fusion bench e2e`: what each executor spent, host tokens included, per solved task.
+  function e2eTable(e) {
+    var rows = e.rows.map(function (r) {
+      var mark = r.cost_known ? '' : '+';
+      return h('tr', null, h('td', { class: 'l', text: r.arm }), h('td', { text: r.solved_rate === null ? '—' : pct(r.solved_rate) }),
+        h('td', { text: usd(r.host_cost_usd) + mark }), h('td', { text: usd(r.fusion_cost_usd) }), h('td', { text: usd(r.total_cost_usd) + mark }),
+        h('td', { text: usd(r.cost_per_solved_usd) }), h('td', { text: r.seconds_p50 === null ? '—' : secs(r.seconds_p50 * 1000) }), h('td', { text: r.fusion_calls.toFixed(1) }));
+    });
+    var note = e.mock ? 'Simulated run: invented numbers that prove the pipeline, not the models. ' : '';
+    return panel(h('div', { class: 'cap', text: 'Run ' + e.run_id + ': hidden tests decide solved; costs are means per run, the host\'s from Claude Code\'s own usage.' }),
+      e.mock ? h('p', { class: 'fine', text: note + 'Run fusion bench e2e with keys for a real one.' }) : null,
+      table(['Arm', 'Solved', 'Host $', 'Fusion $', 'Total $', '$ per solved', 'p50', 'Fusion calls'], rows, { left: [0], caption: 'Claude Code end to end' }),
+      h('p', { class: 'fine' }, h('a', { href: '#/bench/' + encodeURIComponent(e.run_id), text: 'Open the full report' })));
   }
 
   // -------------------------------------------------------------------------------- runs

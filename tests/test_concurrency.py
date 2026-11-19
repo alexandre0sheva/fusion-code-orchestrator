@@ -603,3 +603,33 @@ async def test_critical_path_is_the_end_of_the_last_fusion_call(tmp_path: Path) 
     # between stages (a 250 ms gap was seen in CI).
     panel = [s for s in spans if s["stage"] == "panel"]
     assert max(_starts(panel)) < min(_ends(panel))  # every panel call began before any finished
+
+
+# ------------------------------------------------------------------- a slow progress listener
+
+
+async def test_a_call_that_finishes_while_progress_is_being_reported_is_not_lost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fan-out awaits the client's progress listener between looking at finished calls and
+    waiting for the rest. Members that finish during that await must still be collected: they
+    were once reported as "Still pending after global panel timeout" and could cost the quorum."""
+    from fusion.orchestration.progress import progress_sink
+
+    monkeypatch.setenv("FUSION__FANOUT__EARLY_RETURN", "false")
+    monkeypatch.setenv("FUSION__FANOUT__HEDGE_AFTER_MS", "false")
+    seen: list[str] = []
+
+    async def slow_listener(message: str) -> None:
+        seen.append(message)
+        await asyncio.sleep(0.4)  # the other members answer meanwhile
+
+    delays = {"mock-fast": 0.02, "mock-security": 0.1, "mock-weak": 0.1}
+    with progress_sink(slow_listener):
+        result = await _pipe(tmp_path, Scripted(delays)).run(_plain_ctx(strategy="panel-nano"))
+    assert result.fanout.success_count == 3
+    assert not any("Still pending" in (c.error or "") for c in result.fanout.calls)
+    answered = {p.model_name for p in result.panel_results}
+    assert answered == {"mock-fast", "mock-security", "mock-weak"}
+    done = [m for m in seen if m.startswith("panel ") and m.endswith(" done")]
+    assert done == ["panel 1/3 done", "panel 2/3 done", "panel 3/3 done"]

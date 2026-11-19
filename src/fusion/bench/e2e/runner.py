@@ -114,7 +114,7 @@ E2E_REQUEST = (
 )
 FUSION_GUIDANCE = (
     "Fusion MCP tools (mcp__fusion__*) give you a second opinion from a panel of cheaper models. "
-    "Use them for the substantive reasoning of this task: fusion_ask or fusion_plan_feature before "
+    "Use them for the substantive reasoning of this task: fusion_ask or fusion_plan before "
     "you edit, fusion_debug_error when a test fails, fusion_propose_patch when you want candidate "
     "fixes checked, and fusion_review_diff (diff_ref HEAD) before you finish. Name files in "
     "`paths` instead of pasting them. Apply edits and run commands yourself."

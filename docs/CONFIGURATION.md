@@ -161,7 +161,7 @@ another site. It reads the same database as the CLI and the MCP server (`--db-pa
 
 | View | Shows |
 |------|-------|
-| Overview | Lifetime spend against the baseline model's estimate, what you kept, the shadow A/B win rate with its 95% interval, runs per day, and where runs go by task and strategy |
+| Overview | Lifetime spend against the baseline model's estimate, what you kept, the host tokens Fusion saved by reading files itself, the shadow A/B win rate with its 95% interval, runs per day, where runs go by task and strategy, and the latest Claude Code A/B (`fusion bench e2e`: solved rate and cost per run with the host's own tokens; a simulated study is labelled) |
 | Runs | Every run, filterable by task, strategy, status and text; open one for its answer, its claims grouped by how many models agree, a latency timeline of every model call, cost by stage, tokens per second and the redacted input |
 | Benchmarks | Benchmark runs, each run's full report, and a comparison of two runs |
 | Config | The strategies and models in effect, prices and staleness warnings, where each setting comes from, and which provider keys are set (never their values) |
