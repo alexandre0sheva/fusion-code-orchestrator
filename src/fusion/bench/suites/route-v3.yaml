@@ -1,0 +1,26 @@
+# Calibration of `strategy: auto` on dataset v2 (roadmap Task 16): each rung of the escalation
+# ladder run on its own over the same dev tasks, so the difficulty thresholds (`easy_below`,
+# `hard_from`) and the self-confidence trigger can be chosen by replaying the ladder over the
+# results, as the cheapest setting whose quality is not worse than the best rung alone.
+# Dev split only; text tasks, where the ladder's start rung varies most cheaply.
+#
+#   fusion bench plan --suite route-v3
+#   fusion bench run  --suite route-v3 --max-usd 2.4
+description: >-
+  Rung 0 (Haiku with a self-check), rung 1 (the nano panel) and rung 2 (the mid panel) of the
+  auto ladder, each alone, on 20 v2 dev text tasks, judged by neutral OpenRouter judges.
+stage: tune on dev
+dataset: v2
+split: dev
+quota: {code_review: 5, debugging: 5, architecture: 5, planning: 5}
+repeats: 1
+seed: 7
+max_usd: 2.4
+spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
+concurrency: 8
+judge_models: [mimo-pro, muse-ember]
+neutral_judges: true
+arms:
+  - {name: rung0, strategy: solo-haiku-check}   # items carry `self_confidence`
+  - {name: rung1, strategy: panel-nano-auto}
+  - {name: rung2, strategy: panel-mid}

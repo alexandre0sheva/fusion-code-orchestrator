@@ -574,16 +574,18 @@ keeping the reserve. The planner prices a suite's design against what is left be
 | `ablation` | tune on `dev` | panel size 1/2/3/5, refinement, a strong synthesizer, and the cascade threshold (0.5 and 0.7; more if money remains). The 0.2.0 self-mixture arms (one model sampled at several temperatures) were removed in 0.3.0 | about $4.80 |
 | `latency` | tune on `dev` | whether early return, hedging or a cascade shortens the wait; the response cache is off, since a replayed call has no real latency | about $1.20 |
 | `headline` | final, on `test` | Opus 5.5, Sol, Haiku and Luna alone against the default panel and the best variant, two repeats | about $11 |
-| `ablation-v3` | tune on v2 `dev` | nano, open-weight, mixed and mid panels; lenses on and off; `llm`, `select`, `vote` and `digest` aggregation; the cascade at 0.5 and 0.9; `verified-synth`; `auto` with the frontier rung off and on; 9 tasks, neutral judges | $3.40 |
-| `latency-v3` | tune on v2 `dev` | Opus 5.5 alone against `auto`, the panel default and Luna at effort none, on 30 text tasks, cache off | $2.35 |
-| `headline-v3` | final, on v2 `test` | Opus 5.5, Sol, Haiku and Luna alone against `auto` and the best ablation variant (a placeholder until Task 16 freezes it), 10 tasks, neutral judges | $1.35 |
+| `ablation-v3` | tune on v2 `dev` | nano, open-weight, mixed and mid panels; lenses on and off; `llm`, `select`, `vote` and `digest` aggregation; the cascade at 0.5 and 0.9; `verified-synth`; `auto` with the frontier rung off and on; 9 tasks, neutral judges | $3.70 |
+| `latency-v3` | tune on v2 `dev` | Opus 5.5 alone against `auto`, `panel-duo` (the 0.2.0 default) and `panel-duo` with Luna at effort none, on 30 text tasks, cache off | $2.35 |
+| `route-v3` | tune on v2 `dev` | each rung of the `auto` ladder alone (Haiku with a self-check, the nano panel, the mid panel) on 20 text tasks, to [calibrate the ladder](#calibrating-the-auto-ladder); neutral judges | $2.40 |
+| `headline-v3` | final, on v2 `test` | Opus 5.5, Sol, Haiku and Luna alone against `auto` and the best ablation variant (the nano panel with `select`, frozen from `ablation-v3`), 47 tasks (every text task of the split, 3 coding, 2 frontend, 2 performance), neutral judges | $5.70 |
 
 The `*-v3` suites are the 0.3.0 study (roadmap Task 16) on dataset v2; the others are the 0.2.0
-studies on v1, kept to reproduce them. The v3 caps add up to $7.10 (the planner expects $7.00),
-Task 16's share of the $15. They are small because a real-repo coding task shows a whole package
-(up to about 50,000 tokens): with the quotas as written a run draws two coding tasks, and one of
-them can cost as much as the five text tasks of the same arm. Widen the quotas if the runs come in
-under the forecast (the planner has been about three times pessimistic for `auto`).
+studies on v1, kept to reproduce them. Their caps add up to $14.15, but what bounds them is the
+ledger's stop at $14.50 of the $15. The executable categories are sampled thinly because a
+real-repo coding task shows a whole package (up to about 50,000 tokens) and can cost as much as
+several text tasks of the same arm. In the 0.3.0 runs the planner was about 1.6 times pessimistic
+(ablation-v3: $3.37 expected, $2.08 spent), so the headline suite was widened to every text task
+of the test split.
 
 The procedure that keeps the result honest:
 
@@ -608,6 +610,34 @@ the 0.2.0 suites use `gpt-luna`, whose vendor sits on a panel, for the rubric it
 cannot settle, and their agentic judge of frontend and performance tasks is skipped for panels
 (those tasks keep their measured scores); say so whenever quoting one of their scores. The `*-v3`
 suites use the [neutral judges](#scoring) MiMo Pro and Muse Ember, from vendors on no arm.
+
+### Calibrating the auto ladder
+
+`strategy: auto` starts a request on a rung of its ladder from a difficulty score and climbs when
+the answer shows it is not enough ([CONFIGURATION.md](CONFIGURATION.md#difficulty-routing-strategy-auto)).
+Its thresholds are calibrated on the `dev` split, never on `test`:
+
+1. Run `route-v3`: each rung's strategy as a fixed arm (`rung0`, `rung1`, `rung2`) on the same
+   tasks. A rung-0 item records the model's self-check confidence (`self_confidence` in
+   `results.jsonl`); an `auto` item records its route (`route`: the difficulty estimate, the start
+   rung, each rung tried and why).
+2. Replay the ladder over those results for a grid of `easy_below`, `hard_from` and
+   `self_confidence_below`: each task starts at the rung its score picks (computed from the task
+   as a run computes it, files included) and rung 0 climbs to rung 1 when its confidence is below
+   the threshold. Escalations above rung 1 are not replayed.
+3. Take the cheapest setting whose mean quality is within the 0.03 margin of the best rung alone,
+   and look at the cost-quality frontier around it before freezing it, since one task moves the
+   mean by about 0.03 at this size.
+4. Run `auto` on the same tasks to compare the live ladder with the replay.
+
+What the 0.3.0 calibration found (20 dev text tasks; the numbers are in
+[BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)): the difficulty signals did not separate the tasks that
+needed the mid panel, while rung 0's self-confidence did (answers at 0.85 or more were mostly right,
+at 0.6 or less mostly not). The shipped thresholds sat at the knee of the frontier: 95% of the mid
+panel's quality at 6% of its cost; the next point bought 0.01 of quality for 2.5 times the cost, so
+the thresholds were kept. The live `auto` run showed that the ambiguity classifier rated 5 of 9
+borderline tasks hard and sent them to the mid panel, which cost 16 times the nano panel for about
+0.03 more quality on them, so it was switched off (`classifier_model: null`).
 
 ### Tuning the prompts (`fusion tune`)
 

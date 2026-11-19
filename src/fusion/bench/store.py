@@ -67,6 +67,12 @@ class BenchItem(BaseModel):
     # verified-synth: the cross-check matrix, the checks kept or dropped and why, and the reason
     # for the pick (``CrossCheckReport.record``); None for every other arm.
     verification: dict[str, Any] | None = None
+    # strategy auto: the difficulty estimate, the start rung, every rung tried and why it answered
+    # or climbed (``EscalationOutcome``); None for every other arm.
+    route: dict[str, Any] | None = None
+    # a self-check strategy (``self_check: true``): the confidence the model reported; None for
+    # every other arm and for an answer that reported none.
+    self_confidence: float | None = None
     # ``fusion bench e2e``: host and Fusion cost, turns, tool calls, Fusion calls, files changed
     # and the diff of one Claude Code run (``E2EMetrics`` plus ``patch``); None for every other run.
     e2e: dict[str, Any] | None = None

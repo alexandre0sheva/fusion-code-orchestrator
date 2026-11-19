@@ -254,7 +254,11 @@ def _job_key(
 
 
 class _Budget:
-    """Reserves each run's worst case against the run's cap and the live-spend ledger."""
+    """Reserves each run's worst case against the run's cap and the live-spend ledger.
+
+    A run that does not fit only because of the runs in flight waits for them to settle (their
+    actual cost is usually far below what they reserved); the study stops only when a run would
+    not fit even with nothing in flight."""
 
     def __init__(self, max_usd: float, spent: float, spend: SpendLedger | None) -> None:
         self.max_usd = max_usd
@@ -262,31 +266,43 @@ class _Budget:
         self.reserved = 0.0
         self.spend = spend
         self.reason: str | None = None
-        self._lock = threading.Lock()
+        self._cond = threading.Condition()
+
+    def _refusal(self, estimate: float, reserved: float) -> str | None:
+        """Why a run reserving ``estimate`` beside ``reserved`` does not fit; None if it does."""
+        if self.spent + reserved + estimate > self.max_usd + _EPSILON:
+            return (
+                f"max_usd reached: ${self.spent:.4f} of ${self.max_usd:.2f} spent and the "
+                f"next run may cost up to ${estimate:.4f}"
+            )
+        if self.spend is not None:
+            try:
+                self.spend.check(reserved + estimate, "a Claude Code run")
+            except SpendCapError as exc:
+                return str(exc)
+        return None
 
     def acquire(self, estimate: float) -> bool:
-        with self._lock:
-            if self.reason is not None:
-                return False
-            if self.spent + self.reserved + estimate > self.max_usd + _EPSILON:
-                self.reason = (
-                    f"max_usd reached: ${self.spent:.4f} of ${self.max_usd:.2f} spent and the "
-                    f"next run may cost up to ${estimate:.4f}"
-                )
-                return False
-            if self.spend is not None:
-                try:
-                    self.spend.check(self.reserved + estimate, "a Claude Code run")
-                except SpendCapError as exc:
-                    self.reason = str(exc)
+        with self._cond:
+            while True:
+                if self.reason is not None:
                     return False
-            self.reserved += estimate
-            return True
+                refusal = self._refusal(estimate, self.reserved)
+                if refusal is None:
+                    self.reserved += estimate
+                    return True
+                if self.reserved > 0 and self._refusal(estimate, 0.0) is None:
+                    self._cond.wait()  # fits once the runs in flight settle
+                    continue
+                self.reason = refusal
+                self._cond.notify_all()
+                return False
 
     def settle(self, estimate: float, actual: float) -> None:
-        with self._lock:
+        with self._cond:
             self.reserved -= estimate
             self.spent += actual
+            self._cond.notify_all()
 
 
 def bench_config(cfg: E2EConfig) -> BenchConfig:

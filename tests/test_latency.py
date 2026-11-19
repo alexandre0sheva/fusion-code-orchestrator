@@ -313,9 +313,9 @@ def test_speed_fast_ranks_members_by_measured_speed() -> None:
     nano = book.get("panel-nano")
     fast = nano.model_copy(update={"speed": "fast"})
     models, pricing = load_catalog().models, PricingRegistry()
-    # Over a 1,500-token answer Gemini Flash's decode rate (153 tok/s) beats Haiku's head start
-    # (0.6 s to the first token against 3.0 s at 116 tok/s); Luna starts last (4.7 s).
-    order = ["gemini-flash", "claude-haiku", "gpt-luna"]
+    # The 0.3.0 study's speeds, over a 1,500-token answer: Haiku 1.1 s to the first token at
+    # 245 tok/s (7.2 s), Luna 3.9 s at 179 tok/s (12.3 s), Gemini Flash 2.8 s at 145 tok/s (13.2 s).
+    order = ["claude-haiku", "gpt-luna", "gemini-flash"]
     assert [m.model for m in cascade_order(fast, fast.members, models, pricing)] == order
     cheapest = [m.model for m in cascade_order(nano, nano.members, models, pricing)]
     assert cheapest[-1] == "gemini-flash"  # balanced: a cascade still goes cheapest first
@@ -328,7 +328,7 @@ def test_speed_fast_ranks_members_by_measured_speed() -> None:
 
 def test_measured_speed_gives_an_expected_answer_time() -> None:
     haiku = load_catalog().models["claude-haiku"]
-    assert haiku.expected_answer_ms(1160) == pytest.approx(640 + 10_000)
+    assert haiku.expected_answer_ms(2450) == pytest.approx(1106 + 10_000)
     assert load_catalog().models["deepseek-flash"].expected_answer_ms(1000) is None
 
 

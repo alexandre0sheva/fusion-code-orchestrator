@@ -360,11 +360,12 @@ budget_strategies:
 
 | Strategy | Runs | Calls per task |
 |----------|------|----------------|
-| `auto` (default) | estimates the request's difficulty and climbs the [escalation ladder](#difficulty-routing-strategy-auto) from the matching rung: Haiku 5.5 with a self-check, `panel-nano-auto`, `panel-mid`; never the frontier rung | 1 to 9 |
+| `panel-nano-pick` (default) | Haiku 5.5 + GPT-6 Luna + Gemini 3.8 Flash, each answering the whole task from its own approach; one Haiku 5.5 call picks the best answer as it is (`select`). The 0.3.0 study's choice ([BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)) | 3 + 1 |
+| `auto` | estimates the request's difficulty and climbs the [escalation ladder](#difficulty-routing-strategy-auto) from the matching rung: Haiku 5.5 with a self-check, `panel-nano-auto`, `panel-mid`; never the frontier rung | 1 to 9 |
 | `auto-frontier` | `auto` that may also end at the frontier rung (`solo-opus`) | 1 to 9 |
 | `solo-<model>` | one model alone: `solo-haiku`, `solo-sonnet`, `solo-opus`, `solo-fable`, `solo-luna`, `solo-terra`, `solo-sol`, `solo-astra`, `solo-flash`, `solo-hydrogen`, `solo-carbon`, `solo-argon` | 1 |
 | `solo-haiku-check` | Haiku 5.5 alone, asked for a self-check and an honest confidence (rung 0 of `auto`) | 1 |
-| `panel-duo` (the panel default before `auto`) | Claude Haiku 5.5 + GPT-6 Luna; when they agree (0.6) their vote is the answer, otherwise Haiku 5.5 merges them; a failing model is replaced by another of its tier | 2, or 2 + 1 |
+| `panel-duo` (the 0.2.0 default) | Claude Haiku 5.5 + GPT-6 Luna; when they agree (0.6) their vote is the answer, otherwise Haiku 5.5 merges them; a failing model is replaced by another of its tier | 2, or 2 + 1 |
 | `panel-nano` | Haiku 5.5 + GPT-6 Luna + Gemini 3.8 Flash, merged by Haiku 5.5 | 3 + 1 |
 | `panel-mid` | GPT-6.1 Terra + Gemini 4 Hydrogen + Claude Sonnet 5.5, merged by Sonnet 5.5 | 3 + 1 |
 | `panel-open` | open-weight models through OpenRouter: DeepSeek V4.1 Flash + MiniMax M3.1 Flash + Qwen 3.8 Flash + GLM-5.3, merged by Haiku 5.5; needs `OPENROUTER_API_KEY`; a 0.3.0 ablation candidate, not a default | 4 + 1 |
@@ -598,8 +599,9 @@ lever when quality matters more than cost. Panel members receive the role prompt
 rung of the escalation ladder; it asks a higher rung only when the answer shows it is not enough,
 and a higher rung reuses every answer the lower ones produced (a model is not asked twice). How it
 works is in [ARCHITECTURE.md](ARCHITECTURE.md#difficulty-routing-and-the-escalation-ladder); the
-settings are the `routing` section of `routing_policies.yaml`. Every threshold is provisional until
-the 0.3.0 study calibrates it on the dev split.
+settings are the `routing` section of `routing_policies.yaml`. The values shown were calibrated on
+the v2 dev split in the 0.3.0 study ([BENCHMARKING.md](BENCHMARKING.md#calibrating-the-auto-ladder)),
+which switched the ambiguity classifier off.
 
 ```yaml
 routing:
@@ -612,7 +614,7 @@ routing:
     easy_below: 0.25             # score below this: easy
     hard_from: 0.45              # score from this on: hard; normal in between
     ambiguity_margin: 0.05       # this close to a threshold: one classifier call decides
-    classifier_model: claude-haiku   # null: never call, keep the signals' level
+    classifier_model: null       # a model alias: one call settles an ambiguous score
     classifier_max_tokens: 150
   escalation:
     rungs:                       # cheapest first; each names a solo or panel strategy
@@ -642,7 +644,7 @@ routing:
   `fusion://runs/{run_id}` list every rung tried with its cost, time and trigger.
 - **Environment overrides** work as for any setting, for example
   `FUSION__ROUTING__ESCALATION__ALLOW_FRONTIER=true` or
-  `FUSION__ROUTING__DIFFICULTY__CLASSIFIER_MODEL=gpt-luna`.
+  `FUSION__ROUTING__DIFFICULTY__CLASSIFIER_MODEL=gpt-luna` (switches the classifier back on).
 
 ### Upgrading from v0.1.0
 

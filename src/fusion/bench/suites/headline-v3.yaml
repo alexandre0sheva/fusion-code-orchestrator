@@ -3,20 +3,24 @@
 # do not change an arm afterwards: nothing may be tuned on these tasks.
 #
 #   fusion bench plan --suite headline-v3
-#   fusion bench run  --suite headline-v3 --max-usd 1.35
+#   fusion bench run  --suite headline-v3 --max-usd 5.7
 #
-# `fusion-best` is a placeholder until Task 16 freezes it from `fusion bench recommend` on the
-# ablation-v3 run, before this suite runs; it must not change after that.
+# `fusion-best` was frozen on 2026-11-19 from `fusion bench recommend v3-ablation` (the nano panel
+# with `select`), before this suite ran; it must not change after that. `fusion-default` is
+# `auto` as calibrated by route-v3 (classifier off).
 description: >-
-  Opus 5.5, Sol, Haiku and Luna alone, Fusion's default (strategy auto) and the best ablation
-  variant, on a stratified subset of the v2 test split, judged by neutral OpenRouter judges.
+  Opus 5.5, Sol, Haiku and Luna alone, Fusion's default when it ran (strategy auto) and the best
+  ablation variant (the nano panel with select, the default since), on a stratified subset of the
+  v2 test split, judged by neutral OpenRouter judges.
 stage: final study on test
 dataset: v2
 split: test
-quota: {code_review: 2, debugging: 2, architecture: 1, planning: 1, coding: 2, frontend: 1, performance: 1}
+# Every text task of the test split (10 per category); the executable categories are sampled, as
+# a real-repo coding task costs several text tasks.
+quota: {code_review: 10, debugging: 10, architecture: 10, planning: 10, coding: 3, frontend: 2, performance: 2}
 repeats: 1
 seed: 100
-max_usd: 1.35
+max_usd: 5.7
 spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
 concurrency: 8
 # The neutral judges of ablation-v3 (Xiaomi and Meta are on no arm here either).
@@ -28,4 +32,4 @@ arms:
   - {name: solo-haiku, strategy: solo-haiku}
   - {name: solo-luna, strategy: solo-luna}
   - {name: fusion-default, strategy: auto}
-  - {name: fusion-best, strategy: panel-nano-auto}   # placeholder: Task 16 freezes it
+  - {name: fusion-best, strategy: panel-nano-select, overrides: {aggregator: select}}  # frozen

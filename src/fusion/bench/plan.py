@@ -21,6 +21,7 @@ from fusion.orchestration.cascade import cascade_order
 from fusion.orchestration.strategy import Strategy
 from fusion.providers.simulated import TIER_SPEED, speed_of
 from fusion.routing.budget import PlannedCall, estimate_tokens, forecast_calls
+from fusion.routing.difficulty import RequestFacts
 from fusion.routing.model_registry import ModelRegistry
 from fusion.routing.policy import RoutingPolicy
 from fusion.telemetry.cost import PricingRegistry
@@ -149,7 +150,12 @@ def estimate_job(
     cost adds the higher rungs at ``ESCALATION_SHARE``, the worst case adds all of them.
     """
     if strategy.kind == "auto":
-        rungs = routing.ladder(strategy, task.task_type, task.prompt)
+        facts = RequestFacts(  # what the run measures: the runner sends files as snippets
+            task_type=task.task_type,
+            context=task.context,
+            snippets=tuple(f"{path}\n{content}" for path, content in task.files.items()),
+        )
+        rungs = routing.ladder(strategy, task.task_type, task.prompt, facts=facts)
         found = [
             estimate_job(
                 task,

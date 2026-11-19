@@ -15,7 +15,6 @@ from _scripted import (
     SECURITY,
     WEAK,
     Scripted,
-    context,
     pipeline,
     stages,
 )
@@ -69,6 +68,14 @@ def _ladder(monkeypatch: pytest.MonkeyPatch, rungs: str, start: str) -> None:
     monkeypatch.setenv("FUSION__ROUTING__ESCALATION__START_BY_LEVEL", start)
 
 
+def context(prompt: str = "", **kw: Any) -> PipelineContext:
+    """A request run with `strategy: auto` (no longer the default since the 0.3.0 study)."""
+    from _scripted import context as scripted_context
+
+    kw.setdefault("strategy", "auto")
+    return scripted_context(prompt, **kw) if prompt else scripted_context(**kw)
+
+
 def _climb(result: Any) -> EscalationOutcome:
     assert isinstance(result.escalation, EscalationOutcome)
     return result.escalation
@@ -89,9 +96,22 @@ def test_the_packaged_ladder_is_nano_solo_nano_panel_mid_panel_then_frontier() -
     assert policy.allow_frontier is False
 
 
-def test_auto_is_the_default_strategy_and_a_frontier_variant_opts_in() -> None:
+def test_the_default_is_the_nano_panel_picking_one_answer_as_the_study_chose() -> None:
+    """The 0.3.0 study (Task 16): the nano panel with `select` was the cheapest per solved task
+    within the margin of the best arm on dev and on test, so it is the default."""
     book = load_strategy_book()
-    assert book.for_budget("medium").name == "auto"
+    default = book.for_budget("medium")
+    assert default.name == "panel-nano-pick"
+    assert default.kind == "panel" and default.aggregator == "select"
+    assert [m.model for m in default.members] == ["claude-haiku", "gpt-luna", "gemini-flash"]
+    assert default.aggregator_model == "claude-haiku"
+    # the arm the study measured: panel-nano-select with the aggregator overridden to select
+    measured = book.get("panel-nano-select").model_copy(update={"aggregator": "select"})
+    assert default.members == measured.members and default.aggregator == measured.aggregator
+
+
+def test_auto_stays_available_and_a_frontier_variant_opts_in() -> None:
+    book = load_strategy_book()
     auto, frontier = book.get("auto"), book.get("auto-frontier")
     assert auto.kind == frontier.kind == "auto" and auto.members == []
     assert frontier.escalation is not None and frontier.escalation.allow_frontier is True
@@ -223,10 +243,22 @@ async def test_the_auto_frontier_strategy_climbs_to_rung_3(
     assert [a.name for a in _climb(on).rungs] == ["duo", "top"]
 
 
+async def test_the_classifier_is_off_by_default_even_for_ambiguous_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 0.3.0 calibration switched it off: it sent borderline tasks to the mid panel."""
+    monkeypatch.setenv("FUSION__ROUTING__DIFFICULTY__AMBIGUITY_MARGIN", "0.49")
+    provider = Scripted()
+    result = await pipeline(tmp_path, provider).run(context(EASY))
+    assert provider.models_called("difficulty") == []
+    assert _climb(result).difficulty.source != "classifier"
+
+
 async def test_ambiguous_signals_make_exactly_one_classifier_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FUSION__ROUTING__DIFFICULTY__AMBIGUITY_MARGIN", "0.49")
+    monkeypatch.setenv("FUSION__ROUTING__DIFFICULTY__CLASSIFIER_MODEL", "claude-haiku")
     provider = Scripted()
     result = await pipeline(tmp_path, provider).run(context(EASY))
     assert len(provider.models_called("difficulty")) == 1
@@ -305,7 +337,7 @@ async def test_a_union_with_no_backed_finding_on_a_debugging_task_escalates(
     )
     guess = _answer("The cache is probably stale", kind="hypothesis")
     provider = Scripted({FAST: guess, SECURITY: guess, WEAK: guess})
-    ctx = PipelineContext(task_type=TaskType.DEBUGGING, primary_content=TRACE)
+    ctx = PipelineContext(task_type=TaskType.DEBUGGING, primary_content=TRACE, strategy="auto")
     result = await pipeline(tmp_path, provider).run(ctx)
     climb = _climb(result)
     assert climb.rungs[0].trigger == "no_backed_finding"
@@ -336,18 +368,30 @@ async def test_an_explicit_strategy_does_not_climb(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- what the user sees
 
 
-def test_fusion_ask_mock_with_no_strategy_runs_auto_and_shows_the_rung() -> None:
+def test_fusion_ask_mock_with_strategy_auto_shows_the_rung() -> None:
     from typer.testing import CliRunner
 
     from fusion.cli.main import app
 
     runner = CliRunner()
-    shown = runner.invoke(app, ["ask", EASY, "--mock"])
+    shown = runner.invoke(app, ["ask", EASY, "--mock", "--strategy", "auto"])
     assert shown.exit_code == 0, shown.output
     assert "### Route" in shown.stdout and "answered at rung 0 (nano-solo)" in shown.stdout
-    data = json.loads(runner.invoke(app, ["ask", EASY, "--mock", "--json"]).stdout)
+    found = runner.invoke(app, ["ask", EASY, "--mock", "--json", "--strategy", "auto"])
+    data = json.loads(found.stdout)
     assert data["strategy"] == "solo-haiku-check"
     assert data["escalation"].startswith("answered at rung 0 (nano-solo): self-check")
+
+
+def test_fusion_ask_mock_with_no_strategy_runs_the_default_panel() -> None:
+    from typer.testing import CliRunner
+
+    from fusion.cli.main import app
+
+    found = CliRunner().invoke(app, ["ask", EASY, "--mock", "--json"])
+    assert found.exit_code == 0, found.output
+    data = json.loads(found.stdout)
+    assert data["strategy"] == "panel-nano-pick" and not data.get("escalation")
 
 
 async def test_a_rung_that_would_pass_the_soft_time_limit_is_not_started(tmp_path: Path) -> None:
@@ -388,3 +432,62 @@ def test_a_bench_plan_forecasts_an_auto_arm_from_its_start_rung_up() -> None:
         sum(r.worst_usd for r in rungs) - (len(rungs) - 1) * rungs[0].eval_usd
     )
     assert rungs[0].expected_usd <= auto.expected_usd < auto.worst_usd
+
+
+def test_a_bench_plan_starts_an_auto_arm_where_the_run_will_from_the_tasks_files() -> None:
+    """A run estimates difficulty from the prompt, the context and the files; the plan must
+    too, or a short prompt over a large, risky package is priced at the cheapest rung."""
+    from fusion.bench.plan import estimate_job
+    from fusion.bench.scoring import get_scorer as scorer_for
+    from fusion.bench.spec import BenchTask
+    from fusion.config.catalog import load_catalog
+    from fusion.routing.model_registry import ModelRegistry
+    from fusion.telemetry.cost import PricingRegistry
+
+    routing = build_routing(use_mock=False)
+    body = "def check(token):\n    # auth token checked under a race condition\n    return 1\n"
+    files = {f"pkg/m{i}.py": body * 400 for i in range(5)}
+    task = BenchTask(id="t", category="debugging", prompt="Fix the bug.", files=files, truth={})
+    kw: dict[str, Any] = {
+        "routing": routing,
+        "registry": ModelRegistry.for_mode(use_mock=False),
+        "pricing": PricingRegistry(load_catalog()),
+        "scorer": scorer_for(task.category),
+    }
+    book = routing.strategies
+    assert routing.ladder(book.get("auto"), task.task_type, task.prompt)[0].name != "panel-mid"
+    auto = estimate_job(task, book.get("auto"), **kw)
+    mid = estimate_job(task, book.get("panel-mid"), **kw)
+    assert auto.low_usd == pytest.approx(mid.low_usd)
+
+
+def test_a_bench_item_of_an_auto_arm_records_its_route(tmp_path: Path) -> None:
+    """Calibrating the thresholds needs each run's difficulty, start rung and triggers."""
+    from _bench import config, sim_env, write_dataset
+    from fusion.bench.runner import run_bench
+    from fusion.bench.virtual import run_virtual
+
+    dataset = write_dataset(tmp_path / "d.jsonl", count=1)
+    cfg = config(dataset, arms="auto,solo-haiku", repeats=1)
+    run = run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "results"), run_id="r"))
+    by_arm = {i.arm: i for i in run.items}
+    route = by_arm["auto"].route
+    assert route is not None
+    assert route["difficulty"]["level"] in {"easy", "normal", "hard"}
+    assert route["rungs"] and route["start_rung"] == route["rungs"][0]["rung"]
+    assert by_arm["solo-haiku"].route is None
+
+
+def test_a_bench_item_of_a_self_check_arm_records_the_models_confidence(tmp_path: Path) -> None:
+    """The self-confidence threshold is calibrated against rung 0 run on its own."""
+    from _bench import config, sim_env, write_dataset
+    from fusion.bench.runner import run_bench
+    from fusion.bench.virtual import run_virtual
+
+    dataset = write_dataset(tmp_path / "d.jsonl", count=1)
+    cfg = config(dataset, arms="solo-haiku-check,solo-haiku", repeats=1)
+    run = run_virtual(run_bench(cfg, env=sim_env(cfg, tmp_path / "results"), run_id="r"))
+    by_arm = {i.arm: i for i in run.items}
+    confidence = by_arm["solo-haiku-check"].self_confidence
+    assert confidence is not None and 0.0 <= confidence <= 1.0
+    assert by_arm["solo-haiku"].self_confidence is None

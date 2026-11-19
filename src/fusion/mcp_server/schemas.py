@@ -10,7 +10,8 @@ from fusion.evals.schemas import ContextEvalResult, FinalEvalResult, ModelRespon
 
 STRATEGY_DESCRIPTION = (
     "Strategy name; overrides budget. Read resource fusion://strategies to see them. Examples: "
-    "auto (default: estimates the request's difficulty, starts with one cheap model with a "
+    "panel-nano-pick (default: three cheap models answer, one cheap call picks the best), "
+    "auto (estimates the request's difficulty, starts with one cheap model with a "
     "self-check, a cheap panel or a mid panel, and asks more models only when the answer shows "
     "it is not enough; the response's `escalation` says which rung answered), auto-frontier "
     "(auto, allowed to end at Opus 5.5 alone), "

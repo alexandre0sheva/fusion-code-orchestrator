@@ -261,18 +261,25 @@ class RoutingPolicy:
         return self.ladder(strategy, task_type, content)[0]
 
     def ladder(
-        self, strategy: Strategy, task_type: TaskType | None = None, content: str = ""
+        self,
+        strategy: Strategy,
+        task_type: TaskType | None = None,
+        content: str = "",
+        *,
+        facts: RequestFacts | None = None,
     ) -> list[Strategy]:
         """The strategies a run of ``strategy`` may use, in order: for ``kind: auto`` the
         climbable rungs from where the request starts (rung 0 without a task) up to
-        ``max_rungs``; for any other strategy, itself."""
+        ``max_rungs``; for any other strategy, itself. ``facts`` (context, files) make the
+        estimate the one a run makes; without them only ``content`` is measured."""
         if strategy.kind != "auto":
             return [strategy]
         policy = self.escalation_for(strategy)
         start = 0
         if task_type is not None:
             config = self.budgets.routing.difficulty
-            estimate = estimate_difficulty(content, RequestFacts(task_type=task_type), config)
+            found = facts or RequestFacts(task_type=task_type)
+            estimate = estimate_difficulty(content, found, config)
             start = policy.start_for(estimate.level)
         indexes = [i for i in policy.climbable() if i >= start][: policy.max_rungs]
         return [self._strategies.get(policy.rungs[i].strategy) for i in indexes]

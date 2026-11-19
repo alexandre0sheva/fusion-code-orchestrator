@@ -616,4 +616,8 @@ async def _execute(
         metrics=metrics,
         score=score,
         verification=result.disagreement.get("crosscheck"),
+        route=result.escalation.model_dump(mode="json") if result.escalation else None,
+        self_confidence=next(
+            iter((result.disagreement.get("self_confidence") or {}).values()), None
+        ),
     )

@@ -30,8 +30,9 @@ policies:
     judge_model: gemini-flash
     min_context_score: 0.2
 
-# Difficulty routing for `strategy: auto` (the default). Thresholds are provisional; the 0.3.0
-# study calibrates them on the dev split (roadmap Task 16).
+# Difficulty routing for `strategy: auto`. Calibrated on the v2 dev split in the 0.3.0
+# study (suite route-v3, docs/BENCHMARKING.md "Calibrating the auto ladder"): the thresholds
+# below were kept and the ambiguity classifier was switched off.
 routing:
   difficulty:
     # Each signal is scaled to 0..1 (see `scales`); the weighted mean is the request's score.
@@ -57,9 +58,10 @@ routing:
     hard_from: 0.45
     # A score this close to a threshold is ambiguous: one nano-model call (at most
     # classifier_max_tokens out, in the run's ledger) decides. classifier_model: null switches
-    # the call off.
+    # the call off. Off since the 0.3.0 study: it rated 5 of 9 borderline dev tasks hard, and the
+    # mid panel they went to cost 16x the nano panel for about 0.03 more quality on them.
     ambiguity_margin: 0.05
-    classifier_model: claude-haiku
+    classifier_model: null
     classifier_max_tokens: 150
   escalation:
     # Rungs from cheapest to dearest; each names a strategy (strategies.yaml). A higher rung

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -70,6 +71,9 @@ class ArmMeta(BaseModel):
 
 class RunMeta(BaseModel):
     version: str
+    # the git commit the code ran from, "+uncommitted" when the tree had changes; None outside a
+    # checkout (an installed wheel) and in runs recorded before 0.3.0
+    commit: str | None = None
     created_at: str
     reconstructed: bool = False  # read from today's files, not captured when the run started
     dataset: str
@@ -79,6 +83,29 @@ class RunMeta(BaseModel):
     tasks: dict[str, TaskMeta] = Field(default_factory=dict)
     arms: list[ArmMeta] = Field(default_factory=list)
     models: dict[str, ModelMeta] = Field(default_factory=dict)  # every model an arm or judge uses
+
+
+def source_commit() -> str | None:
+    """The short git commit of Fusion's own source tree, ``+uncommitted`` when it has changes;
+    None when the package is not running from a git checkout."""
+    root = Path(__file__).resolve().parents[3]
+    if not (root / ".git").exists():
+        return None
+
+    def git(*args: str) -> str | None:
+        try:
+            done = subprocess.run(
+                ["git", *args], cwd=root, capture_output=True, text=True, timeout=10, check=False
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return done.stdout.strip() if done.returncode == 0 else None
+
+    head = git("rev-parse", "--short", "HEAD")
+    if not head:
+        return None
+    changes = git("status", "--porcelain", "--untracked-files=no")
+    return f"{head}+uncommitted" if changes else head
 
 
 def dataset_hash(tasks: list[BenchTask]) -> str:
@@ -145,6 +172,7 @@ def build_meta(
     used += cfg.judge_models
     return RunMeta(
         version=__version__,
+        commit=None if reconstructed else source_commit(),
         created_at=datetime.now(UTC).isoformat(timespec="seconds"),
         reconstructed=reconstructed,
         dataset=str(cfg.dataset),

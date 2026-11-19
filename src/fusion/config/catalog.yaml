@@ -17,7 +17,7 @@
 # max_tokens must leave room for thinking tokens, which count against the output cap.
 # observed_ttft_ms / observed_decode_tps are measured speeds (median time to first token, decode
 # tokens per second) from the live study dated observed_on. They rank models for `speed: fast`,
-# hedges and same-tier fallbacks, and time the early-return grace. The 0.3.0 study refreshes them.
+# hedges and same-tier fallbacks, and time the early-return grace. Refreshed from the 0.3.0 study.
 
 # Price tiers are computed, never written by hand: blended = (3 x input + output) / 4 USD per 1M
 # tokens (a 3:1 input:output mix, typical of review and debug calls); the first threshold the
@@ -138,9 +138,9 @@ models:
     supports_reasoning_effort: true
     default_reasoning_effort: low
     retirement_not_before: 2027-10-07
-    observed_ttft_ms: 640  # 0.2.0 live study, median over arms (Claude Haiku 4.5 then)
-    observed_decode_tps: 116
-    observed_on: 2026-10-06
+    observed_ttft_ms: 1106  # 0.3.0 live study, median of 532 calls (v3 runs)
+    observed_decode_tps: 245
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 0.10
         output_per_1m: 0.50
@@ -177,9 +177,9 @@ models:
     supports_reasoning_effort: true
     default_reasoning_effort: high
     retirement_not_before: 2027-09-28
-    observed_ttft_ms: 5880  # 0.2.0 live study, median over arms
-    observed_decode_tps: 188
-    observed_on: 2026-10-06
+    observed_ttft_ms: 1240  # 0.3.0 live study, median of 77 calls (v3 runs)
+    observed_decode_tps: 163
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 2.0
         output_per_1m: 10.0
@@ -209,9 +209,9 @@ models:
     supports_reasoning_effort: true
     default_reasoning_effort: medium
     retirement_not_before: 2027-09-22
-    observed_ttft_ms: 4550  # 0.2.0 live study, median over arms
-    observed_decode_tps: 138
-    observed_on: 2026-10-06
+    observed_ttft_ms: 1547  # 0.3.0 live study, median of 75 calls (v3 runs)
+    observed_decode_tps: 124
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 4.0
         output_per_1m: 20.0
@@ -323,9 +323,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
-    observed_ttft_ms: 4720  # 0.2.0 live study, median over arms
-    observed_decode_tps: 164
-    observed_on: 2026-10-06
+    observed_ttft_ms: 3889  # 0.3.0 live study, median of 252 calls (v3 runs)
+    observed_decode_tps: 179
+    observed_on: 2026-11-19
     prices: &luna-prices
       - input_per_1m: 0.10
         output_per_1m: 0.50
@@ -360,9 +360,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
-    observed_ttft_ms: 4720  # 0.2.0 live study, median over arms
-    observed_decode_tps: 164
-    observed_on: 2026-10-06
+    observed_ttft_ms: 3889  # 0.3.0 live study, median of 252 calls (v3 runs)
+    observed_decode_tps: 179
+    observed_on: 2026-11-19
     prices: *luna-prices
 
   gpt-terra:
@@ -387,6 +387,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
+    observed_ttft_ms: 2897  # 0.3.0 live study, median of 29 calls (v3 runs)
+    observed_decode_tps: 112
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 1.0
         output_per_1m: 5.0
@@ -422,9 +425,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: medium
-    observed_ttft_ms: 12160  # 0.2.0 live study, median over arms (GPT-6.1 Sol then)
-    observed_decode_tps: 74
-    observed_on: 2026-10-06
+    observed_ttft_ms: 3376  # 0.3.0 live study, median of 46 calls (v3 runs)
+    observed_decode_tps: 100
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 2.0
         output_per_1m: 10.0
@@ -529,9 +532,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
-    observed_ttft_ms: 3000  # 0.2.0 live study, median over arms
-    observed_decode_tps: 153
-    observed_on: 2026-10-06
+    observed_ttft_ms: 2849  # 0.3.0 live study, median of 150 calls (v3 runs)
+    observed_decode_tps: 145
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 0.75
         output_per_1m: 3.75
@@ -565,6 +568,9 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     default_reasoning_effort: low
+    observed_ttft_ms: 6120  # 0.3.0 live study, median of 30 calls (v3 runs)
+    observed_decode_tps: 619
+    observed_on: 2026-11-19
     prices:
       - input_per_1m: 1.50
         output_per_1m: 7.50

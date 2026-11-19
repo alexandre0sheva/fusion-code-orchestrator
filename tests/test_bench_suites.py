@@ -31,7 +31,15 @@ from fusion.orchestration.strategy import FanoutOverride, load_strategy_book
 from fusion.routing.policy import RoutingPolicy
 
 runner = CliRunner()
-SUITES = ("ablation", "headline", "latency", "ablation-v3", "headline-v3", "latency-v3")
+SUITES = (
+    "ablation",
+    "headline",
+    "latency",
+    "ablation-v3",
+    "headline-v3",
+    "latency-v3",
+    "route-v3",
+)
 V3 = ("ablation-v3", "headline-v3", "latency-v3")  # on dataset v2, for roadmap Task 16
 
 
@@ -123,7 +131,8 @@ def test_a_suite_only_asks_for_tasks_that_exist_and_stays_in_its_split(name: str
     chosen = select_tasks(tasks, cfg.limit, cfg.seed, cfg.quota)
     assert len(chosen) == sum(cfg.quota.values())
     assert {t.split for t in chosen} <= {cfg.split, None}
-    assert {"coding", "frontend", "performance"} <= set(cfg.quota) or name.startswith("latency")
+    text_only = name.startswith(("latency", "route"))  # wall time and route calibration: text
+    assert {"coding", "frontend", "performance"} <= set(cfg.quota) or text_only
 
 
 @pytest.mark.parametrize(
@@ -232,11 +241,24 @@ def test_the_v3_studies_are_judged_by_neutral_judges(name: str, tmp_path: Path) 
 
 
 def test_the_v3_suites_fit_task_16s_budget() -> None:
-    # Task 16's share is about $7 (what the $15 leaves after Tasks 13-15); the caps keep to it.
-    caps = [_bench_config(name).max_usd for name in V3]
-    assert sum(caps) <= 7.1
-    for name in V3:
+    # Task 16 has what the $15 leaves after Tasks 1-15. What bounds it is each suite's stop at the
+    # ledger's $14.50 (the $0.50 reserve); the caps together stay inside that line as well.
+    caps = [_bench_config(name).max_usd for name in (*V3, "route-v3")]
+    assert sum(caps) <= 14.5
+    for name in (*V3, "route-v3"):
         assert _bench_config(name).spend_stop_usd == 14.5
+
+
+def test_route_v3_runs_each_rung_of_the_auto_ladder_alone_on_dev() -> None:
+    """The threshold calibration replays the ladder over these arms, so they must be its rungs."""
+    from fusion.config.loader import load_routing_policies
+
+    cfg = _bench_config("route-v3")
+    rungs = load_routing_policies().routing.escalation.rungs
+    climbable = [r.strategy for r in rungs if not r.frontier]
+    assert [a.strategy for a in cfg.arms] == climbable
+    assert [a.name for a in cfg.arms] == [f"rung{i}" for i in range(len(climbable))]
+    assert cfg.split == "dev" and cfg.neutral_judges and cfg.spend_stop_usd == 14.5
 
 
 # ------------------------------------------------------------------------------- the planner

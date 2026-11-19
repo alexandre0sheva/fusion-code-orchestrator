@@ -728,3 +728,25 @@ def test_unrecognized_model_is_flagged_and_the_transcript_kept(
     assert "unrecognized_model" in transcript.read_text(encoding="utf-8")
     assert item.e2e is not None
     assert item.e2e["host_usage"]["claude-haiku-5-5"]["inputTokens"] == 1_000
+
+
+def test_a_run_that_fits_once_the_runs_in_flight_settle_waits_instead_of_stopping() -> None:
+    """With runs in flight, a reservation that fails only because of theirs must wait for them:
+    latching a stop there ended a live study with most of its money left."""
+    import threading
+
+    from fusion.bench.e2e.runner import _Budget
+
+    budget = _Budget(max_usd=2.0, spent=0.0, spend=None)
+    assert budget.acquire(1.25)
+    got: list[bool] = []
+    waiter = threading.Thread(target=lambda: got.append(budget.acquire(1.25)))
+    waiter.start()
+    waiter.join(timeout=0.2)
+    assert waiter.is_alive() and not got  # waiting, not stopped
+    budget.settle(1.25, 0.1)  # the run in flight cost $0.10
+    waiter.join(timeout=2)
+    assert got == [True] and budget.reason is None
+    budget.settle(1.25, 0.1)
+    assert not budget.acquire(1.9)  # can never fit: $0.20 spent + $1.90 > $2.00
+    assert budget.reason and "max_usd" in budget.reason

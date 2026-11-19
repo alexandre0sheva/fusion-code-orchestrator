@@ -38,8 +38,9 @@ def test_ask_prints_the_answer_on_stdout_and_progress_on_stderr(runner: CliRunne
     result = runner.invoke(app, ["ask", LONG_QUESTION, "--mock"])
     assert result.exit_code == 0, result.output
     assert "## Fusion Answer" in result.stdout and "panel:" not in result.stdout
-    # the default is strategy auto: an easy question starts on rung 0, one model
-    assert "estimating difficulty" in result.stderr and "panel: asking 1 model" in result.stderr
+    # the default is the nano panel: three models, then one call picks an answer
+    assert "panel: asking 3 models" in result.stderr
+    assert "estimating difficulty" not in result.stderr
     assert result.stderr.count("synthesizing") == 1
 
 

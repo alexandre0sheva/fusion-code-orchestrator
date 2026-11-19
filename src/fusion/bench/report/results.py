@@ -21,25 +21,33 @@ from fusion.bench.spend import BUDGET_CAPS_USD, CURRENT_BUDGET
 __all__ = ["LIMITATIONS", "render_results", "spend_by_run"]
 
 LIMITATIONS = """\
-- **The tasks are synthetic.** An LLM drafted them and they were not reviewed by a person; see
+- **Most tasks are synthetic, and no person has reviewed them yet.** An LLM drafted the text,
+  review and debugging tasks; 34 coding tasks are real upstream bugs of permissively licensed
+  projects, with prompts written for the study. See
   [evals/datasets/README.md](../evals/datasets/README.md#provenance-and-validity-read-this-before-quoting-a-number).
   They test whether an answer finds the seeded defect, names the root cause or passes the hidden
   tests, not how an answer feels in a real project.
-- **It is a small study.** The $20 budget caps it at a few dozen tasks and a few repeats, so
-  the intervals are wide and many verdicts are *inconclusive*. That is a result: the study could
-  not tell, which is not the same as the arms being equal.
+- **It is a small study.** The $15 budget caps it at a few dozen tasks with one repeat, and the
+  executable categories (coding, frontend, performance) at two or three tasks each in the
+  headline, so the intervals are wide and many verdicts are *inconclusive*. That is a result: the
+  study could not tell, which is not the same as the arms being equal.
 - **The scorers decide the numbers.** Review, debugging and rubric scores come from keyword and
-  structure matching with a cheap LLM judge for what they cannot settle; no judge is from a
-  different vendor than every arm (each vendor sits on a panel), so it may favour its own style.
-  Frontend and performance scores are measured (tests, timings, accessibility), not judged by a
-  model, and they check structure and speed, not intent or taste.
+  structure matching, with neutral LLM judges (from vendors on no arm) for what those cannot
+  settle; a judge may still favour a style. Frontend and performance scores are measured (tests,
+  timings, accessibility), not judged by a model, and they check structure and speed, not intent
+  or taste; browser checks that need Playwright were skipped where it was not installed, the same
+  for every arm.
+- **Solo arms are not always one model.** With hedging on (the shipped default), a solo arm whose
+  model is slow also asks a same-tier model and keeps the first answer; the arms' warnings and
+  call ledgers say when that happened.
 - **Prices and speeds are those of the day.** Costs use the catalog's prices (dates in the
-  methodology); latencies depend on provider load at the time of the run.
+  methodology); latencies depend on provider load at the time of the run, and a job that timed
+  out was run again with a longer timeout (only the last attempt is scored).
 - **One dataset, one set of models.** A different task mix, a newer model or another judge can
   change a verdict. The tuning used the `dev` split and this report is from the held-out `test`
   split, but both come from the same author and generator.
-- **Claude Code is not in the loop.** Fusion's `digest` aggregation hands the merge to the
-  calling model; in a study the panel's digest is scored as it is, with no model merging it.
+- **The end-to-end runs are few.** The Claude Code A/B covers four coding tasks per arm: enough
+  to see costs, turns and tool calls inside a real session, not to rank the arms.
 """
 
 def _demote(markdown: str, levels: int) -> str:

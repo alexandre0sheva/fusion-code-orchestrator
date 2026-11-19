@@ -4,7 +4,7 @@
 #
 #   fusion bench run --suite latency-v3 --max-usd 2.35
 description: >-
-  Opus 5.5 alone against strategy auto (the default), the panel default and the panel default with
+  Opus 5.5 alone against strategy auto (the default), panel-duo (the 0.2.0 default) and panel-duo with
   Luna at effort none, on 30 dev tasks with the response cache off.
 stage: tune on dev
 dataset: v2
@@ -20,7 +20,7 @@ judge_models: []
 arms:
   - {name: solo-opus, strategy: solo-opus}
   - {name: auto-route, strategy: auto}
-  - {name: default, strategy: panel-duo}
+  - {name: panel-duo, strategy: panel-duo}   # the 0.2.0 default
   - name: luna-none
     strategy: panel-duo
     overrides: {members: [{model: claude-haiku}, {model: gpt-luna, reasoning_effort: none}]}

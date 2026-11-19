@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fusion.bench.meta import RunMeta
 from fusion.bench.report.data import Report
 from fusion.bench.stats import Comparison, Interval, Verdict
 
@@ -12,6 +13,7 @@ __all__ = [
     "comparison_for",
     "interval_text",
     "methodology",
+    "methodology_version",
     "money",
     "pct",
     "seconds",
@@ -146,5 +148,15 @@ def methodology(report: Report) -> list[tuple[str, str]]:
         ),
     ]
     if meta is not None:
-        rows.append(("Fusion version", meta.version))
+        rows.append(("Fusion version", methodology_version(meta)))
     return rows
+
+
+def methodology_version(meta: RunMeta) -> str:
+    """The version a run used, with its commit when one was recorded: the package version is only
+    bumped at release, so a study of unreleased work is identified by its commit."""
+    if not meta.commit:
+        return meta.version
+    head, _, rest = meta.commit.partition("+")
+    note = ", with uncommitted changes" if rest else ""
+    return f"{meta.version} (git {head}{note})"

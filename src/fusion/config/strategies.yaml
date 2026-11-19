@@ -59,7 +59,8 @@
 #              enough (low self-check confidence, low agreement, no acceptable candidate, no
 #              finding the input backs, every patch failing, a lost quorum). A higher rung reuses
 #              every lower rung's answers. `escalation: {allow_frontier, max_rungs}` changes the
-#              ladder for one strategy. `auto` is the default (`budget: medium`)
+#              ladder for one strategy. `auto` was the default until the 0.3.0 study, which
+#              chose `panel-nano-pick` (`budget: medium`)
 # self_check   true: each member is asked to check its answer against the input and report an
 #              honest confidence (rung 0's self-check; the ladder climbs when it is low)
 # kind: cascade  the `cascade.first` cheapest members answer first; if they agree (agreement >=
@@ -84,13 +85,27 @@
 #        full  light, plus a check of the judge's own output
 
 strategies:
+  panel-nano-pick:
+    kind: panel
+    description: >-
+      The default. The nano panel (Haiku 5.5, GPT-6 Luna, Gemini 3.8 Flash), each answering the
+      whole task from its own approach; one cheap Haiku call picks the best answer as it is
+      (`select`). Chosen by the 0.3.0 study: the cheapest per solved task within the margin of
+      the best arm, on the dev and the test split (docs/BENCHMARK_RESULTS.md).
+    members:
+      - model: claude-haiku
+      - model: gpt-luna
+      - model: gemini-flash
+    aggregator: select
+    aggregator_model: claude-haiku
+
   auto:
     kind: auto
     description: >-
-      The default. Estimates how hard the request is and starts on the matching rung of the
-      escalation ladder: one nano model with a self-check (easy), the nano panel (normal), the mid
-      panel (hard). Climbs a rung only when the answer shows it is not enough, reusing what the
-      lower rungs produced. Never uses the frontier rung.
+      Difficulty routing (the default until the 0.3.0 study). Estimates how hard the request is
+      and starts on the matching rung of the escalation ladder: one nano model with a self-check
+      (easy), the nano panel (normal), the mid panel (hard). Climbs a rung only when the answer
+      shows it is not enough, reusing what the lower rungs produced. Never uses the frontier rung.
   auto-frontier:
     kind: auto
     description: >-
@@ -408,7 +423,7 @@ strategies:
 # The legacy `budget` argument of the tools resolves to a strategy through this table.
 budget_strategies:
   low: solo-haiku
-  medium: auto
+  medium: panel-nano-pick
   high: panel-refine
   local_only: panel-local
 

@@ -5,7 +5,7 @@
 # Baseline for `fusion bench report --baseline nano`: the nano panel with lenses and llm synthesis.
 #
 #   fusion bench plan --suite ablation-v3
-#   fusion bench run  --suite ablation-v3 --max-usd 3.4
+#   fusion bench run  --suite ablation-v3 --max-usd 3.7
 description: >-
   Nano, open-weight, mixed and mid panels; lenses on and off; llm, select, vote and digest
   aggregation; the cascade threshold from 0.5 to 0.9; verified-synth; and auto routing with the
@@ -14,13 +14,13 @@ description: >-
 stage: tune on dev
 dataset: v2
 split: dev
-# 9 tasks: every category, review and coding twice. About $3.40 of Task 16's ~$7: real-repo coding
+# 9 tasks: every category, review and coding twice. About $3.70 of Task 16's share: real-repo coding
 # tasks show whole packages (up to ~50K tokens), so a coding task costs several text tasks.
 # Widen the quota if the runs cost less than planned.
 quota: {code_review: 2, debugging: 1, architecture: 1, planning: 1, coding: 2, frontend: 1, performance: 1}
 repeats: 1
 seed: 0
-max_usd: 3.4
+max_usd: 3.7   # $3.66 expected once the planner prices `auto` from the files too
 spend_stop_usd: 14.5   # keeps $0.50 of the $15 v0.3.0 budget in reserve
 concurrency: 8
 # Judges from vendors on no arm (Xiaomi and Meta; the panels use Anthropic, OpenAI, Google,

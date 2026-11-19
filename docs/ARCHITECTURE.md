@@ -504,7 +504,7 @@ from Harness²'s evidence-backed library. It is off unless `library.enabled` is 
 
 ### Difficulty routing and the escalation ladder
 
-`strategy: auto` (the default, `budget: medium`) is a `kind: auto` strategy with no members of
+`strategy: auto` (the default until the 0.3.0 study chose `panel-nano-pick`) is a `kind: auto` strategy with no members of
 its own. It starts a request on the cheapest rung that its difficulty calls for and spends more
 only when the cheaper answer shows it is not enough (`routing/difficulty.py`,
 `orchestration/escalate.py`; settings in `routing_policies.yaml` under `routing:`).
@@ -515,9 +515,10 @@ only when the cheaper answer shows it is not enough (`routing/difficulty.py`,
   `KeyError` is easy, a race or a leak is hard), risky areas (concurrency, security, migrations,
   money, auth) and the question's shape (yes/no 0, lookup 0.25, design 1). Their weighted mean is
   the score; `easy_below` and `hard_from` cut it into easy, normal and hard. A score within
-  `ambiguity_margin` of a threshold is ambiguous (`confidence` < 0.5), and then one call to the
-  classifier model (a nano model, at most 150 output tokens, ledger stage `route`, role
-  `difficulty`) decides; a failed or unreadable call keeps the signals' level with a warning.
+  `ambiguity_margin` of a threshold is ambiguous (`confidence` < 0.5); when `classifier_model` is
+  set (it is off by default since the 0.3.0 calibration), one call to it (a nano model, at most 150
+  output tokens, ledger stage `route`, role `difficulty`) decides; a failed or unreadable call
+  keeps the signals' level with a warning.
 - **The ladder** (`EscalationPolicy`): rung 0 `solo-haiku-check` (Haiku 5.5 alone, with
   `self_check: true`, which appends `prompts.self_check_instruction`), rung 1 `panel-nano-auto`
   (lenses and `union` for review and debugging, approaches and `select+patch` otherwise), rung 2

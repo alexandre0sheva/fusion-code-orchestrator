@@ -77,6 +77,24 @@ def test_a_run_writes_a_snapshot_of_what_it_was(
     assert set(meta.tasks) == {f"t{n}" for n in range(12)}
 
 
+def test_the_snapshot_names_the_source_it_ran_from() -> None:
+    """The package version is bumped only at release, so a study of unreleased work must also
+    name its commit (and say when the tree had uncommitted changes)."""
+    from fusion.bench.meta import source_commit
+    from fusion.bench.report.fmt import methodology_version
+
+    commit = source_commit()
+    assert commit is None or re.fullmatch(r"[0-9a-f]{7,40}(\+uncommitted)?", commit)
+    meta = RunMeta.model_validate(
+        {"version": "0.2.0", "commit": "5abab47+uncommitted", "created_at": "x", "dataset": "d",
+         "dataset_hash": "h", "split": "dev", "task_count": 1}
+    )
+    shown = methodology_version(meta)
+    assert "0.2.0" in shown and "5abab47" in shown and "uncommitted" in shown
+    old = meta.model_copy(update={"commit": None})
+    assert methodology_version(old) == "0.2.0"
+
+
 def test_a_resumed_run_keeps_the_snapshot_of_its_start(tmp_path: Path) -> None:
     data = write_dataset(tmp_path / "data.jsonl", count=4)
     cfg = config(data, arms="solo-haiku", repeats=1)

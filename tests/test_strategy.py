@@ -214,6 +214,7 @@ def test_packaged_strategies_are_the_documented_set() -> None:
         "panel-luna-lenses",
         "panel-haiku-lenses",
         "panel-nano-select",
+        "panel-nano-pick",
         "panel-luna-approaches",
         "panel-nano-auto",
         "panel-cascade",
@@ -361,7 +362,7 @@ def test_user_config_can_override_one_field_or_add_a_strategy(fusion_home: Path)
     assert book.get("panel-cheap") is book.get("panel-nano")
     assert book.get("mine").name == "mine"
     assert book.for_budget(BudgetLevel.LOW).name == "mine"
-    assert book.for_budget(BudgetLevel.MEDIUM).name == "auto"
+    assert book.for_budget(BudgetLevel.MEDIUM).name == "panel-nano-pick"
 
 
 def test_invalid_user_strategy_reports_key_value_and_layer(
@@ -430,16 +431,15 @@ async def test_budget_levels_resolve_to_strategies_and_an_explicit_strategy_wins
     medium = await pipe.run(_ctx())
     high = await pipe.run(_ctx(budget=BudgetLevel.HIGH))
     explicit = await pipe.run(_ctx(budget=BudgetLevel.HIGH, strategy="solo-luna"))
-    # medium is strategy auto: the prompt is easy, so it starts (and, with the mock's 0.7
-    # self-check, ends) on rung 0, one nano model
+    # medium is the default the 0.3.0 study chose: the nano panel, one call picks an answer
     assert [r.routing.strategy for r in (low, medium, high, explicit)] == [
         "solo-haiku",
-        "solo-haiku-check",
+        "panel-nano-pick",
         "panel-refine",
         "solo-luna",
     ]
     assert _stages(low) == ["panel"]
-    assert _stages(medium) == ["panel"] and medium.routing.escalation.startswith("answered at")
+    assert _stages(medium).count("panel") == 3 and not medium.routing.escalation
     assert _stages(high).count("refine") == 3
     assert _stages(explicit) == ["panel"]
 
@@ -696,7 +696,8 @@ def test_cli_strategies_list_shows_every_strategy_and_budget_alias() -> None:
     as_json = CliRunner().invoke(app, ["strategies", "list", "--json"])
     rows = yaml.safe_load(as_json.output)
     by_name = {row["name"]: row for row in rows}
-    assert by_name["auto"]["budgets"] == ["medium"]
+    assert by_name["panel-nano-pick"]["budgets"] == ["medium"]
+    assert by_name["auto"]["budgets"] == []
     assert by_name["solo-haiku"]["members"][0]["model"] == "claude-haiku"
 
 

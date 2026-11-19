@@ -29,28 +29,28 @@ svg .mk.cx,svg .bar.cx,svg .span.cx{fill:var(--cx)}svg .whisker.cx{stroke:var(--
 svg .mk{stroke:var(--surface);stroke-width:2}
 .bg1{background:var(--c1)}.bg2{background:var(--c2)}.bg3{background:var(--c3)}.bg4{background:var(--c4)}
 .bg5{background:var(--c5)}.bg6{background:var(--c6)}.bg7{background:var(--c7)}.bg8{background:var(--c8)}.bgx{background:var(--cx)}
-svg.chart{background:var(--surface)}</style><title>Quality against cost per task</title><desc>One point per arm. Up and to the left is better; the line joins the arms no other arm beats.</desc><line class="grid" x1="62" x2="610" y1="261.1" y2="261.1"/><text class="tick" x="54" y="265.1" text-anchor="end">0.5</text><line class="grid" x1="62" x2="610" y1="190.3" y2="190.3"/><text class="tick" x="54" y="194.3" text-anchor="end">0.6</text><line class="grid" x1="62" x2="610" y1="119.6" y2="119.6"/><text class="tick" x="54" y="123.6" text-anchor="end">0.7</text><line class="grid" x1="62" x2="610" y1="48.8" y2="48.8"/><text class="tick" x="54" y="52.8" text-anchor="end">0.8</text><line class="grid" x1="62" x2="62" y1="14" y2="328"/><text class="tick" x="62" y="346" text-anchor="middle">$0</text><line class="grid" x1="205.9" x2="205.9" y1="14" y2="328"/><text class="tick" x="205.9" y="346" text-anchor="middle">$0.02</text><line class="grid" x1="349.8" x2="349.8" y1="14" y2="328"/><text class="tick" x="349.8" y="346" text-anchor="middle">$0.04</text><line class="grid" x1="493.7" x2="493.7" y1="14" y2="328"/><text class="tick" x="493.7" y="346" text-anchor="middle">$0.06</text><line class="axis" x1="62" x2="610" y1="328" y2="328"/><line class="axis" x1="62" x2="62" y1="14" y2="328"/><text class="axis-title" x="336.0" y="372" text-anchor="middle">Cost per task (USD); bars are 95% intervals</text><text class="axis-title" transform="translate(14 171.0) rotate(-90)" text-anchor="middle">Mean quality</text><polyline class="frontier" points="66.8,161.7 202.3,155.1 230.5,140.8"/><line class="whisker c1" x1="66.8" x2="66.8" y1="247.5" y2="81.4"/><line class="whisker c1" x1="66.2" x2="67.5" y1="161.7" y2="161.7"/><line class="whisker c2" x1="143.6" x2="143.6" y1="291.8" y2="117.4"/><line class="whisker c2" x1="135.8" x2="152.5" y1="201.7" y2="201.7"/><line class="whisker c3" x1="490.9" x2="490.9" y1="238.6" y2="89.6"/><line class="whisker c3" x1="436.6" x2="551.3" y1="162.1" y2="162.1"/><line class="whisker c4" x1="230.5" x2="230.5" y1="241.4" y2="50.2"/><line class="whisker c4" x1="213.3" x2="248.8" y1="140.8" y2="140.8"/><line class="whisker c5" x1="276.4" x2="276.4" y1="245.2" y2="53.2"/><line class="whisker c5" x1="249.8" x2="308.1" y1="144.8" y2="144.8"/><line class="whisker c6" x1="202.3" x2="202.3" y1="236.3" y2="78.3"/><line class="whisker c6" x1="178.4" x2="225.6" y1="155.1" y2="155.1"/><g class="pt" tabindex="0" data-tip="solo-luna
-quality 0.640 [0.519, 0.754]
-$/task 0.0007 [0.0006, 0.0008]
-$/solved 0.0011 [0.0008, 0.0016]
-seconds p50 12.3s, p90 20.8s" data-arm="0"><circle class="hit" cx="66.8" cy="161.7" r="14"/><circle cx="66.8" cy="161.7" r="5" stroke-width="2" class="mk c1"/></g><g class="pt" tabindex="0" data-tip="solo-haiku
-quality 0.584 [0.457, 0.703]
-$/task 0.0113 [0.0103, 0.0126]
-$/solved 0.0286 [0.0194, 0.0479]
-seconds p50 15.5s, p90 20.2s" data-arm="1"><circle class="hit" cx="143.6" cy="201.7" r="14"/><rect x="138.6" y="196.7" width="10" height="10" rx="1" stroke-width="2" class="mk c2"/></g><g class="pt" tabindex="0" data-tip="solo-frontier
-quality 0.640 [0.532, 0.742]
-$/task 0.0596 [0.0521, 0.0680]
-$/solved 0.1192 [0.0888, 0.1752]
-seconds p50 19.8s, p90 38.6s" data-arm="2"><circle class="hit" cx="490.9" cy="162.1" r="14"/><polygon points="490.9,154.8 498.1,162.1 490.9,169.3 483.6,162.1" stroke-width="2" class="mk c3"/></g><g class="pt" tabindex="0" data-tip="fusion-best
-quality 0.670 [0.528, 0.798]
-$/task 0.0234 [0.0210, 0.0260]
-$/solved 0.0362 [0.0276, 0.0506]
-seconds p50 30.4s, p90 51.7s" data-arm="3"><circle class="hit" cx="230.5" cy="140.8" r="14"/><polygon points="230.5,134 237.2,146.2 223.7,146.2" stroke-width="2" class="mk c4"/></g><g class="pt" tabindex="0" data-tip="fusion-default
-quality 0.664 [0.522, 0.794]
-$/task 0.0298 [0.0261, 0.0342]
-$/solved 0.0494 [0.0366, 0.0725]
-seconds p50 32.2s, p90 58.3s" data-arm="4"><circle class="hit" cx="276.4" cy="144.8" r="14"/><circle cx="276.4" cy="144.8" r="5" stroke-width="2" class="mk c5"/></g><g class="pt" tabindex="0" data-tip="solo-sol
-quality 0.650 [0.535, 0.758]
-$/task 0.0195 [0.0162, 0.0227]
-$/solved 0.0301 [0.0211, 0.0452]
-seconds p50 34.0s, p90 63.8s" data-arm="5"><circle class="hit" cx="202.3" cy="155.1" r="14"/><rect x="197.3" y="150.1" width="10" height="10" rx="1" stroke-width="2" class="mk c6"/></g><text class="label" x="77.8" y="155.7" text-anchor="start">solo-luna</text><text class="label" x="154.6" y="195.7" text-anchor="start">solo-haiku</text><text class="label" x="501.9" y="156.1" text-anchor="start">solo-frontier</text><text class="label" x="219.5" y="134.8" text-anchor="end">fusion-best</text><text class="label" x="287.4" y="138.8" text-anchor="start">fusion-default</text><text class="label" x="191.3" y="149.1" text-anchor="end">solo-sol</text></svg>
+svg.chart{background:var(--surface)}</style><title>Quality against cost per task</title><desc>One point per arm. Up and to the left is better; the line joins the arms no other arm beats.</desc><line class="grid" x1="62" x2="610" y1="278" y2="278"/><text class="tick" x="54" y="282" text-anchor="end">0.4</text><line class="grid" x1="62" x2="610" y1="209.2" y2="209.2"/><text class="tick" x="54" y="213.2" text-anchor="end">0.5</text><line class="grid" x1="62" x2="610" y1="140.5" y2="140.5"/><text class="tick" x="54" y="144.5" text-anchor="end">0.6</text><line class="grid" x1="62" x2="610" y1="71.8" y2="71.8"/><text class="tick" x="54" y="75.8" text-anchor="end">0.7</text><line class="grid" x1="62" x2="62" y1="14" y2="328"/><text class="tick" x="62" y="346" text-anchor="middle">$0</text><line class="grid" x1="225.5" x2="225.5" y1="14" y2="328"/><text class="tick" x="225.5" y="346" text-anchor="middle">$0.02</text><line class="grid" x1="389" x2="389" y1="14" y2="328"/><text class="tick" x="389" y="346" text-anchor="middle">$0.04</text><line class="grid" x1="552.5" x2="552.5" y1="14" y2="328"/><text class="tick" x="552.5" y="346" text-anchor="middle">$0.06</text><line class="axis" x1="62" x2="610" y1="328" y2="328"/><line class="axis" x1="62" x2="62" y1="14" y2="328"/><text class="axis-title" x="336.0" y="372" text-anchor="middle">Cost per task (USD); bars are 95% intervals</text><text class="axis-title" transform="translate(14 171.0) rotate(-90)" text-anchor="middle">Mean quality</text><polyline class="frontier" points="67.5,183.6 69.4,111.2"/><line class="whisker c1" x1="69.4" x2="69.4" y1="175.9" y2="50.2"/><line class="whisker c1" x1="68.7" x2="70.4" y1="111.2" y2="111.2"/><line class="whisker c2" x1="67.5" x2="67.5" y1="256.1" y2="107.8"/><line class="whisker c2" x1="67" x2="68" y1="183.6" y2="183.6"/><line class="whisker c3" x1="506.8" x2="506.8" y1="209" y2="86.6"/><line class="whisker c3" x1="466.6" x2="551.3" y1="147.5" y2="147.5"/><line class="whisker c4" x1="217.8" x2="217.8" y1="291.8" y2="154.2"/><line class="whisker c4" x1="201.3" x2="234.5" y1="224.7" y2="224.7"/><line class="whisker c5" x1="121.7" x2="121.7" y1="196.2" y2="70.3"/><line class="whisker c5" x1="94.9" x2="170.6" y1="132.2" y2="132.2"/><line class="whisker c6" x1="96" x2="96" y1="214.6" y2="68.4"/><line class="whisker c6" x1="90.5" x2="101.7" y1="141.5" y2="141.5"/><g class="pt" tabindex="0" data-tip="solo-haiku
+quality 0.643 [0.548, 0.731]
+$/task 0.0009 [0.0008, 0.0010]
+$/solved 0.0016 [0.0012, 0.0021]
+seconds p50 6.7s, p90 8.8s" data-arm="0"><circle class="hit" cx="69.4" cy="111.2" r="14"/><circle cx="69.4" cy="111.2" r="5" stroke-width="2" class="mk c1"/></g><g class="pt" tabindex="0" data-tip="solo-luna
+quality 0.537 [0.432, 0.648]
+$/task 0.0007 [0.0006, 0.0007]
+$/solved 0.0014 [0.0010, 0.0020]
+seconds p50 9.7s, p90 14.0s" data-arm="1"><circle class="hit" cx="67.5" cy="183.6" r="14"/><rect x="62.5" y="178.6" width="10" height="10" rx="1" stroke-width="2" class="mk c2"/></g><g class="pt" tabindex="0" data-tip="solo-opus
+quality 0.590 [0.500, 0.679]
+$/task 0.0544 [0.0495, 0.0599]
+$/solved 0.1279 [0.0957, 0.1910]
+seconds p50 20.7s, p90 29.9s" data-arm="2"><circle class="hit" cx="506.8" cy="147.5" r="14"/><polygon points="506.8,140.2 514,147.5 506.8,154.7 499.5,147.5" stroke-width="2" class="mk c3"/></g><g class="pt" tabindex="0" data-tip="solo-sol
+quality 0.478 [0.380, 0.580]
+$/task 0.0191 [0.0170, 0.0211]
+$/solved 0.0472 [0.0332, 0.0744]
+seconds p50 20.7s, p90 28.9s" data-arm="3"><circle class="hit" cx="217.8" cy="224.7" r="14"/><polygon points="217.8,217.9 224.6,230.1 211.1,230.1" stroke-width="2" class="mk c4"/></g><g class="pt" tabindex="0" data-tip="fusion-default
+quality 0.612 [0.519, 0.702]
+$/task 0.0073 [0.0040, 0.0133]
+$/solved 0.0137 [0.0069, 0.0291]
+seconds p50 13.2s, p90 23.6s" data-arm="4"><circle class="hit" cx="121.7" cy="132.2" r="14"/><circle cx="121.7" cy="132.2" r="5" stroke-width="2" class="mk c5"/></g><g class="pt" tabindex="0" data-tip="fusion-best
+quality 0.599 [0.492, 0.705]
+$/task 0.0042 [0.0035, 0.0049]
+$/solved 0.0078 [0.0057, 0.0113]
+seconds p50 11.2s, p90 13.7s" data-arm="5"><circle class="hit" cx="96" cy="141.5" r="14"/><rect x="91" y="136.5" width="10" height="10" rx="1" stroke-width="2" class="mk c6"/></g><text class="label" x="80.4" y="105.2" text-anchor="start">solo-haiku</text><text class="label" x="78.5" y="177.6" text-anchor="start">solo-luna</text><text class="label" x="517.8" y="141.5" text-anchor="start">solo-opus</text><text class="label" x="228.8" y="218.7" text-anchor="start">solo-sol</text><text class="label" x="132.7" y="126.2" text-anchor="start">fusion-default</text><text class="label" x="107" y="155.5" text-anchor="start">fusion-best</text></svg>

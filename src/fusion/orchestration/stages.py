@@ -842,6 +842,10 @@ class ClaimsStage(_Stage):
             )
         if state.answer_approaches:
             state.disagreement["approaches"] = dict(state.answer_approaches)
+        if state.strategy is not None and state.strategy.self_check:
+            state.disagreement["self_confidence"] = {
+                m: a.confidence for m, a in state.answers.items() if state.answer_structured.get(m)
+            }
         state.warnings.extend(_claims_warnings(state))
         return state
 

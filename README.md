@@ -12,45 +12,45 @@ Claude Code stays the coding agent. Fusion is an advisor: it takes a diff, an er
 question or a feature request, asks a panel of cheap models in parallel, merges their answers, and
 returns the result with token, cost and latency telemetry. It never edits files or runs commands.
 
-> **Thesis, tested in v0.2.0 (alpha):** a panel of cheap models can give advice close to a frontier
-> model's for a fraction of the cost. The measured answer, below, is more modest than the pitch:
-> **cheaper, yes; faster, no; better, not shown.** See the [changelog](CHANGELOG.md) for what is in
-> the release.
+> **Thesis, tested in the 0.3.0 study:** a panel of cheap models can give advice close to a
+> frontier model's for a fraction of the cost and time. The measured answer, below: **cheaper,
+> yes; faster, yes; better, not shown, and one cheap model alone did as well.** See the
+> [changelog](CHANGELOG.md) for what is in each release.
 
 ## Does a cheap panel match a frontier model?
 
-On 34 held-out tasks with ground truth (code review, debugging, architecture, planning, coding,
-frontend, performance), 2 repeats each, $9.61 of live API spend (the v0.2.0 study, on that release's
-models; 0.3.0 moves to Haiku 5.5 and GPT-6.2 Sol, and `panel-cheap` is now `panel-nano`):
+On 47 held-out tasks with ground truth (all review, debugging, architecture and planning tasks of
+the v2 test split, plus 7 coding, frontend and performance tasks), one repeat, neutral judges, $4.42
+of live API spend (the 0.3.0 study, 2026-11-19):
 
 | | Quality (95% CI) | Cost per solved task | Median seconds |
 |---|---|---|---|
-| Claude Opus 5.5 alone | 0.64 [0.53, 0.74] | $0.119 | 19.8 |
-| GPT-6.1 Sol alone | 0.65 [0.54, 0.76] | $0.030 | 34.0 |
-| Claude Haiku 4.5 alone | 0.58 [0.46, 0.70] | $0.029 | 15.5 |
-| GPT-6 Luna alone | 0.64 [0.52, 0.75] | $0.001 | 12.3 |
-| **Fusion `panel-duo` (0.2.0 default)** | 0.67 [0.53, 0.80] | $0.036 | 30.4 |
-| Fusion `panel-cheap` (three models) | 0.66 [0.52, 0.79] | $0.049 | 32.2 |
+| Claude Opus 5.5 alone | 0.59 [0.50, 0.68] | $0.128 | 20.7 |
+| GPT-6.2 Sol alone | 0.48 [0.38, 0.58] | $0.047 | 20.7 |
+| Claude Haiku 5.5 alone | 0.64 [0.55, 0.73] | $0.002 | 6.7 |
+| GPT-6 Luna alone | 0.54 [0.43, 0.65] | $0.001 | 9.7 |
+| Fusion `auto` (default during the study) | 0.61 [0.52, 0.70] | $0.014 | 13.2 |
+| **Fusion `panel-nano-pick` (default now)** | 0.60 [0.49, 0.71] | $0.008 | 11.2 |
 
 ![Quality against cost per task](docs/assets/benchmark-cost-quality.svg)
 
-- **Cheaper: yes.** Fusion costs about 0.3x Opus per solved task (interval 0.21 to 0.41).
-- **Faster: no.** It is about 1.5x slower, because it waits for several models and then merges.
-- **Better or not worse than Opus: the study cannot tell.** The quality difference is +0.03 with
-  an interval of about plus or minus 0.12, wider than the 0.03 margin. Nothing separates any of the
-  arms on quality, and a single cheap model (Luna) scored as well as the panel at about 1/30 of its
-  cost. So far the panel's case rests on cost against a frontier model, not on beating a cheap one.
+- **Cheaper: yes.** `panel-nano-pick` costs about 0.06x Opus per solved task (0.04 to 0.09).
+- **Faster: yes.** About 0.5x Opus's time per task (0.47 to 0.53); 0.2.0's panel was 1.5x slower.
+- **Better or not worse than Opus: the study cannot tell.** The quality difference is +0.01 with an
+  interval of -0.08 to +0.10, wider than the 0.03 margin.
+- **A cheap model alone did as well.** Haiku 5.5 alone scored highest at about a fifth of the
+  default's cost (on dev, panels beat it); the case rests on cost and speed against Opus.
+- **Inside Claude Code** (4 coding tasks per arm, too few to rank): every arm but Haiku without
+  Fusion (3 of 4) solved all; Fusion's tools doubled host cost and were called in 2 of 12 runs.
 
-Small, synthetic and LLM-judged in part: read the limitations before quoting a number.
-Everything, with the method and the unedited verdicts, is in
-[docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) and the
+Read the limitations before quoting a number. Everything, with the method, the dev-split studies
+and the unedited verdicts: [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) and the
 [interactive report](docs/benchmark-report.html).
 
 ## Limitations
 
-- The study is small (34 tasks, 2 repeats) and its intervals are wide, so "not worse than Opus" is
-  *inconclusive*, not *equal*. The tasks are synthetic and not yet reviewed by a person.
-- Fusion is slower than one model: it waits for several, then merges.
+- The study is small (47 tasks, 1 repeat) and its intervals are wide, so "not worse than Opus" is
+  *inconclusive*, not *equal*. Most tasks are synthetic, and no person has reviewed them yet.
 - Redaction is pattern-based and can miss a secret; answers are advice to check, not instructions.
 - Not on PyPI: install from GitHub (`uvx --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator`;
   append `@v0.2.0` to pin the release).
@@ -105,8 +105,8 @@ Claude Code -> MCP tool -> redact -> route (strategy) -> cheap panel (parallel) 
 ```
 
 Panel calls run concurrently and tolerate partial failure. Which models run is a *strategy*
-(`fusion strategies list`). The default, `auto`, starts by difficulty with one `nano` model
-checking its answer, the cheap panel or a mid panel, and asks more models only when needed
+(`fusion strategies list`). The default, `panel-nano-pick`, asks three `nano` models and one cheap
+call picks the best answer; `auto` routes by difficulty
 ([how](docs/CONFIGURATION.md#difficulty-routing-strategy-auto)). The baseline is Claude Opus 5.5 (`high`). Tiers come from price ([COSTS.md](docs/COSTS.md#price-tiers)). `panel-refine`, the `high` budget,
 also has the panel models revise their answers after seeing anonymized peer answers
 (mixture-of-agents). Every run is stored in
