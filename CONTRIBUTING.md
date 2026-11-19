@@ -158,7 +158,8 @@ if the CLI's output format changes.
 ## Changelog
 
 `CHANGELOG.md` follows Keep a Changelog. Add one line per user-visible change under
-`## [Unreleased]`, in the matching heading (Added, Changed, Fixed, Removed, Security). Version
+`## [Unreleased]` (add that heading above the newest release if it is missing; an empty one is not
+kept), in the matching heading (Added, Changed, Fixed, Removed, Security). Version
 numbers in `pyproject.toml`, `plugin/.claude-plugin/plugin.json` and `uv.lock` change only in the
 release commit; tests keep the three in sync.
 
@@ -175,8 +176,9 @@ release by appending `@vX.Y.Z` to the URL. It is not on PyPI.
    `uvx --no-cache --from dist/*.whl fusion version`; without `--no-cache`, uv reuses an earlier
    build of the same version.
 2. In one commit: bump the version in `pyproject.toml` and `plugin/.claude-plugin/plugin.json`, run
-   `uv lock`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (and add an empty
-   `## [Unreleased]` above it), and update the compare links at the bottom of `CHANGELOG.md`.
+   `uv lock`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` (leave no empty
+   `## [Unreleased]` behind), and update the compare links at the bottom of `CHANGELOG.md`
+   (the `[Unreleased]` link goes too).
 3. Tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 4. In GitHub, run the **Release** workflow (`.github/workflows/release.yml`) with that tag. It checks
    that the tag matches the version, runs the quality gate, builds, checks and smoke-tests the

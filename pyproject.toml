@@ -1,6 +1,6 @@
 [project]
 name = "fusion-code-orchestrator"
-version = "0.2.0"
+version = "0.3.0"
 description = "Multi-model orchestration and evaluation engine for coding workflows"
 readme = "README.md"
 license = { text = "MIT" }

@@ -120,6 +120,28 @@ async def test_build_checks_javascript_when_node_is_present(tmp_path: Path) -> N
     assert good.ok is True and good.metrics["js_files_checked"] == 1
 
 
+async def test_the_node_syntax_check_runs_without_an_address_space_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V8 reserves far more virtual memory than it uses, so ``RLIMIT_AS`` (enforced on Linux, not
+    on macOS) makes ``node`` crash at start-up: the check failed on every CI run. The wall-clock,
+    CPU and file-size limits still apply."""
+    import fusion.bench.evaluators.tests as module
+
+    calls: list[tuple[list[str], int | None]] = []
+    real = module.run_in_sandbox
+
+    def spy(tree: Any, cmd: Any, **kwargs: Any) -> Any:
+        calls.append((list(cmd), kwargs.get("mem_mb", 1024)))
+        return real(tree, ["python", "-c", "pass"], **kwargs)
+
+    monkeypatch.setattr(module, "run_in_sandbox", spy)
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/node")
+    await BuildEvaluator().run(put(tmp_path / "n", {"app.js": "const x = 1;\n"}), coding_task())
+    node_calls = [mem for cmd, mem in calls if cmd[0] == "node"]
+    assert node_calls == [None]
+
+
 # -- static -----------------------------------------------------------------------------------
 
 

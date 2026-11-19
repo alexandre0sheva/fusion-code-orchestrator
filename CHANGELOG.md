@@ -5,7 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-19
+
+A release that turns 0.2.0's "cheaper, slower, quality not shown" into "cheaper and faster, quality
+not separable from the frontier model's": on 47 held-out tasks the default panel costs about 0.06x
+Claude Opus 5.5 per solved task at about 0.5x its median time, and one cheap model alone (Haiku 5.5)
+did as well on quality ([docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md)). It adds a
+price-tiered multi-vendor catalog with OpenRouter as a fourth provider, a real mode that reads the
+project itself (`paths`, `globs`, `diff_ref`, `fusion_digest`), panel lenses and cheap selection
+instead of synthesis, difficulty routing, verified patch generation in a sandbox, an experience
+library, `fusion tune`, a dataset of 197 tasks, an end-to-end Claude Code A/B (`fusion bench e2e`) and
+a website. Read [Known limitations](#known-limitations) before quoting a number. The work was planned
+task by task in `docs/superpowers/plans/2026-11-17-v0.3.0-roadmap.md`.
 
 ### Added
 
@@ -77,6 +88,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The dashboard's Runs filters read "All strategies" and "All statuses" (they said "All strategys" and "All statuss").
+- The JavaScript syntax check of `fusion bench` (`node --check`, used by the `build` evaluator) crashed on Linux, so every JavaScript file looked broken: the sandbox's 1 GB address-space limit (`RLIMIT_AS`, enforced on Linux, not on macOS) is below what V8 reserves at start-up. That one call now runs without the address-space limit (the timeout and the CPU and file-size limits still apply). It made `tests/test_evaluators.py` fail on every CI run on GitHub.
 - A panel call that finished while the client was being sent a progress notification was never collected: its answer was reported as "Still pending after global panel timeout" and the run could lose its quorum (seen under load, in about one MCP call in six on a busy machine).
 - `fusion bench dataset validate` reports a performance-task flaw whose timing was too noisy to measure as a warning (nothing is known about its speed), not as an error saying the flaw is not wrong.
 - `fusion bench e2e` with `--concurrency` above 1 no longer stops a study when a run does not fit only because of the runs in flight: it waits for them to settle, and stops only when the run would not fit with nothing in flight (a live study stopped with $3.40 of its budget left).
@@ -91,6 +104,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - OpenRouter requests are kept away from hosts that may train on prompts: every request sends `provider.ignore` with the hosts OpenRouter marks as training (DeepSeek, Liquid, NVIDIA, Thinking Machines on 2026-11-17; a config layer can add to the list, never shrink it), `data_collection: "allow"` and `require_parameters: true`, and the docs make the account's training opt-out a required setup step. Only a generic `X-Title` header is sent.
 - `uv.lock` now pins authlib 1.9.8, dnspython 2.9.2, joserfc 1.8.0 and opentelemetry-api 1.45.2, which fix the advisories that failed the CI `audit` job; `pip-audit` reports none.
+
+### Known limitations
+
+- **Quality against Opus is not shown, in either direction.** The headline study is 47 held-out tasks with one repeat and $4.42 of live spend; the default's quality difference from Claude Opus 5.5 is +0.01 with an interval of -0.08 to +0.10, wider than the 0.03 margin, so "not worse" and "better" are inconclusive (not "equal"). Claude Haiku 5.5 alone scored highest of the cheap arms at about a fifth of the default's cost, so the case for the panel rests on cost and speed against Opus, not on quality.
+- **The Claude Code end-to-end result is four coding tasks per arm.** It shows cost, turns and tool calls inside a real session, not a ranking: Fusion's tools were called in 2 of 12 runs and, with Sonnet or Opus as executor, about doubled the host cost. The cheap-executor recipe (Haiku + Fusion) is a measured cost, not a quality claim.
+- **The benchmark tasks are mostly synthetic.** An LLM drafted the text, review and debugging tasks and no person has reviewed them; 34 coding tasks are real upstream bugs with prompts written for the study ([evals/datasets/README.md](evals/datasets/README.md#provenance-and-validity-read-this-before-quoting-a-number)). Scores come from keyword matching, measured tests and neutral LLM judges that may favour a style.
+- Prices, speeds and model IDs are those of 2026-11-17 to 2026-11-19; providers change them. `fusion models check --live` compares them with OpenRouter's public list, and on 2026-11-19 it flagged three prices: Gemini 3.8 Flash (OpenRouter 10% above the catalog), DeepSeek V4.1 Flash (the catalog's $0.036 input is a third of OpenRouter's $0.15; the catalog was not changed without a check on the vendor's page) and Kimi K3.1 Pro (5%).
+- Verified for this release: the offline gate (pytest, ruff, mypy, `uv lock --check`) locally, and the tests again on Python 3.14, the wheel (`check_wheel.py`, `uvx --from` smoke in an empty directory) and the live provider smoke tests (nine calls, about $0.00007). **Not verified:** the GitHub Actions workflows on the release commit (CI had failed on every push before this release; see the Fixed entry for the one cause found and fixed, and five failures seen once on Python 3.14 in CI that did not reproduce locally); the Pages deploy; the dashboard in Firefox (not installed) and in Safari itself (it was checked in Playwright's WebKit engine, which renders it correctly but logs inline-style CSP reports for the animation delays set on each view); the Claude Code smoke checklist in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#smoke-test).
+- The benchmark and patch sandbox is a best-effort guard, not a security boundary; memory limits are not enforced on macOS ([SECURITY.md](SECURITY.md#benchmark-sandbox)). Redaction is pattern-based and can miss an unusual secret ([SECURITY.md](SECURITY.md#known-limitations)).
+- The README's demo GIF is a `--mock` run: its findings are canned. The site is built with Material for MkDocs, which reaches end of life on 2027-05-05.
+- Not on PyPI. Install from GitHub (`uvx --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator`); append `@v0.3.0` to the URL to pin this release. A wheel built twice at the same version is cached by `uvx`; pass `--no-cache` when testing a rebuild. Windows is untested.
 
 ## [0.2.0] - 2026-10-06
 
@@ -318,6 +342,6 @@ multi-model panel for coding questions, with cost and quality instrumentation.
 - Quality scores come from LLM-judge output and heuristics, not verified outcomes.
 - Judge and eval calls are not included in the reported Fusion cost.
 
-[Unreleased]: https://github.com/alexandre0sheva/fusion-code-orchestrator/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/alexandre0sheva/fusion-code-orchestrator/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/alexandre0sheva/fusion-code-orchestrator/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/alexandre0sheva/fusion-code-orchestrator/releases/tag/v0.1.0

@@ -46,7 +46,7 @@ failures listed in `warnings`. Run `claude` from a shell that has them exported.
 | Option | Meaning |
 |--------|---------|
 | `--dry-run` | Print what would be done and the commands it would run; change nothing |
-| `--ref TAG` | Pin the server to a git tag, branch or commit (`git+URL@TAG`). Pin a release tag once 0.2.0 is tagged |
+| `--ref TAG` | Pin the server to a git tag, branch or commit (`git+URL@TAG`). Pin a release tag such as `v0.3.0` |
 | `--local-checkout PATH` | Run the server from a clone: `uv run --directory PATH fusion mcp` |
 | `--force` | Replace a different `fusion` server that is already registered |
 | `--no-verify` | Skip the launch check |

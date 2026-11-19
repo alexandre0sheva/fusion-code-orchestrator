@@ -1,14 +1,14 @@
 name: Release
 
-# Started by hand once the owner has tagged the release commit (`git tag v0.2.0 && git push origin
-# v0.2.0`). It checks the tag against the version, runs the quality gate, builds and checks the
+# Started by hand once the owner has tagged the release commit (`git tag v0.3.0 && git push origin
+# v0.3.0`). It checks the tag against the version, runs the quality gate, builds and checks the
 # package, and attaches the wheel and source distribution to a GitHub Release. Publishing to PyPI
 # is not switched on: see the commented job at the end and CONTRIBUTING.md.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release, for example v0.2.0"
+        description: "Existing tag to release, for example v0.3.0"
         required: true
         type: string
 
@@ -48,7 +48,7 @@ jobs:
           wheel="$(ls "$GITHUB_WORKSPACE"/dist/*.whl)"
           cd "$(mktemp -d)"
           uvx --no-cache --from "$wheel" fusion version
-          uvx --no-cache --from "$wheel" fusion bench plan --dataset v1 --arms solo-cheap --mock
+          uvx --no-cache --from "$wheel" fusion bench plan --dataset v1 --arms solo-haiku --mock
       - name: Release notes from the changelog
         env:
           TAG: ${{ inputs.tag }}

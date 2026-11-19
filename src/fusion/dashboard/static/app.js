@@ -393,8 +393,8 @@
         return r;
       });
     }
-    function select(label, key, options) {
-      var el = h('select', { 'aria-label': label }, h('option', { value: '', text: 'All ' + label.toLowerCase() + 's' }),
+    function select(label, key, options, plural) {
+      var el = h('select', { 'aria-label': label }, h('option', { value: '', text: 'All ' + plural }),
         options.map(function (o) { return h('option', { value: o, text: o, selected: state[key] === o }); }));
       el.addEventListener('change', function () { state[key] = el.value; state.offset = 0; load(); });
       return el;
@@ -427,7 +427,7 @@
       var f = probe.facets, search = h('input', { type: 'search', placeholder: 'Search the prompt or run id', 'aria-label': 'Search runs', value: state.q }), timer;
       search.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { state.q = search.value.trim(); state.offset = 0; load(); }, 280); });
       root.append(h('div', { class: 'rise' }, h('h1', { text: 'Runs' }), h('p', { class: 'lede', text: 'Every answer Fusion has produced, newest first. Open one to see its answer, its claims and where the time went.' })),
-        h('div', { class: 'filters rise' }, select('Task', 'task', f.task), select('Strategy', 'strategy', f.strategy), select('Status', 'status', f.status), search,
+        h('div', { class: 'filters rise' }, select('Task', 'task', f.task, 'tasks'), select('Strategy', 'strategy', f.strategy, 'strategies'), select('Status', 'status', f.status, 'statuses'), search,
           h('button', { class: 'btn', type: 'button', onclick: function () { state = { task: '', strategy: '', status: '', q: '', offset: 0 }; route(); } }, 'Clear')),
         h('div', { class: 'panel rise' }, body));
       return load().then(function () { return root; });

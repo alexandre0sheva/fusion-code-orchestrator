@@ -141,7 +141,11 @@ class BuildEvaluator:
         checked_js = 0
         if js and shutil.which("node"):
             for path in js:
-                result, _ = run_in_sandbox(tree, ["node", "--check", path], timeout_s=15)
+                # No RLIMIT_AS: V8 reserves far more address space than it uses and aborts under
+                # a 1 GB cap on Linux. The timeout and the CPU and file-size caps still apply.
+                result, _ = run_in_sandbox(
+                    tree, ["node", "--check", path], timeout_s=15, mem_mb=None
+                )
                 seconds += result.seconds
                 checked_js += 1
                 if not result.ok:

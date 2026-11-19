@@ -53,7 +53,7 @@ and the unedited verdicts: [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md
   *inconclusive*, not *equal*. Most tasks are synthetic, and no person has reviewed them yet.
 - Redaction is pattern-based and can miss a secret; answers are advice to check, not instructions.
 - Not on PyPI: install from GitHub (`uvx --from git+https://github.com/alexandre0sheva/fusion-code-orchestrator`;
-  append `@v0.2.0` to pin the release).
+  append `@v0.3.0` to pin the release).
 
 The full list is in the [changelog](CHANGELOG.md#known-limitations) and [SECURITY.md](SECURITY.md#known-limitations).
 
